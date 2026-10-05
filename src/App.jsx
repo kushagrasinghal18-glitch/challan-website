@@ -1,0 +1,279 @@
+import { useEffect, useMemo, useState } from 'react';
+import { CITIES, T } from './content.js';
+import { PLATE_RE, fmtPlate, pad, fill } from './format.js';
+import CheckFlow from './CheckFlow.jsx';
+import * as Icon from './icons.jsx';
+
+const env = import.meta.env;
+export const SITE = {
+  cityKey: CITIES[env.VITE_CITY] ? env.VITE_CITY : 'noida',
+  brand: env.VITE_BRAND || 'Niptao',
+  phone: env.VITE_PHONE || '+910000000000',
+  whatsapp: env.VITE_WHATSAPP || '910000000000',
+  email: env.VITE_EMAIL || 'hello@example.in',
+};
+const city = CITIES[SITE.cityKey];
+
+const readLang = () => {
+  try { return localStorage.getItem('lang') || env.VITE_DEFAULT_LANG || 'en'; } catch { return 'en'; }
+};
+
+function Logo() {
+  return (
+    <span className="logo" aria-label={SITE.brand}>
+      <span className="dev">निप</span><span className="lat">tao</span>
+    </span>
+  );
+}
+
+const fmtPhone = (p) => p.replace(/^\+91(\d{5})(\d{5})$/, '+91 $1 $2');
+
+export default function App() {
+  const [lang, setLangState] = useState(readLang);
+  const [plate, setPlate] = useState('');
+  const [plateErr, setPlateErr] = useState(false);
+  const [flowOpen, setFlowOpen] = useState(false);
+  const [faq, setFaq] = useState(0);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const iv = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, []);
+  useEffect(() => { document.documentElement.lang = lang; }, [lang]);
+
+  const setLang = (l) => {
+    setLangState(l);
+    try { localStorage.setItem('lang', l); } catch { /* private mode */ }
+  };
+
+  const loc = lang === 'hi' ? 'hi-IN' : 'en-IN';
+  const target = useMemo(() => new Date(city.date), []);
+  const tz = { timeZone: 'Asia/Kolkata' };
+  const dateShort = target.toLocaleDateString(loc, { ...tz, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  const dateLong = target.toLocaleDateString(loc, { ...tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const plateShown = plate || city.plateHint;
+
+  const R = T[lang];
+  const vars = { city: city.name[lang], court: city.court[lang], brand: SITE.brand, plate: plateShown, date: dateShort };
+  const t = (key, extra) => fill(R[key], { ...vars, ...extra });
+
+  const diff = Math.max(0, target - now);
+  const countdown = [
+    [Math.floor(diff / 864e5), t('days')], [Math.floor(diff / 36e5) % 24, t('hrs')],
+    [Math.floor(diff / 6e4) % 60, t('min')], [Math.floor(diff / 1e3) % 60, t('sec')],
+  ];
+
+  const calDate = target.toISOString().slice(0, 10).replace(/-/g, '');
+  const calUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+    + '&text=' + encodeURIComponent('Lok Adalat — ' + city.court.en)
+    + '&dates=' + calDate + 'T043000Z/' + calDate + 'T113000Z'
+    + '&details=' + encodeURIComponent('Reminder from ' + SITE.brand + '. We attend on your behalf; keep your RC, licence and photo ID handy on WhatsApp.')
+    + '&location=' + encodeURIComponent(city.address.en);
+  const waUrl = `https://wa.me/${SITE.whatsapp}?text=` + encodeURIComponent('Hi, I need help with challans for ' + plateShown);
+
+  const onCheck = (e) => {
+    e.preventDefault();
+    if (PLATE_RE.test(plate.replace(/\s/g, ''))) { setPlateErr(false); setFlowOpen(true); }
+    else setPlateErr(true);
+  };
+
+  const reserve = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => document.getElementById('plate')?.focus({ preventScroll: true }), 500);
+  };
+
+  const how = [
+    [Icon.Car, 'how1t', 'how1d'], [Icon.Shield, 'how2t', 'how2d'], [Icon.Doc, 'how3t', 'how3d'], [Icon.CalCheck, 'how4t', 'how4d', true],
+  ];
+  const why = [[Icon.Doc, 'why1t', 'why1d'], [Icon.Chat, 'why2t', 'why2d'], [Icon.Pin, 'why3t', 'why3d'], [Icon.Rupee, 'why4t', 'why4d']];
+
+  return (
+    <>
+      <header className="header">
+        <div className="wrap">
+          <a href="#top" style={{ textDecoration: 'none' }}><Logo /></a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="lang">
+              <button aria-pressed={lang === 'en'} onClick={() => setLang('en')}>EN</button>
+              <button aria-pressed={lang === 'hi'} onClick={() => setLang('hi')}>हिंदी</button>
+            </div>
+            <a href={`tel:${SITE.phone}`} aria-label="Call" className="icon-btn"><Icon.Phone /></a>
+          </div>
+        </div>
+      </header>
+
+      <main id="top">
+        <section className="hero">
+          <div className="wrap">
+            <div className="hero-main">
+              <span className="pill"><span className="dot" />{city.district[lang]} · {city.name[lang]}</span>
+              <h1>{t('heroTitle1')} <span>{t('heroTitle2')}</span></h1>
+              <p className="hero-sub">{t('heroSub')}</p>
+
+              <form className="check-card" onSubmit={onCheck} noValidate>
+                <label htmlFor="plate">{t('plateLabel')}</label>
+                <div className="plate">
+                  <div className="plate-ind"><span className="ring" /><span className="txt">IND</span></div>
+                  <input id="plate" value={plate} onChange={(e) => { setPlate(fmtPlate(e.target.value)); setPlateErr(false); }}
+                    placeholder={city.plateHint} autoComplete="off" autoCapitalize="characters" spellCheck="false" maxLength={13}
+                    aria-invalid={plateErr} aria-describedby="plate-help" />
+                </div>
+                {plateErr
+                  ? <div id="plate-help" className="field-err" role="alert">{t('plateError', { plate: city.plateHint })}</div>
+                  : <div id="plate-help" className="field-hint">{t('plateHint')}: <b>{city.plateHint}</b></div>}
+                <button type="submit" className="btn-amber" style={{ height: 58, fontSize: 17 }}>{t('checkBtn')} <span aria-hidden="true">→</span></button>
+                <div className="trust">
+                  {['trust1', 'trust2', 'trust3'].map((k) => <span key={k}><Icon.Check stroke="#2E8B57" />{t(k)}</span>)}
+                </div>
+              </form>
+            </div>
+
+            <div className="hero-side">
+              <div className="countdown-card">
+                <div className="top">
+                  <span className="eyebrow on-dark">{t('countdownLabel')}</span>
+                  <span className="date">{dateShort}</span>
+                </div>
+                <div className="countdown">
+                  {countdown.map(([v, l]) => <div key={l}><div className="v">{pad(v)}</div><div className="l">{l}</div></div>)}
+                </div>
+                <div className="court"><Icon.Pin stroke="#F5C06A" style={{ flex: 'none', marginTop: 1 }} /><span>{city.court[lang]}</span></div>
+                <a href="#lok-adalat">{t('seeCarry')} ↓</a>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="how">
+          <div className="wrap section-body">
+            <div className="section-head">
+              <span className="eyebrow">{t('howEyebrow')}</span>
+              <h2 className="h2">{t('howTitle')}</h2>
+            </div>
+            <div className="how-grid">
+              {how.map(([Ico, tk, dk, hot], i) => (
+                <div className="how-card" key={tk}>
+                  <div className="row"><span className={'ico' + (hot ? ' hot' : '')}><Ico /></span><span className="num">0{i + 1}</span></div>
+                  <div className="t">{t(tk)}</div>
+                  <div className="d">{t(dk)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="why">
+          <div className="wrap section-body">
+            <div className="section-head">
+              <span className="eyebrow">{t('whyEyebrow')}</span>
+              <h2 className="h2">{t('whyTitle')}</h2>
+            </div>
+            <div className="why-grid">
+              {why.map(([Ico, tk, dk]) => (
+                <div key={tk}>
+                  <Ico size={26} />
+                  <div className="txt"><div className="t">{t(tk)}</div><div className="d">{t(dk)}</div></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="lok-adalat" className="next">
+          <div className="wrap section-body">
+            <div className="section-head">
+              <span className="eyebrow on-dark">{t('nextEyebrow')}</span>
+              <h2 className="h2">{t('nextTitle')}</h2>
+            </div>
+            <div className="next-cols">
+              <div className="next-card">
+                <div style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
+                  <div className="cal">
+                    <div className="m">{target.toLocaleDateString(loc, { ...tz, month: 'short' }).toUpperCase()}</div>
+                    <div className="d">{target.toLocaleDateString('en-IN', { ...tz, day: 'numeric' })}</div>
+                    <div className="w">{target.toLocaleDateString(loc, { ...tz, weekday: 'long' })}</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                    <div style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.3 }}>{dateLong}</div>
+                    <div style={{ fontSize: 14, color: '#B9C0D2' }}>{t('reporting')}: {t('reportingVal')}</div>
+                  </div>
+                </div>
+                <div className="next-block">
+                  <div className="k">{t('venue')}</div>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>{city.court[lang]}</div>
+                  <div style={{ fontSize: 14, color: '#B9C0D2', lineHeight: 1.5 }}>{city.address[lang]}</div>
+                </div>
+                <div className="next-block">
+                  <div className="k">{t('bookingTitle')}</div>
+                  <div style={{ fontSize: 14.5, color: '#D7DBE6', lineHeight: 1.55 }}>{city.booking[lang]}</div>
+                </div>
+                <div className="next-actions">
+                  <button className="btn-amber" onClick={reserve}>{t('reserveBtn')} →</button>
+                  <a href={calUrl} target="_blank" rel="noopener noreferrer">{t('addCal')}</a>
+                </div>
+              </div>
+              <div className="carry">
+                <div style={{ fontSize: 17, fontWeight: 600 }}>{t('carryTitle')}</div>
+                {R.carry.map((item) => (
+                  <div className="item" key={item}><span className="box"><Icon.Check size={12} sw={3} /></span><span>{item}</span></div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="faq">
+          <div className="wrap">
+            <div className="section-head">
+              <span className="eyebrow">{t('faqEyebrow')}</span>
+              <h2 className="h2">{t('faqTitle')}</h2>
+            </div>
+            <div className="faq-list">
+              {R.faqs.map((f, i) => (
+                <div className="faq-item" key={i}>
+                  <button aria-expanded={faq === i} onClick={() => setFaq(faq === i ? -1 : i)}>
+                    <span>{fill(f.q, vars)}</span><span className="sign">{faq === i ? '−' : '+'}</span>
+                  </button>
+                  {faq === i && <p>{fill(f.a, vars)}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer className="footer">
+        <div className="wrap">
+          <Logo />
+          <div className="disclaimer"><div className="k">{t('disclaimerTitle')}</div><div className="v">{t('disclaimer')}</div></div>
+          <div className="footer-cols">
+            <div>
+              <div className="k">{t('contact')}</div>
+              <a href={`tel:${SITE.phone}`}>{fmtPhone(SITE.phone)}</a>
+              <a href={`mailto:${SITE.email}`}>{SITE.email}</a>
+              <span>{city.office[lang]}</span>
+            </div>
+            <div>
+              <div className="k">{SITE.brand}</div>
+              <a href="#privacy">{t('privacy')}</a>
+              <a href="#terms">{t('terms')}</a>
+              <a href="#lok-adalat">{t('nextEyebrow')}</a>
+            </div>
+          </div>
+          <div className="copyright">© {new Date().getFullYear()} {SITE.brand}</div>
+        </div>
+      </footer>
+
+      <a className="wa-fab" href={waUrl} target="_blank" rel="noopener noreferrer"><Icon.WhatsApp />{t('waFab')}</a>
+
+      {flowOpen && (
+        <CheckFlow
+          plate={plate} lang={lang} cityKey={SITE.cityKey} t={t} waUrl={waUrl}
+          onClose={() => setFlowOpen(false)}
+          onReset={() => { setFlowOpen(false); setPlate(''); }}
+        />
+      )}
+    </>
+  );
+}
