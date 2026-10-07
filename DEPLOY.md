@@ -32,7 +32,26 @@ the server's files on restart, so send every lead to a Google Sheet as well:
 Every new lead now appears as a row in the sheet. If the sheet is ever unreachable,
 the full lead is still written to Render's **Logs**.
 
-## 3. Later: switch on automatic challan lookup
+## 3. Admin panel
+
+The admin panel is at `/admin` on your site (e.g. `https://niptao-challan-site.onrender.com/admin`).
+It lists every lead, lets you change status, assign a person, add notes, call or WhatsApp
+the customer, and download a CSV.
+
+**Database (Neon, free)** — so leads are kept permanently:
+1. Go to **neon.tech** and sign up with Google.
+2. Create a project. Name: `niptao`. Region: **Asia Pacific (Singapore)**.
+3. On the project dashboard click **Connect** and copy the connection string
+   (it starts with `postgresql://`).
+4. In Render → **Environment** add `DATABASE_URL` = that string.
+
+**Password:** in Render → **Environment** add `ADMIN_PASSWORD` = a password of at least
+8 characters that only your team knows.
+
+Click **Save, rebuild, and deploy**. Sign in at `/admin` with your name and that password.
+The table is created automatically on first use.
+
+## 4. Later: switch on automatic challan lookup
 
 The site currently only collects leads. The OTP and InstantPay challan lookup code is
 still in `server/` and can be switched back on later.
@@ -50,10 +69,10 @@ Save. Render restarts the site, and challan lookups are live. Test with a vehicl
 number you know has challans. If something is wrong with the keys, customers see the
 "we'll check manually" form, and **Logs** in Render says why.
 
-## 4. Before taking real customers
+## 5. Before taking real customers
 
-- **Leads:** set up the Google Sheet above. Without it, leads are lost when the free
-  server restarts.
+- **Leads:** connect the Neon database above. Without it, leads are lost when the free
+  server restarts (the Google Sheet is an optional extra copy).
 - **The free plan sleeps.** After 15 minutes of no visitors the site takes ~30 seconds
   to wake up. Render's paid plan removes that.
 - **Contact details** in the footer and the WhatsApp button are still placeholders.

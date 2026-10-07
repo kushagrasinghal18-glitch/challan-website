@@ -1,6 +1,6 @@
 # Niptao: challan settlement site
 
-> **Current mode: lead capture only.** The check button opens one form (name, vehicle number, mobile). Leads are saved to `data/leads.json` and sent to `LEADS_WEBHOOK_URL` (a Google Sheet, see DEPLOY.md). The OTP and challan lookup described below are built but not used by the page right now.
+> **Current mode: lead capture only.** The check button opens one form (name, vehicle number, mobile). Leads are saved to Postgres when `DATABASE_URL` is set (otherwise `data/leads.json`) and optionally sent to `LEADS_WEBHOOK_URL`. The admin panel at `/admin` (`src/admin/`, password `ADMIN_PASSWORD`) lists and manages them. The OTP and challan lookup described below are built but not used by the page right now.
 
 The customer-facing page from the Claude Design file *Traffic Challan Settlement Platform* (`Challan Site.dc.html`), built as a React (Vite) front end with a small Express API that fetches challan data.
 

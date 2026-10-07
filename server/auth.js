@@ -45,3 +45,26 @@ export function readToken(header) {
   const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
   return data.exp > Date.now() ? data : null;
 }
+
+// ── Admin panel login ───────────────────────────────────
+// One shared password (ADMIN_PASSWORD). The name typed at login is only used to
+// sign notes, so the team can see who wrote what.
+const ADMIN_TTL = 12 * 60 * 60_000;
+
+export const adminEnabled = () => (process.env.ADMIN_PASSWORD || '').length >= 8;
+
+export function checkAdminPassword(pw) {
+  if (!adminEnabled()) return false;
+  const a = Buffer.from(sha(String(pw || ''))), b = Buffer.from(sha(process.env.ADMIN_PASSWORD));
+  return crypto.timingSafeEqual(a, b);
+}
+
+export function issueAdminToken(name) {
+  const payload = b64(JSON.stringify({ role: 'admin', name, exp: Date.now() + ADMIN_TTL }));
+  return `${payload}.${sign(payload)}`;
+}
+
+export function readAdminToken(header) {
+  const data = readToken(header);
+  return data?.role === 'admin' ? data : null;
+}

@@ -9,7 +9,9 @@ export default defineConfig(({ mode }) => ({
   resolve: mode === 'static'
     ? { alias: [{ find: /^\.\/api\.js$/, replacement: path.resolve('src/api.static.js') }] }
     : {},
-  build: mode === 'static' ? { outDir: 'dist-static' } : {},
+  build: mode === 'static'
+    ? { outDir: 'dist-static' }
+    : { rollupOptions: { input: { main: path.resolve('index.html'), admin: path.resolve('admin.html') } } },
   server: {
     proxy: { '/api': `http://localhost:${process.env.PORT || 8787}` },
   },

@@ -3,8 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getChallans, providerName } from './providers/index.js';
 import { PLATE_RE, normalizePlate } from './plate.js';
-import { sendOtp, verifyOtp, issueToken, readToken, otpMode } from './auth.js';
-import { addLead } from './store.js';
+import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, checkAdminPassword, issueAdminToken, readAdminToken } from './auth.js';
+import { addLead, listLeads, updateLead, store, STATUSES } from './store.js';
 
 try { process.loadEnvFile(); } catch { /* no .env file: use defaults */ }
 
@@ -27,8 +27,16 @@ const limit = (max, windowMs) => (req, res, next) => {
   next();
 };
 
+const requireAdmin = (req, res, next) => {
+  const a = readAdminToken(req.get('authorization'));
+  if (!a) return res.status(401).json({ error: 'not_signed_in' });
+  req.admin = a;
+  next();
+};
+
 const requireSession = (req, res, next) => {
   const s = readToken(req.get('authorization'));
+  if (s?.role === 'admin') return res.status(401).json({ error: 'not_verified' });
   if (!s) return res.status(401).json({ error: 'not_verified' });
   req.session = s;
   next();
@@ -76,17 +84,50 @@ app.post('/api/leads', limit(10, 10 * 60_000), async (req, res) => {
   if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'invalid_phone' });
   if (!name || b.consent !== true) return res.status(400).json({ error: 'missing_fields' });
   const code = CITY_CODES[b.city] || 'GBN';
-  const ref = `${code}-26${String(Math.floor(10000 + Math.random() * 89999))}`;
-  await addLead({
-    ref, createdAt: new Date().toISOString(), city: CITY_CODES[b.city] ? b.city : 'noida',
-    name, plate, phone, lang: b.lang === 'hi' ? 'hi' : 'en', status: 'New',
-  });
+  const base = {
+    createdAt: new Date().toISOString(), city: CITY_CODES[b.city] ? b.city : 'noida',
+    name, plate, phone, lang: b.lang === 'hi' ? 'hi' : 'en', status: 'New', agent: '', notes: [],
+  };
+  let ref;
+  for (let attempt = 0; ; attempt++) {
+    ref = `${code}-26${String(Math.floor(10000 + Math.random() * 89999))}`;
+    try { await addLead({ ref, ...base }); break; }
+    catch (err) {
+      // Retry on the rare duplicate reference; anything else is a real failure.
+      if (err.code === '23505' && attempt < 3) continue;
+      return res.status(500).json({ error: 'save_failed' });
+    }
+  }
   res.json({ ref });
+});
+
+// ── Admin panel API ─────────────────────────────────────
+app.get('/api/admin/status', (req, res) => res.json({ enabled: adminEnabled(), storage: store().name, statuses: STATUSES }));
+
+app.post('/api/admin/login', limit(10, 15 * 60_000), (req, res) => {
+  const name = String(req.body?.name || '').trim().slice(0, 40);
+  if (!adminEnabled()) return res.status(503).json({ error: 'admin_disabled' });
+  if (!name || !checkAdminPassword(req.body?.password)) return res.status(401).json({ error: 'wrong_password' });
+  res.json({ token: issueAdminToken(name), name });
+});
+
+app.get('/api/admin/leads', requireAdmin, async (req, res) => {
+  try { res.json({ leads: await listLeads(), storage: store().name }); }
+  catch (err) { console.error('[admin] list failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
+});
+
+app.patch('/api/admin/leads/:ref', requireAdmin, async (req, res) => {
+  try {
+    const lead = await updateLead(req.params.ref, req.body || {}, req.admin.name);
+    if (!lead) return res.status(404).json({ error: 'not_found' });
+    res.json({ lead });
+  } catch (err) { console.error('[admin] update failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
 });
 
 if (process.env.NODE_ENV === 'production') {
   const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
-  app.use(express.static(dist));
+  app.use(express.static(dist, { index: false }));
+  app.get('/admin', (req, res) => res.sendFile(path.join(dist, 'admin.html')));
   app.get('*', (req, res) => res.sendFile(path.join(dist, 'index.html')));
 }
 
