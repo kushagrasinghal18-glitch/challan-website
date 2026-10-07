@@ -5,7 +5,8 @@ services:
     name: niptao-challan-site
     runtime: node
     plan: free
-    buildCommand: npm install && npm run build
+    # --include=dev: NODE_ENV=production would otherwise skip Vite, which the build needs
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/config
     envVars:
@@ -19,10 +20,7 @@ services:
         generateValue: true
       - key: OTP_MODE
         value: demo
-      # mock until the InstantPay keys below are filled in; then set to: instantpay
+      # Sample data until INSTANTPAY_CLIENT_ID / INSTANTPAY_CLIENT_SECRET are added
+      # in Render's Environment tab; then change this to: instantpay
       - key: CHALLAN_PROVIDER
         value: mock
-      - key: INSTANTPAY_CLIENT_ID
-        sync: false
-      - key: INSTANTPAY_CLIENT_SECRET
-        sync: false

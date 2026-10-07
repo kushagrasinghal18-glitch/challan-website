@@ -17,7 +17,8 @@ At this point it works on sample challan data.
 
 ## 2. Switch on real challan data
 
-In Render, open the service → **Environment**:
+In Render, open the service → **Environment** → **Add Environment Variable** for the
+two keys, and edit `CHALLAN_PROVIDER`:
 
 | Key | Value |
 |---|---|
