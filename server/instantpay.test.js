@@ -49,3 +49,15 @@ test('empty list and "not found" give no challans; other errors throw', async (t
 test('refuses to call without credentials', async () => {
   await assert.rejects(fetchChallans('UP16AB1234', {}), /INSTANTPAY_CLIENT_ID/);
 });
+
+test('daily cap stops paid lookups and cached plates do not count', async (t) => {
+  const { getChallans } = await import('./providers/index.js');
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => { calls++; return new Response(JSON.stringify({ statuscode: 'TXN', data: { vehicalData: [] } })); });
+  const env = { ...ENV, CHALLAN_PROVIDER: 'instantpay', MAX_LIVE_LOOKUPS_PER_DAY: '2' };
+  await getChallans('UP16AB0001', env);
+  await getChallans('UP16AB0001', env); // cached
+  await getChallans('UP16AB0002', env);
+  await assert.rejects(getChallans('UP16AB0003', env), /cap/);
+  assert.equal(calls, 2);
+});

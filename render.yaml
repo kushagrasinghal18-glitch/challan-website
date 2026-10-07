@@ -24,3 +24,6 @@ services:
       # in Render's Environment tab; then change this to: instantpay
       - key: CHALLAN_PROVIDER
         value: mock
+      # Max paid InstantPay lookups per day; raise it as real traffic grows
+      - key: MAX_LIVE_LOOKUPS_PER_DAY
+        value: "100"
