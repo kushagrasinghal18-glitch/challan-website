@@ -15,7 +15,27 @@ which has a free plan.
 Render gives the site an address like `https://niptao-challan-site.onrender.com`.
 At this point it works on sample challan data.
 
-## 2. Switch on real challan data
+## 2. See your leads in a Google Sheet
+
+The site collects name, vehicle number and mobile number. Render's free plan wipes
+the server's files on restart, so send every lead to a Google Sheet as well:
+
+1. Create a new Google Sheet (sheets.new).
+2. Click **Extensions** → **Apps Script**. Delete what's there and paste in everything
+   from `docs/google-sheet-leads.gs` in this repo. Click the save icon.
+3. Click **Deploy** → **New deployment**. Click the gear next to "Select type" and pick
+   **Web app**. Set **Execute as: Me** and **Who has access: Anyone**. Click **Deploy**,
+   allow the permissions Google asks for, and copy the **Web app URL**.
+4. In Render, open the service → **Environment** → **Add Environment Variable**:
+   `LEADS_WEBHOOK_URL` = the URL you copied. Click **Save, rebuild, and deploy**.
+
+Every new lead now appears as a row in the sheet. If the sheet is ever unreachable,
+the full lead is still written to Render's **Logs**.
+
+## 3. Later: switch on automatic challan lookup
+
+The site currently only collects leads. The OTP and InstantPay challan lookup code is
+still in `server/` and can be switched back on later.
 
 In Render, open the service → **Environment** → **Add Environment Variable** for the
 two keys, and edit `CHALLAN_PROVIDER`:
@@ -30,13 +50,10 @@ Save. Render restarts the site, and challan lookups are live. Test with a vehicl
 number you know has challans. If something is wrong with the keys, customers see the
 "we'll check manually" form, and **Logs** in Render says why.
 
-## 3. Before taking real customers
+## 4. Before taking real customers
 
-- **OTP is not real yet.** Any 6 digits are accepted. Connect an SMS service and
-  `OTP_MODE=console` to send real codes (see README).
-- **Bookings reset.** On Render's free plan the server's files are wiped on every
-  deploy and on restart, so `data/leads.json` is not safe storage. Add a Render disk
-  (paid) mounted at `/data` with `LEADS_FILE=/data/leads.json`, or move to a database.
+- **Leads:** set up the Google Sheet above. Without it, leads are lost when the free
+  server restarts.
 - **The free plan sleeps.** After 15 minutes of no visitors the site takes ~30 seconds
   to wake up. Render's paid plan removes that.
 - **Contact details** in the footer and the WhatsApp button are still placeholders.

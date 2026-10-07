@@ -65,23 +65,21 @@ app.get('/api/challans', limit(20, 10 * 60_000), requireSession, async (req, res
   }
 });
 
-app.post('/api/leads', limit(10, 10 * 60_000), requireSession, async (req, res) => {
+// Lead capture: name + vehicle + phone. No OTP or challan lookup for now.
+app.post('/api/leads', limit(10, 10 * 60_000), async (req, res) => {
   const b = req.body || {};
-  const kind = ['booking', 'manual', 'alert'].includes(b.kind) ? b.kind : 'booking';
+  if (b.website) return res.json({ ref: 'OK' }); // honeypot field only bots fill in
   const plate = normalizePlate(b.plate);
+  const phone = String(b.phone || '').replace(/\D/g, '').slice(-10);
+  const name = String(b.name || '').trim().slice(0, 120);
   if (!PLATE_RE.test(plate)) return res.status(400).json({ error: 'invalid_plate' });
-  if (kind !== 'alert' && (!String(b.name || '').trim() || b.consent !== true)) {
-    return res.status(400).json({ error: 'missing_fields' });
-  }
+  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'invalid_phone' });
+  if (!name || b.consent !== true) return res.status(400).json({ error: 'missing_fields' });
   const code = CITY_CODES[b.city] || 'GBN';
   const ref = `${code}-26${String(Math.floor(10000 + Math.random() * 89999))}`;
   await addLead({
-    ref, kind, createdAt: new Date().toISOString(), city: b.city || 'noida',
-    plate, phone: req.session.phone,
-    name: String(b.name || '').trim().slice(0, 120), email: String(b.email || '').trim().slice(0, 200),
-    vtype: b.vtype, lang: b.lang,
-    challans: Array.isArray(b.challans) ? b.challans.slice(0, 50) : [],
-    status: 'New',
+    ref, createdAt: new Date().toISOString(), city: CITY_CODES[b.city] ? b.city : 'noida',
+    name, plate, phone, lang: b.lang === 'hi' ? 'hi' : 'en', status: 'New',
   });
   res.json({ ref });
 });
