@@ -449,6 +449,7 @@ function Addon() {
         <ol>
           <li>Download again, unzip over the old <code>niptao-lead-filler</code> folder (replace the files).</li>
           <li>Open <code>chrome://extensions</code> and press the round reload arrow on the add-on's card.</li>
+          <li>Reload any open admin panel and Parivahan tabs.</li>
         </ol>
         <p className="hint" style={{ margin: 0 }}>Chrome may show a note about developer-mode extensions when it starts. That's normal for add-ons installed this way.</p>
       </div>
