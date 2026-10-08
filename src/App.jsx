@@ -9,7 +9,7 @@ export const SITE = {
   cityKey: CITIES[env.VITE_CITY] ? env.VITE_CITY : 'noida',
   brand: env.VITE_BRAND || 'Niptao',
   phone: env.VITE_PHONE || '+919990661629',
-  whatsapp: env.VITE_WHATSAPP || '910000000000',
+  whatsapp: env.VITE_WHATSAPP || '919990661629',
   email: env.VITE_EMAIL || 'help@niptao.co.in',
 };
 const city = CITIES[SITE.cityKey];
