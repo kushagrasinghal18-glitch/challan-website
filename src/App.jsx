@@ -188,6 +188,11 @@ export default function App() {
             </div>
 
             <div className="hero-side">
+              <picture className="hero-img">
+                <source type="image/webp" srcSet="/img/hero-720.webp 720w, /img/hero-1200.webp 1200w" sizes="(max-width: 820px) 100vw, 560px" />
+                <img src="/img/hero-1200.jpg" srcSet="/img/hero-720.jpg 720w, /img/hero-1200.jpg 1200w" sizes="(max-width: 820px) 100vw, 560px"
+                  width="1200" height="675" alt={t('heroImgAlt')} fetchPriority="high" decoding="async" />
+              </picture>
               <div className="countdown-card">
                 <div className="top">
                   <span className="eyebrow on-dark">{t('countdownLabel')}</span>

@@ -30,6 +30,7 @@ export const CITIES = {
 export const T = {
  en: {
   heroTitle1:'Flat 50% off on your challans.', heroTitle2:'Settled at Lok Adalat, no court visit.',
+  heroImgAlt:'A Niptao advisor helping a car owner with a traffic police officer about a challan',
   heroSub:'Pending traffic e-challans in {city}? Reserve your Lok Adalat spot online and pay only half. Our team handles the documents, the court visit and the settlement for you.',
   offerTag:'Exclusive offer', offerUse:'Use code', endsIn:'Ends in', limited:'Limited period', copyCode:'Copy code', codeCopied:'Copied ✓',
   priceEx:'Example', priceChallan:'Challan', priceYouPay:'You pay', priceSave:'You save',
@@ -80,6 +81,7 @@ export const T = {
  },
  hi: {
   heroTitle1:'आपके चालान पर फ़्लैट 50% छूट।', heroTitle2:'लोक अदालत में निपटारा, कोर्ट जाने की ज़रूरत नहीं।',
+  heroImgAlt:'निपटाओ सलाहकार एक कार मालिक और ट्रैफ़िक पुलिस अधिकारी के साथ चालान पर बात करते हुए',
   heroSub:'{city} में ट्रैफ़िक ई-चालान पेंडिंग हैं? लोक अदालत में अपनी जगह ऑनलाइन रिज़र्व करें और सिर्फ़ आधा भरें। दस्तावेज़, कोर्ट जाना और निपटारा — सब हमारी टीम करती है।',
   offerTag:'ख़ास ऑफ़र', offerUse:'कोड लगाएँ', endsIn:'ख़त्म होने में', limited:'सीमित समय', copyCode:'कोड कॉपी करें', codeCopied:'कॉपी हो गया ✓',
   priceEx:'उदाहरण', priceChallan:'चालान', priceYouPay:'आप भरेंगे', priceSave:'आपकी बचत',
