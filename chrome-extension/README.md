@@ -39,7 +39,7 @@ messages, and group chats are skipped.
 
 After an approval, the box puts the payment message (details, UPI ID and refund note) in
 WhatsApp's message box and copies the QR code. Check it and press Enter, then Ctrl+V and
-Enter to send the QR. Set the UPI ID and QR in the admin panel under Settings. You can
+Enter to send the QR. Once the message is sent, the lead is marked "payment details sent". Set the UPI ID and QR in the admin panel under Settings. You can
 also press "Put payment details in the chat" under a lead at any time.
 
 If something isn't read correctly, press

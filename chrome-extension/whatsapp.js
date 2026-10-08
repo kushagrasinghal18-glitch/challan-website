@@ -164,7 +164,7 @@
     if (leads) {
       await store.set({ waApprovalsSaved: [...waApprovalsSaved, key].slice(-500) });
       // Right after the approval, put the payment details in the chat box (only one lead, or it's ambiguous).
-      const ready = leads.filter((l) => l.paymentReady);
+      const ready = leads.filter((l) => l.paymentReady && !l.paymentSent);
       if (ready.length === 1) preparePayment(ready[0].ref);
     } else { failedKey = key; $('#hint').textContent = 'The customer wrote "I APPROVE" but it could not be saved. See below, then press Save chat to Niptao.'; }
   }
@@ -187,7 +187,7 @@
       if (l.paymentReady) {
         const b = document.createElement('button');
         b.className = 'link';
-        b.textContent = 'Put payment details in the chat';
+        b.textContent = l.paymentSent ? 'Payment details sent ✓ (put them in the chat again)' : 'Put payment details in the chat';
         b.onclick = () => preparePayment(l.ref);
         d.append(b);
       }
@@ -253,6 +253,7 @@
       return;
     }
     const typed = typeIntoChat(res.text);
+    watchPaymentSent(ref, res);
     qrBlob = res.qr ? await toPng(res.qr).catch(() => null) : null;
     const copied = qrBlob ? await copyQr() : false;
     $('#pay').hidden = false;
@@ -262,6 +263,25 @@
       qrBlob ? (copied ? 'Then press Ctrl+V and Enter to send the QR code.' : 'Then press "Copy QR", Ctrl+V and Enter to send the QR code.') : '',
     ].filter(Boolean).join(' ');
   }
+  // Once the payment message shows up as sent in this chat, record it on the lead.
+  let watching = null;
+  function watchPaymentSent(ref, pay) {
+    clearInterval(watching);
+    const chat = current, since = new Set(readMessages().map((m) => m.id));
+    const needle = clean(pay.upiId || pay.text.split('\n')[0]);
+    let ticks = 0;
+    watching = setInterval(async () => {
+      if (current !== chat || ++ticks > 600) return clearInterval(watching); // stop after 10 minutes or a chat switch
+      const sent = readMessages().find((m) => m.dir === 'out' && !since.has(m.id) && m.text.includes(needle));
+      if (!sent) return;
+      clearInterval(watching);
+      const amount = pay.amount != null ? `₹${Number(pay.amount).toLocaleString('en-IN')}` : '';
+      const res = await chrome.runtime.sendMessage({ type: 'paymentSent', ref, note: `Sent payment details on WhatsApp: ${[amount, pay.upiId && `to ${pay.upiId}`].filter(Boolean).join(' ')}.` });
+      $('#payMsg').textContent = res?.ok ? `Payment details sent. Marked on ${ref} in the admin panel.` : `Payment details sent, but the admin panel wasn't updated (${res?.error || 'no answer'}).`;
+      $('#copyQr').hidden = true;
+    }, 1000);
+  }
+
   $('#copyQr').onclick = async () => {
     if (await copyQr()) { $('#copyQr').hidden = true; $('#payMsg').textContent = 'QR copied. Click in the message box, press Ctrl+V, then Enter.'; }
   };

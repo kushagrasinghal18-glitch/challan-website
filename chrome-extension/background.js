@@ -26,12 +26,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // Pages on Parivahan and WhatsApp Web ask us to save things to the admin panel. Only this
 // background worker may call the Niptao site, so they send the data here.
 const DEFAULT_SITE = 'https://www.niptao.co.in';
-async function call(path, body) {
+async function call(path, body, method = body ? 'POST' : 'GET') {
   const { auth } = await chrome.storage.local.get('auth');
   if (!auth?.token) return { ok: false, error: 'login' };
   try {
     const res = await fetch(`${auth.origin || DEFAULT_SITE}${path}`, {
-      method: body ? 'POST' : 'GET',
+      method,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -50,6 +50,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     call('/api/admin/whatsapp-web', msg.body).then(reply);
   } else if (msg?.type === 'getPayment') {
     call(`/api/admin/leads/${encodeURIComponent(msg.ref)}/payment`).then(reply);
+  } else if (msg?.type === 'paymentSent') {
+    call(`/api/admin/leads/${encodeURIComponent(msg.ref)}`, { paymentSent: true, note: msg.note }, 'PATCH').then(reply);
   } else return;
   return true; // keep the channel open for the async reply
 });
