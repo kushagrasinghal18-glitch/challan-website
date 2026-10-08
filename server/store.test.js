@@ -51,3 +51,11 @@ test('passwords are hashed and verified', () => {
   assert.equal(verifyPassword('wrong', h), false);
   assert.equal(verifyPassword('x', 'garbage'), false);
 });
+
+test('challans are saved on the lead with who fetched them', async () => {
+  const l = await updateLead('GBN-1', { challans: [{ challanNo: 'DL1', amount: 500 }], challansSource: 'Parivahan', note: 'Fetched 1 challan' }, 'Priya', 'u1');
+  assert.equal(l.challans[0].challanNo, 'DL1');
+  assert.equal(l.challansBy, 'Priya');
+  assert.ok(l.challansAt);
+  assert.equal(l.notes[0].text, 'Fetched 1 challan');
+});

@@ -127,6 +127,12 @@ export function updateLead(ref, patch, by, onlyFor) {
     const out = {};
     if (STATUSES.includes(patch.status)) out.status = patch.status;
     if (patch.assign) { out.agentId = patch.assign.id; out.agent = patch.assign.name; }
+    if (Array.isArray(patch.challans)) {
+      out.challans = patch.challans;
+      out.challansAt = new Date().toISOString();
+      out.challansBy = by;
+      out.challansSource = patch.challansSource || '';
+    }
     if (typeof patch.note === 'string' && patch.note.trim()) {
       out.notes = [{ by, at: new Date().toISOString(), text: patch.note.trim().slice(0, 2000) }, ...(lead.notes || [])];
     }

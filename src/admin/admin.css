@@ -134,6 +134,12 @@ tbody tr.sel { background: var(--row-sel); }
 .err { color: var(--error); font-size: 13.5px; font-weight: 500; }
 
 /* Alerts, staff, challan check */
+.challans { display: flex; flex-direction: column; gap: 6px; }
+.challans .sec-k { margin-bottom: 0; }
+.ch-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; max-height: 360px; overflow: auto; }
+.ch { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: #FAF9F6; font-size: 14px; line-height: 1.45; }
+.ch-top { display: flex; justify-content: space-between; gap: 10px; }
+.ch-top .no { font-family: var(--mono); font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
 .bar .who button.sound { white-space: nowrap; }
 .bar .who button.sound.on { border-color: rgba(242, 169, 0, .6); color: #F2C14E; }
 .new-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: #E3F2E9; border: 1px solid #A9D8BC; color: #1F6B45; border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; font-size: 14px; }

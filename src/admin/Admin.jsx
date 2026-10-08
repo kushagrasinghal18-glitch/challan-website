@@ -26,6 +26,7 @@ function ago(iso) {
   if (s < 172800) return 'Yesterday';
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
+const challanTotal = (l) => (l.challans || []).reduce((n, c) => n + (c.amount || 0), 0);
 const fullDate = (iso) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 function Logo() {
@@ -148,11 +149,29 @@ function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch }) {
           <div className="challan-check">
             <div className="sec-k">Check challans</div>
             <div className="cc-row">
-              <a className="btn primary" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate}>Open Parivahan e-Challan ↗</a>
+              <a className="btn primary" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Open Parivahan e-Challan ↗</a>
               <button className="btn" onClick={copyPlate}>{copied ? 'Copied ✓' : `Copy ${fmtPlate(lead.plate)}`}</button>
             </div>
             <p className="hint">The vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the Niptao Lead Filler add-on in Chrome, the number is filled in for you.</p>
           </div>
+
+          {lead.challans && (
+            <div className="challans">
+              <div className="sec-k">Challans · {lead.challans.length} · ₹{challanTotal(lead).toLocaleString('en-IN')}</div>
+              <div className="small">From {lead.challansSource || 'Parivahan'} · {fullDate(lead.challansAt)}{lead.challansBy ? ` · ${lead.challansBy}` : ''}</div>
+              {lead.challans.length ? (
+                <div className="ch-list">
+                  {lead.challans.map((c, i) => (
+                    <div className="ch" key={c.challanNo || i}>
+                      <div className="ch-top"><span className="no">{c.challanNo || '—'}</span><b>{c.amount ? `₹${c.amount.toLocaleString('en-IN')}` : ''}</b></div>
+                      {c.offence && <div>{c.offence}</div>}
+                      <div className="small">{[c.date, c.location, c.status].filter(Boolean).join(' · ')}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="small">No challans found for this vehicle.</div>}
+            </div>
+          )}
 
           <div>
             <div className="sec-k">Status</div>
@@ -404,6 +423,7 @@ function Staff({ auth, me, staff, reload, signOut }) {
 function toCsv(leads) {
   const cols = [['Reference', 'ref'], ['Received', (l) => fullDate(l.createdAt)], ['Name', 'name'], ['Vehicle', (l) => fmtPlate(l.plate)],
     ['Mobile', 'phone'], ['City', (l) => CITY[l.city] || l.city], ['Status', 'status'], ['Assigned to', 'agent'],
+    ['Challans', (l) => (l.challans ? l.challans.length : '')], ['Challan total (₹)', (l) => (l.challans ? challanTotal(l) : '')],
     ['Latest note', (l) => l.notes?.[0]?.text || '']];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   return [cols.map((c) => esc(c[0])).join(','), ...leads.map((l) => cols.map(([, f]) => esc(typeof f === 'function' ? f(l) : l[f])).join(','))].join('\n');
@@ -602,7 +622,7 @@ export default function Admin() {
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.ref} className={(sel === l.ref ? 'sel' : '') + (fresh.includes(l.ref) ? ' fresh' : '')} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}</div></td>
+                    <td><div className="name">{l.name}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}</div></td>
                     <td><span className="plate">{fmtPlate(l.plate)}</span></td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>

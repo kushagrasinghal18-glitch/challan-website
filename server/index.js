@@ -12,7 +12,8 @@ const app = express();
 // Behind a host's load balancer, trust X-Forwarded-For so req.ip is the customer's IP (InstantPay needs it).
 const tp = process.env.TRUST_PROXY;
 if (tp) app.set('trust proxy', tp === 'true' ? true : /^\d+$/.test(tp) ? Number(tp) : tp);
-app.use(express.json({ limit: '20kb' }));
+const jsonSmall = express.json({ limit: '20kb' }), jsonBig = express.json({ limit: '300kb' });
+app.use((req, res, next) => (req.path.endsWith('/challans') ? jsonBig : jsonSmall)(req, res, next));
 
 const PHONE_RE = /^[6-9]\d{9}$/;
 const CITY_CODES = { noida: 'GBN', ghaziabad: 'GZB', delhi: 'DEL', gurugram: 'GGN' };
@@ -245,6 +246,31 @@ app.patch('/api/admin/staff/:id', requireAdmin, async (req, res) => {
     await saveStaff(list);
     res.json({ staff: publicStaff(u) });
   } catch (err) { console.error('[admin] staff save failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
+});
+
+// Challans read from Parivahan (by the Niptao Lead Filler add-on) and saved on the lead.
+// body: { challans: [{ challanNo, date, offence, location, amount, status }], source? }
+const clip = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
+  const list = req.body?.challans;
+  if (!Array.isArray(list) || list.length > 300) return res.status(400).json({ error: 'invalid_challans' });
+  const challans = list.map((c) => ({
+    challanNo: clip(c?.challanNo, 60), date: clip(c?.date, 40), offence: clip(c?.offence, 300),
+    location: clip(c?.location, 200), status: clip(c?.status, 80),
+    amount: Math.max(0, Math.round(Number(String(c?.amount ?? '').replace(/[^\d.]/g, '')) || 0)),
+  })).filter((c) => c.challanNo || c.offence || c.amount);
+  const total = challans.reduce((n, c) => n + c.amount, 0);
+  const note = `Fetched ${challans.length} challan${challans.length === 1 ? '' : 's'} from ${clip(req.body.source, 40) || 'Parivahan'}`
+    + (total ? `, total ₹${total.toLocaleString('en-IN')}` : '') + '.';
+  try {
+    const lead = await updateLead(req.params.ref, { challans, challansSource: clip(req.body.source, 40) || 'Parivahan', note },
+      req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+    if (!lead) return res.status(404).json({ error: 'not_found' });
+    res.json({ lead, count: challans.length, total });
+  } catch (err) {
+    if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
+    console.error('[admin] challans save failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
+  }
 });
 
 // Leads: anyone can change status and add notes on leads they can see; only admins reassign.
