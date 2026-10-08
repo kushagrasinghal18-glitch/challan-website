@@ -1,0 +1,21 @@
+body { width: 340px; margin: 0; font: 13px system-ui, sans-serif; color: #111827; background: #fff; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #0f766e; color: #fff; }
+form, section { padding: 10px 12px; }
+label { display: block; margin: 8px 0; }
+input { box-sizing: border-box; width: 100%; padding: 7px 8px; margin-top: 3px; border: 1px solid #d1d5db; border-radius: 6px; font: inherit; }
+button { font: inherit; cursor: pointer; }
+.primary { width: 100%; margin-top: 8px; padding: 8px; border: 0; border-radius: 6px; background: #0f766e; color: #fff; font-weight: 600; }
+.link { background: none; border: 0; color: #fff; text-decoration: underline; }
+.muted { color: #6b7280; font-size: 12px; }
+.error { color: #b91c1c; }
+.card { border: 1px solid #99f6e4; background: #f0fdfa; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+.row { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.big { font-size: 15px; font-weight: 600; margin: 4px 0; }
+.plate { font-family: ui-monospace, monospace; font-weight: 700; letter-spacing: .5px; }
+.note { margin: 8px 0 0; }
+.links { margin-top: 8px; }
+.links a { color: #0f766e; }
+ul { list-style: none; padding: 0; margin: 8px 0 0; max-height: 300px; overflow-y: auto; }
+li { padding: 7px 8px; border-bottom: 1px solid #f3f4f6; cursor: pointer; }
+li:hover, li.on { background: #f0fdfa; }
+li .row span:first-child { font-weight: 600; }

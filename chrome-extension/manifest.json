@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Niptao Lead Filler",
+  "version": "1.0.0",
+  "description": "Fills a Niptao lead's vehicle number, mobile and name into challan and Lok Adalat token forms. You type the captcha and OTP yourself.",
+  "permissions": ["storage", "activeTab", "scripting", "contextMenus"],
+  "host_permissions": ["https://niptao-challan-site.onrender.com/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "Niptao Lead Filler", "default_icon": "icon.png" },
+  "icons": { "128": "icon.png" }
+}
