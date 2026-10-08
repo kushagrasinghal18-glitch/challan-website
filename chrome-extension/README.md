@@ -16,6 +16,9 @@ OTP yourself**; the add-on never reads or fills those boxes.
 
 In the admin panel, open a lead and click **Open Parivahan e-Challan**. Parivahan opens with
 "Vehicle Number" picked and the plate already filled. Type the captcha and continue.
+When Parivahan shows the challans, the add-on saves them to that lead in the admin panel
+(a small green-bordered box in the corner says "Saved N challans"). If Parivahan says there
+are no challans, the lead shows "No challans found".
 
 ## Use it on any other page
 
@@ -33,4 +36,4 @@ If a box isn't filled, right-click inside it and pick **Niptao: fill vehicle num
 ## Update
 
 Unzip the new version over the old folder, then press the round **reload** arrow on the
-add-on's card in `chrome://extensions`.
+add-on's card in `chrome://extensions`. Reload any open admin panel and Parivahan tabs.
