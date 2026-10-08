@@ -9,6 +9,9 @@ const TOKEN_KEY = 'niptao-admin';
 const SOUND_KEY = 'niptao-sound';
 const POLL_MS = 15_000;
 // Official e-challan site: search by vehicle number + captcha, no OTP.
+// Niptao Lead Filler Chrome add-on, served from public/. Replace the zip and bump this on each release.
+const ADDON_ZIP = '/niptao-lead-filler.zip';
+const ADDON_VERSION = '1.1.0';
 const PARIVAHAN_URL = 'https://echallan.parivahan.gov.in/index/accused-challan';
 
 // Saved sign-in is { token, user: { uid, name, role } }; anything older is dropped.
@@ -152,7 +155,7 @@ function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch }) {
               <a className="btn primary" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Open Parivahan e-Challan ↗</a>
               <button className="btn" onClick={copyPlate}>{copied ? 'Copied ✓' : `Copy ${fmtPlate(lead.plate)}`}</button>
             </div>
-            <p className="hint">The vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the Niptao Lead Filler add-on in Chrome, the number is filled in for you.</p>
+            <p className="hint">The vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
           </div>
 
           {lead.challans && (
@@ -324,6 +327,7 @@ function Settings({ auth, me, staff, reloadStaff, onSaved, signOut }) {
       </div>
     </form>
     <Staff auth={auth} me={me} staff={staff} reload={reloadStaff} signOut={signOut} />
+    <Addon />
     </div>
   );
 }
@@ -416,6 +420,38 @@ function Staff({ auth, me, staff, reload, signOut }) {
           <button className="btn primary" disabled={busy || !add.name.trim() || !add.username || add.password.length < 8}>Add person</button>
         </div>
       </form>
+    </section>
+  );
+}
+
+function Addon() {
+  return (
+    <section className="panel pad" id="addon">
+      <h2>Chrome add-on: Niptao Lead Filler</h2>
+      <p className="hint">Fills the vehicle number on Parivahan when you click <b>Open Parivahan e-Challan</b> on a lead, and fills lead details into forms. You always type the captcha and OTP yourself. Works in Chrome or Edge on a computer, not on phones. Install it on every computer your team uses.</p>
+      <div><a className="btn primary dl" href={ADDON_ZIP} download>Download add-on (version {ADDON_VERSION})</a></div>
+      <div className="steps-box">
+        <div className="sec-k">Install (once per computer)</div>
+        <ol>
+          <li>Unzip the downloaded file. You get a folder called <code>niptao-lead-filler</code>. Keep it somewhere safe, like Documents. Chrome needs it to stay there.</li>
+          <li>In Chrome's address bar type <code>chrome://extensions</code> and press Enter (in Edge: <code>edge://extensions</code>).</li>
+          <li>Turn on <b>Developer mode</b> (switch at the top right).</li>
+          <li>Click <b>Load unpacked</b> and choose the <code>niptao-lead-filler</code> folder.</li>
+          <li>Click the puzzle-piece icon next to the address bar and pin <b>Niptao Lead Filler</b>. Click its icon once and sign in with your admin username and password.</li>
+        </ol>
+        <div className="sec-k">Use it</div>
+        <ol>
+          <li>Open a lead here and click <b>Open Parivahan e-Challan</b>. The vehicle number is filled in for you.</li>
+          <li>Type the captcha and press Get Detail.</li>
+          <li>If a box isn't filled, click the add-on icon and press <b>Fill this page</b>, or right-click the box and pick <b>Niptao: fill vehicle number</b>.</li>
+        </ol>
+        <div className="sec-k">Update to a new version</div>
+        <ol>
+          <li>Download again, unzip over the old <code>niptao-lead-filler</code> folder (replace the files).</li>
+          <li>Open <code>chrome://extensions</code> and press the round reload arrow on the add-on's card.</li>
+        </ol>
+        <p className="hint" style={{ margin: 0 }}>Chrome may show a note about developer-mode extensions when it starts. That's normal for add-ons installed this way.</p>
+      </div>
     </section>
   );
 }
