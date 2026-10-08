@@ -13,6 +13,8 @@ const POLL_MS = 15_000;
 // Niptao Lead Filler Chrome add-on, served from public/. Replace the zip and bump this on each release.
 const ADDON_ZIP = '/niptao-lead-filler.zip';
 const ADDON_VERSION = '1.2.0';
+// Park+ challan check (search by vehicle number). Used until a paid challan API is switched on.
+const PARKPLUS_URL = 'https://parkplus.io/e-challan';
 const PARIVAHAN_URL = 'https://echallan.parivahan.gov.in/index/accused-challan';
 
 // Saved sign-in is { token, user: { uid, name, role } }; anything older is dropped.
@@ -208,10 +210,21 @@ function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch, onSaveChalla
           <div className="challan-check">
             <div className="sec-k">Check challans</div>
             <div className="cc-row">
-              <a className="btn primary" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Open Parivahan e-Challan ↗</a>
+              <a className="btn primary" href={PARKPLUS_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate}>Open Park+ ↗</a>
+              <a className="btn" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Open Parivahan e-Challan ↗</a>
               <button className="btn" onClick={copyPlate}>{copied ? 'Copied ✓' : `Copy ${fmtPlate(lead.plate)}`}</button>
             </div>
-            <p className="hint">The vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
+            <details className="guide" open={!lead.challans}>
+              <summary>How to add the challans to this lead (Park+)</summary>
+              <ol>
+                <li>Click <b>Open Park+</b>. The vehicle number is copied for you. Paste it into Park+'s vehicle number box and search.</li>
+                <li>When the challans show, select the whole list with your mouse, from the first challan number down to the last "View details", and copy it (Ctrl+C, or Cmd+C on a Mac).</li>
+                <li>Come back here, click <b>+ Add challan details</b>, paste into the box (Ctrl+V) and press <b>Read challans</b>.</li>
+                <li>Check each row (number, amount, offence, date, place, status), fix anything wrong, choose Source <b>Park+</b>, and press <b>Save</b>.</li>
+                <li>If the vehicle has no challans, press <b>No challans</b> instead.</li>
+              </ol>
+            </details>
+            <p className="hint"><b>Parivahan:</b> the vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
           </div>
 
           {editing ? (

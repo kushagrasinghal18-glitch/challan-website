@@ -134,6 +134,10 @@ tbody tr.sel { background: var(--row-sel); }
 .err { color: var(--error); font-size: 13.5px; font-weight: 500; }
 
 /* Alerts, staff, challan check */
+.challan-check .guide { margin: 0 0 8px; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+.challan-check .guide summary { cursor: pointer; font-weight: 600; color: var(--navy); }
+.challan-check .guide ol { margin: 6px 0 0; padding-left: 20px; }
+.challan-check .guide li { margin-bottom: 3px; }
 .ch-head { display: flex; justify-content: space-between; align-items: center; }
 .ch-head .edit { height: 30px; color: var(--navy); text-decoration: underline; }
 .ch-edit { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: #FAF9F6; }
