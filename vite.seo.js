@@ -20,7 +20,8 @@ export default function seo() {
         const data = [
           {
             '@context': 'https://schema.org', '@type': 'ProfessionalService', '@id': `${siteUrl}/#business`,
-            name: brand, url: `${siteUrl}/`, areaServed: areas, priceRange: '50% of challan amount',
+            name: brand, url: `${siteUrl}/`, email: 'help@niptao.co.in', areaServed: areas,
+            address: { '@type': 'PostalAddress', streetAddress: 'F-15, First Floor, Krishna Apra Royal Plaza, near ICICI Bank, Alpha-I Commercial Belt, Block E, Alpha I', addressLocality: 'Greater Noida', addressRegion: 'Uttar Pradesh', postalCode: '201310', addressCountry: 'IN' }, priceRange: '50% of challan amount',
             description: 'Private facilitation service that settles pending traffic e-challans at Lok Adalat on the customer\'s behalf.',
           },
           {
