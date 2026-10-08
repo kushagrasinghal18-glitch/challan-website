@@ -6,7 +6,7 @@ import path from 'node:path';
 
 process.env.LEADS_FILE = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'leads-')), 'leads.json');
 delete process.env.DATABASE_URL;
-const { addLead, listLeads, updateLead, saveStaff, nextAssignee } = await import('./store.js');
+const { addLead, listLeads, updateLead, deleteLead, saveStaff, nextAssignee } = await import('./store.js');
 const { hashPassword, verifyPassword } = await import('./auth.js');
 
 test('file store adds, lists newest first and updates leads', async () => {
@@ -67,4 +67,11 @@ test('customer-approved challans are marked on the lead', async () => {
   assert.equal(l.approvedBy, 'Priya');
   assert.equal((await updateLead('GBN-1', { feeRate: 40 }, 'Priya')).feeRate, 40);
   assert.equal((await updateLead('GBN-1', { feeRate: 10 }, 'Priya')).feeRate, 40);
+});
+
+test('a lead can be deleted', async () => {
+  await addLead({ ref: 'GBN-9', createdAt: '2026-10-03T00:00:00Z', name: 'Z', plate: 'UP16AB9999', phone: '9876543299', status: 'New', notes: [] });
+  assert.equal((await deleteLead('GBN-9')).ref, 'GBN-9');
+  assert.equal(await deleteLead('GBN-9'), null);
+  assert.ok(!(await listLeads()).some((l) => l.ref === 'GBN-9'));
 });

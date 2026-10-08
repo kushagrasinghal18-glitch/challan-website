@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { getChallans, providerName } from './providers/index.js';
 import { PLATE_RE, normalizePlate } from './plate.js';
 import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, checkAdminPassword, hashPassword, verifyPassword, issueTeamToken, readTeamToken } from './auth.js';
-import { addLead, listLeads, updateLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee } from './store.js';
+import { addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee } from './store.js';
 
 try { process.loadEnvFile(); } catch { /* no .env file: use defaults */ }
 
@@ -271,6 +271,17 @@ app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
     if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
     console.error('[admin] challans save failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
   }
+});
+
+// Permanently delete a lead. Only the super admin (username "admin") can do this.
+app.delete('/api/admin/leads/:ref', requireUser, async (req, res) => {
+  if (req.user.uid !== 'super') return res.status(403).json({ error: 'super_admin_only' });
+  try {
+    const lead = await deleteLead(req.params.ref);
+    if (!lead) return res.status(404).json({ error: 'not_found' });
+    console.log('[admin] lead deleted', lead.ref, lead.plate);
+    res.json({ ok: true });
+  } catch (err) { console.error('[admin] delete failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
 });
 
 // Leads: anyone can change status and add notes on leads they can see; only admins reassign.

@@ -173,7 +173,7 @@ function ChallanEditor({ lead, onSave, onCancel }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch, onSaveChallans, askApproval, onAsked }) {
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -329,6 +329,15 @@ function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch, onSaveChalla
               <div><div className="by"><b style={{ color: '#0E1B36' }}>Website</b> · {ago(lead.createdAt)}</div><div className="t">Lead submitted from the website.</div></div>
             </div>
           </div>
+
+          {isSuper && (
+            <div className="danger">
+              <button className="btn ghost" disabled={busy} onClick={() => {
+                if (window.confirm(`Delete the lead for ${lead.name} (${fmtPlate(lead.plate)}, ${lead.ref})?\n\nThis removes it and its challans and notes for good. It can't be undone.`)) onDelete(lead.ref);
+              }}>Delete this lead</button>
+              <span className="small">Only you (the main admin) see this.</span>
+            </div>
+          )}
         </div>
       </aside>
     </div>
@@ -677,6 +686,16 @@ export default function Admin() {
     if (status === 'Contacted') { setSel(ref); setAsk(ref); }
   };
 
+  const onDelete = async (ref) => {
+    try {
+      await call(`/api/admin/leads/${encodeURIComponent(ref)}`, auth, { method: 'DELETE' });
+      setLeads((ls) => ls.filter((l) => l.ref !== ref));
+      setSel(null); setAsk(null);
+    } catch (e) {
+      if (e.status === 401) signOut(); else setErr('The lead was not deleted. Try again.');
+    }
+  };
+
   const onSaveChallans = async (ref, challans, source) => {
     try {
       const { lead } = await call(`/api/admin/leads/${encodeURIComponent(ref)}/challans`, auth, { method: 'POST', body: JSON.stringify({ challans, source }) });
@@ -811,7 +830,7 @@ export default function Admin() {
         </div>
         </>)}
       </main>
-      {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} staff={staff} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans}
+      {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
     </>
   );

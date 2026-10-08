@@ -40,6 +40,10 @@ const fileStore = {
     const lead = leads.find((l) => l.ref === ref);
     return lead ? Object.assign(lead, fn(lead)) : null;
   }),
+  remove: (ref) => withFile((leads) => {
+    const i = leads.findIndex((l) => l.ref === ref);
+    return i >= 0 ? leads.splice(i, 1)[0] : null;
+  }),
 };
 
 // ── Postgres backend ────────────────────────────────────
@@ -70,6 +74,10 @@ const pgStore = {
   async list() {
     const { rows } = await (await db()).query('SELECT data FROM leads ORDER BY created_at DESC LIMIT 5000');
     return rows.map((r) => r.data);
+  },
+  async remove(ref) {
+    const { rows } = await (await db()).query('DELETE FROM leads WHERE ref = $1 RETURNING data', [ref]);
+    return rows[0]?.data || null;
   },
   async update(ref, fn) {
     const client = await (await db()).connect();
@@ -121,6 +129,7 @@ export async function addLead(lead) {
 }
 
 export const listLeads = () => store().list();
+export const deleteLead = (ref) => store().remove(ref);
 
 // patch: { status?, assign?: { id, name }, note? } — note is appended with who wrote it and when.
 // onlyFor: a staff id; the update is refused unless the lead is assigned to them.
