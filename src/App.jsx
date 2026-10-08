@@ -10,7 +10,7 @@ export const SITE = {
   brand: env.VITE_BRAND || 'Niptao',
   phone: env.VITE_PHONE || '+910000000000',
   whatsapp: env.VITE_WHATSAPP || '910000000000',
-  email: env.VITE_EMAIL || 'hello@example.in',
+  email: env.VITE_EMAIL || 'help@niptao.co.in',
 };
 const city = CITIES[SITE.cityKey];
 
