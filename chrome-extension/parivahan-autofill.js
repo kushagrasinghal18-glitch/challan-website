@@ -98,7 +98,7 @@
     const res = await chrome.runtime.sendMessage({ type: 'saveChallans', ref: activeLead.ref, challans, ownerName: owner });
     const why = { login: 'Click the N icon and log in, then press Send again.', not_your_lead: 'This lead is assigned to someone else.', not_found: 'This lead no longer exists in the admin panel.' };
     say(res?.ok
-      ? (challans.length ? `Saved ${challans.length} challan${challans.length === 1 ? '' : 's'} to ${activeLead.ref}.${owner ? ` Owner on Parivahan: ${owner}.` : ''}` : `Saved "No challans found" to ${activeLead.ref}.`)
+      ? (challans.length ? `Saved ${challans.length} challan${challans.length === 1 ? '' : 's'} to ${activeLead.ref}.${owner ? ` Owner on Parivahan: ${owner}${{ match: ' (matches ✓)', partial: ' (partly matches, check with the customer)', mismatch: ' (⚠ doesn\'t match the name given)' }[res.lead?.rcOwner?.match] || ''}.` : ''}` : `Saved "No challans found" to ${activeLead.ref}.`)
       : `Not saved. ${why[res?.error] || `(${res?.error || 'no answer'})`}`);
     $('#send').hidden = false;
   }
