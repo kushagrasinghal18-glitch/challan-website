@@ -119,12 +119,14 @@ export async function addLead(lead) {
 
 export const listLeads = () => store().list();
 
-// patch: { status?, agent?, note? } — note is appended with who wrote it and when.
-export function updateLead(ref, patch, by) {
+// patch: { status?, assign?: { id, name }, note? } — note is appended with who wrote it and when.
+// onlyFor: a staff id; the update is refused unless the lead is assigned to them.
+export function updateLead(ref, patch, by, onlyFor) {
   return store().update(ref, (lead) => {
+    if (onlyFor && lead.agentId !== onlyFor) throw Object.assign(new Error('not your lead'), { code: 'forbidden' });
     const out = {};
     if (STATUSES.includes(patch.status)) out.status = patch.status;
-    if (typeof patch.agent === 'string') out.agent = patch.agent.trim().slice(0, 60);
+    if (patch.assign) { out.agentId = patch.assign.id; out.agent = patch.assign.name; }
     if (typeof patch.note === 'string' && patch.note.trim()) {
       out.notes = [{ by, at: new Date().toISOString(), text: patch.note.trim().slice(0, 2000) }, ...(lead.notes || [])];
     }
@@ -133,25 +135,43 @@ export function updateLead(ref, patch, by) {
   });
 }
 
-// ── Site settings (edited in the admin panel) ───────────
-// { whatsapp: '9876543210', phone: '9876543210', lokAdalatDates: [{ id, date: 'YYYY-MM-DD', time: 'HH:MM', city, note }] }
-const settingsFile = () => path.join(path.dirname(file()), 'settings.json');
+// ── Key/value records: site settings, staff accounts ───
+// 'site'  → { whatsapp, phone, autoAssign, lokAdalatDates: [{ id, date, time, city, note }] }
+// 'staff' → [{ id, name, username, passHash, role: 'admin' | 'staff', active, createdAt }]
+// 'rr'    → { lastId } round-robin pointer for auto-assign
+const kvFile = (key) => path.join(path.dirname(file()), key === 'site' ? 'settings.json' : `${key}.json`);
 
-export async function getSettings() {
+export async function getKV(key, fallback) {
   if (process.env.DATABASE_URL) {
-    const { rows } = await (await db()).query("SELECT value FROM settings WHERE key = 'site'");
-    return rows[0]?.value || {};
+    const { rows } = await (await db()).query('SELECT value FROM settings WHERE key = $1', [key]);
+    return rows[0]?.value ?? fallback;
   }
-  try { return JSON.parse(await fs.readFile(settingsFile(), 'utf8')); } catch { return {}; }
+  try { return JSON.parse(await fs.readFile(kvFile(key), 'utf8')); } catch { return fallback; }
 }
 
-export async function saveSettings(value) {
+export async function setKV(key, value) {
   if (process.env.DATABASE_URL) {
     await (await db()).query(
-      "INSERT INTO settings (key, value) VALUES ('site', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [value]);
+      'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, JSON.stringify(value)]);
     return value;
   }
-  await fs.mkdir(path.dirname(settingsFile()), { recursive: true });
-  await fs.writeFile(settingsFile(), JSON.stringify(value, null, 2));
+  await fs.mkdir(path.dirname(kvFile(key)), { recursive: true });
+  await fs.writeFile(kvFile(key), JSON.stringify(value, null, 2));
   return value;
+}
+
+export const getSettings = () => getKV('site', {});
+export const saveSettings = (value) => setKV('site', value);
+export const listStaff = () => getKV('staff', []);
+export const saveStaff = (list) => setKV('staff', list);
+
+// Next active staff member after the last one who got a lead, or null when nobody is active.
+export async function nextAssignee() {
+  const staff = (await listStaff()).filter((u) => u.active && u.role === 'staff');
+  if (!staff.length) return null;
+  const { lastId } = await getKV('rr', {});
+  const i = staff.findIndex((u) => u.id === lastId);
+  const pick = staff[(i + 1) % staff.length];
+  await setKV('rr', { lastId: pick.id });
+  return pick;
 }

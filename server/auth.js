@@ -47,9 +47,9 @@ export function readToken(header) {
 }
 
 // ── Admin panel login ───────────────────────────────────
-// One shared password (ADMIN_PASSWORD). The name typed at login is only used to
-// sign notes, so the team can see who wrote what.
-const ADMIN_TTL = 12 * 60 * 60_000;
+// Super admin: username "admin" + ADMIN_PASSWORD (set in the host's settings).
+// Everyone else: accounts the super admin creates in Settings → Staff.
+const TEAM_TTL = 12 * 60 * 60_000;
 
 export const adminEnabled = () => (process.env.ADMIN_PASSWORD || '').length >= 8;
 
@@ -59,12 +59,25 @@ export function checkAdminPassword(pw) {
   return crypto.timingSafeEqual(a, b);
 }
 
-export function issueAdminToken(name) {
-  const payload = b64(JSON.stringify({ role: 'admin', name, exp: Date.now() + ADMIN_TTL }));
+export function hashPassword(pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return `scrypt$${salt}$${crypto.scryptSync(String(pw), salt, 32).toString('hex')}`;
+}
+
+export function verifyPassword(pw, stored) {
+  const [, salt, hash] = String(stored || '').split('$');
+  if (!salt || !hash) return false;
+  const got = crypto.scryptSync(String(pw || ''), salt, 32), want = Buffer.from(hash, 'hex');
+  return want.length === got.length && crypto.timingSafeEqual(got, want);
+}
+
+// user: { uid, name, role } — uid 'super' is the ADMIN_PASSWORD login.
+export function issueTeamToken(user) {
+  const payload = b64(JSON.stringify({ kind: 'team', ...user, exp: Date.now() + TEAM_TTL }));
   return `${payload}.${sign(payload)}`;
 }
 
-export function readAdminToken(header) {
+export function readTeamToken(header) {
   const data = readToken(header);
-  return data?.role === 'admin' ? data : null;
+  return data?.kind === 'team' ? data : null;
 }

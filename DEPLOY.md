@@ -36,8 +36,10 @@ the full lead is still written to Render's **Logs**.
 
 The admin panel is at `/admin` on your site (e.g. `https://niptao-challan-site.onrender.com/admin`).
 It lists every lead, lets you change status, assign a person, add notes, call or WhatsApp
-the customer, and download a CSV. Its **Settings** page sets the website's WhatsApp and
-calling numbers and the Lok Adalat dates (the site counts down to the next one).
+the customer, open the Parivahan e-Challan site with the vehicle number copied, and download
+a CSV. It checks for new leads every 15 seconds and plays a buzzer when one arrives.
+Its **Settings** page sets the website's WhatsApp and calling numbers, the Lok Adalat dates
+(the site counts down to the next one), auto-assign, and staff logins.
 
 **Database (Neon, free)** — so leads are kept permanently:
 1. Go to **neon.tech** and sign up with Google.
@@ -47,10 +49,16 @@ calling numbers and the Lok Adalat dates (the site counts down to the next one).
 4. In Render → **Environment** add `DATABASE_URL` = that string.
 
 **Password:** in Render → **Environment** add `ADMIN_PASSWORD` = a password of at least
-8 characters that only your team knows.
+8 characters that only you know. This is the super admin login.
 
-Click **Save, rebuild, and deploy**. Sign in at `/admin` with your name and that password.
-The table is created automatically on first use.
+Click **Save, rebuild, and deploy**. Sign in at `/admin` with username `admin` and that
+password. The tables are created automatically on first use.
+
+**Staff logins:** Settings → **Staff** → fill in name, username, password → **Add person**.
+Give each person their own username and password. *Staff* see only leads assigned to them;
+*Admins* see everything and can change settings. **Reset password** and **Switch off**
+take effect straight away (the person is signed out). Tick **Auto-assign new leads** and
+press **Save changes** to hand new leads to active staff in turn.
 
 ## 4. Later: switch on automatic challan lookup
 
