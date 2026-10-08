@@ -54,8 +54,11 @@ export default function App() {
   };
 
   const loc = lang === 'hi' ? 'hi-IN' : 'en-IN';
-  // Next date for this city from the admin panel; the built-in date only if settings can't load.
-  const nextDate = settings?.lokAdalatDates?.find((d) => d.city === SITE.cityKey);
+  // Soonest upcoming date from the admin panel, whatever its city (the server sends them
+  // sorted and future-only). The built-in date is used only if settings can't load.
+  const upcoming = (settings?.lokAdalatDates || []).filter((d) => CITIES[d.city]);
+  const nextDate = upcoming[0];
+  const dCity = CITIES[nextDate?.city] || city; // court, address and booking text for that date
   const target = useMemo(() => {
     if (nextDate) return new Date(`${nextDate.date}T${nextDate.time || '10:00'}:00+05:30`);
     if (settings?.failed) return new Date(city.date);
@@ -83,10 +86,10 @@ export default function App() {
 
   const gcal = (d) => d.toISOString().replace(/[-:]|\.\d{3}/g, '');
   const calUrl = tba ? '' : 'https://calendar.google.com/calendar/render?action=TEMPLATE'
-    + '&text=' + encodeURIComponent('Lok Adalat — ' + city.court.en)
+    + '&text=' + encodeURIComponent('Lok Adalat — ' + dCity.court.en)
     + '&dates=' + gcal(target) + '/' + gcal(new Date(+target + 7 * 36e5))
     + '&details=' + encodeURIComponent('Reminder from ' + SITE.brand + '. We attend on your behalf; keep your RC, licence and photo ID handy on WhatsApp.')
-    + '&location=' + encodeURIComponent(city.address.en);
+    + '&location=' + encodeURIComponent(dCity.address.en);
   const waUrl = `https://wa.me/${contact.whatsapp}?text=` + encodeURIComponent('Hi, I need help with challans for ' + plateShown);
 
   const onCheck = (e) => {
@@ -155,7 +158,7 @@ export default function App() {
                 <div className="countdown">
                   {countdown.map(([v, l]) => <div key={l}><div className="v">{tba ? '--' : pad(v)}</div><div className="l">{l}</div></div>)}
                 </div>
-                <div className="court"><Icon.Pin stroke="#F5C06A" style={{ flex: 'none', marginTop: 1 }} /><span>{city.court[lang]}</span></div>
+                <div className="court"><Icon.Pin stroke="#F5C06A" style={{ flex: 'none', marginTop: 1 }} /><span>{dCity.court[lang]}</span></div>
                 <a href="#lok-adalat">{t('seeCarry')} ↓</a>
               </div>
             </div>
@@ -201,7 +204,7 @@ export default function App() {
           <div className="wrap section-body">
             <div className="section-head">
               <span className="eyebrow on-dark">{t('nextEyebrow')}</span>
-              <h2 className="h2">{t('nextTitle')}</h2>
+              <h2 className="h2">{t('nextTitle', { city: dCity.name[lang] })}</h2>
             </div>
             <div className="next-cols">
               <div className="next-card">
@@ -219,13 +222,26 @@ export default function App() {
                 </div>
                 <div className="next-block">
                   <div className="k">{t('venue')}</div>
-                  <div style={{ fontSize: 16, fontWeight: 600 }}>{city.court[lang]}</div>
-                  <div style={{ fontSize: 14, color: '#B9C0D2', lineHeight: 1.5 }}>{city.address[lang]}</div>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>{dCity.court[lang]}</div>
+                  <div style={{ fontSize: 14, color: '#B9C0D2', lineHeight: 1.5 }}>{dCity.address[lang]}</div>
                 </div>
                 <div className="next-block">
                   <div className="k">{t('bookingTitle')}</div>
-                  <div style={{ fontSize: 14.5, color: '#D7DBE6', lineHeight: 1.55 }}>{city.booking[lang]}</div>
+                  <div style={{ fontSize: 14.5, color: '#D7DBE6', lineHeight: 1.55 }}>{dCity.booking[lang]}</div>
                 </div>
+                {upcoming.length > 1 && (
+                  <div className="next-block">
+                    <div className="k">{t('moreDates')}</div>
+                    <ul className="more-dates">
+                      {upcoming.slice(1, 8).map((d) => (
+                        <li key={d.id}>
+                          <b>{new Date(`${d.date}T${d.time || '10:00'}:00+05:30`).toLocaleDateString(loc, { ...tz, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</b>
+                          <span>{CITIES[d.city].name[lang]} · {CITIES[d.city].court[lang]}{d.note ? ` · ${d.note}` : ''}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="next-actions">
                   <button className="btn-amber" onClick={reserve}>{t('reserveBtn')} →</button>
                   {!tba && <a href={calUrl} target="_blank" rel="noopener noreferrer">{t('addCal')}</a>}

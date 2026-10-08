@@ -5,8 +5,6 @@ const STATUS_COLORS = {
   Scheduled: ['#E1F2F4', '#0E6470'], Settled: ['#E3F2E9', '#1F6B45'], Lost: ['#ECEBE8', '#5E6472'],
 };
 const CITY = { noida: 'Noida / Gr. Noida', ghaziabad: 'Ghaziabad', delhi: 'Delhi', gurugram: 'Gurugram' };
-// The website shows dates for this one city only (same setting the site is built with).
-const SITE_CITY = CITY[import.meta.env.VITE_CITY] ? import.meta.env.VITE_CITY : 'noida';
 const TOKEN_KEY = 'niptao-admin';
 const SOUND_KEY = 'niptao-sound';
 const POLL_MS = 15_000;
@@ -268,7 +266,7 @@ function Settings({ auth, me, staff, reloadStaff, onSaved, signOut }) {
 
       <section className="panel pad">
         <h2>Lok Adalat dates</h2>
-        <p className="hint">The website counts down to the next upcoming <b>{CITY[SITE_CITY]}</b> date. Past dates are hidden from visitors automatically.</p>
+        <p className="hint">The website counts down to the soonest upcoming date (any city) and lists the next few below it. Past dates are hidden from visitors automatically.</p>
         {form.lokAdalatDates.length === 0 && <div className="empty small-empty">No dates yet. The website shows "Date to be announced" until you add one.</div>}
         <div className="dates">
           {form.lokAdalatDates.map((d) => (
@@ -285,7 +283,6 @@ function Settings({ auth, me, staff, reloadStaff, onSaved, signOut }) {
               </label>
               <button type="button" className="btn ghost" onClick={() => removeDate(d.id)} aria-label="Remove this date">Remove</button>
               {d.date && d.date < today && <span className="past-tag">Past</span>}
-              {d.city !== SITE_CITY && <span className="city-warn">Not shown on the website: it only shows {CITY[SITE_CITY]} dates.</span>}
             </div>
           ))}
         </div>
