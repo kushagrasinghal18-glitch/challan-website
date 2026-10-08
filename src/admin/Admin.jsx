@@ -192,12 +192,13 @@ function ChallanEditor({ lead, onSave, onCancel }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked }) {
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState }) {
   const [draft, setDraft] = useState('');
+  const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
-  useEffect(() => { setDraft(''); setCopied(false); setEditing(false); }, [lead.ref]);
+  useEffect(() => { setDraft(''); setCopied(false); setEditing(false); setChSt(listState || ''); }, [lead.ref, listState]);
   const approvalRef = useRef(null);
   useEffect(() => { if (askApproval) approvalRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [askApproval, lead.ref]);
   const toggleApproved = (i) => {
@@ -277,9 +278,24 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                 {approvedOf(lead).length > 0 && <span className="appr"> · Approved {approvedOf(lead).length} · ₹{approvedTotal(lead).toLocaleString('en-IN')}</span>}</div>
                 <button className="btn ghost edit" onClick={() => setEditing(true)}>Edit</button></div>
               <div className="small">From {lead.challansSource || 'Parivahan'} · {fullDate(lead.challansAt)}{lead.challansBy ? ` · ${lead.challansBy}` : ''}</div>
+              {lead.challans.length > 0 && (() => {
+                const n = {};
+                lead.challans.forEach((c) => { const x = challanState(c) || '?'; n[x] = (n[x] || 0) + 1; });
+                const keys = Object.keys(n);
+                if (chSt && !n[chSt]) keys.push(chSt);
+                return (
+                  <div className="ch-states" role="group" aria-label="Filter challans by state">
+                    {[['', lead.challans.length], ...keys.map((k) => [k, n[k] || 0])].map(([k, c]) => (
+                      <button key={k || 'all'} type="button" aria-pressed={chSt === k} onClick={() => setChSt(k)}>
+                        {k === '' ? 'All states' : k === '?' ? 'Other' : STATES[k]} <span className="n">{c}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
               {lead.challans.length ? (
                 <div className="ch-list">
-                  {lead.challans.map((c, i) => (
+                  {lead.challans.map((c, i) => (chSt && (challanState(c) || '?') !== chSt ? null :
                     <div className={'ch' + (c.approved ? ' ok' : '')} key={c.challanNo || i}>
                       <div className="ch-top"><span className="no">{c.challanNo || '—'}</span><b>{c.amount ? `₹${c.amount.toLocaleString('en-IN')}` : ''}</b></div>
                       {c.offence && <div>{c.offence}</div>}
@@ -287,6 +303,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                       <label className="appr-box"><input type="checkbox" checked={!!c.approved} disabled={busy} onChange={() => toggleApproved(i)} /> Customer approved</label>
                     </div>
                   ))}
+                  {chSt && !lead.challans.some((c) => (challanState(c) || '?') === chSt) && <div className="small">No challans from {STATES[chSt] || 'this state'} on this lead.</div>}
                 </div>
               ) : <div className="small">No challans found for this vehicle.</div>}
               {approvedOf(lead).length > 0 && (
@@ -916,7 +933,7 @@ export default function Admin() {
         </div>
         </>)}
       </main>
-      {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans}
+      {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
     </>
   );

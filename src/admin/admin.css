@@ -177,6 +177,10 @@ tbody tr.sel { background: var(--row-sel); }
 .steps-box code { font-family: var(--mono); font-size: 13px; background: #F4F1EA; border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; }
 .challans { display: flex; flex-direction: column; gap: 6px; }
 .challans .sec-k { margin-bottom: 0; }
+.ch-states { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.ch-states button { border: 1px solid #D6D2C9; background: #fff; border-radius: 999px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
+.ch-states button[aria-pressed="true"] { background: #1B2A4A; border-color: #1B2A4A; color: #fff; }
+.ch-states .n { opacity: .7; margin-left: 2px; }
 .ch-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; max-height: 360px; overflow: auto; }
 .ch { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: #FAF9F6; font-size: 14px; line-height: 1.45; }
 .ch-top { display: flex; justify-content: space-between; gap: 10px; }
