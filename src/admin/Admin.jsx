@@ -59,7 +59,14 @@ const leadStates = (l) => {
   return [...set];
 };
 // Pre-written message asking the customer to approve, in writing, the challans they agreed to on the call.
-function approvalMessage(l) {
+// Next Lok Adalat for the customer's city, else the soonest one anywhere (dates arrive already filtered to upcoming).
+function lokFor(l, dates) {
+  const list = dates || [];
+  return list.find((d) => d.city === l.city) || list[0] || null;
+}
+function approvalMessage(l, dates) {
+  const lok = lokFor(l, dates);
+  const lokLine = lok ? `Next Lok Adalat: *${new Date(`${lok.date}T${lok.time || '10:00'}:00+05:30`).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}* at ${CITY_COURT[lok.city] || CITY[lok.city] || lok.city}. We will settle the approved challans there, so please reply before then.` : '';
   const all = l.challans || [];
   const ok = all.filter((c) => c.approved), rest = all.filter((c) => !c.approved);
   const line = (c, i) => `${i + 1}. Challan ${c.challanNo || '-'}${c.date ? ` (${c.date})` : ''}${c.offence ? ` - ${String(c.offence).slice(0, 70)}` : ''} - ${inr(c.amount || 0)}`;
@@ -75,6 +82,7 @@ function approvalMessage(l) {
     `Amount you pay (${feeRate(l)}%): *${inr(payable(l))}*`,
     ...(rest.length ? ['', `*Remaining challans, not included (${rest.length})*`, ...rest.map(line), `Remaining amount: ${inr(restTotal)}`,
       'These stay pending on your vehicle. Tell us if you want us to settle these too.'] : []),
+    ...(lokLine ? ['', lokLine] : []),
     '',
     `Please reply *I APPROVE* to give your written approval for Niptao to settle the ${ok.length} challan${ok.length === 1 ? '' : 's'} listed under "Challans we will settle for you" for ${inr(payable(l))}.`,
     '',
@@ -223,7 +231,7 @@ function ChallanEditor({ lead, onSave, onCancel }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState }) {
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates }) {
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
@@ -349,7 +357,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                 </div>
               )}
               {approvedOf(lead).length > 0 && (() => {
-                const w = lead.waApproval, stale = waStale(lead), msg = approvalMessage(lead);
+                const w = lead.waApproval, stale = waStale(lead), msg = approvalMessage(lead, lokDates);
                 const link = `https://wa.me/91${lead.phone}?text=${encodeURIComponent(msg)}`;
                 const send = () => patch({ waApproval: 'sent', note: `Sent approval request on WhatsApp: ${approvedOf(lead).length} challan${approvedOf(lead).length === 1 ? '' : 's'}, ${inr(payable(lead))} payable (${feeRate(lead)}%).` });
                 return (
@@ -989,7 +997,7 @@ export default function Admin() {
         </div>
         </>)}
       </main>
-      {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st}
+      {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st} lokDates={site?.lokAdalatDates}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
     </>
   );
