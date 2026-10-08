@@ -12,7 +12,12 @@ OTP yourself**; the add-on never reads or fills those boxes.
 4. Click **Load unpacked** and choose the `niptao-lead-filler` folder.
 5. Click the puzzle-piece icon next to the address bar and pin **Niptao Lead Filler**.
 
-## Use it
+## Parivahan in one click
+
+In the admin panel, open a lead and click **Open Parivahan e-Challan**. Parivahan opens with
+"Vehicle Number" picked and the plate already filled. Type the captcha and continue.
+
+## Use it on any other page
 
 1. Click the green **N** icon and log in with your admin username and password
    (staff see only their own leads).
