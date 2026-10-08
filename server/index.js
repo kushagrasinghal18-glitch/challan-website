@@ -16,7 +16,7 @@ if (tp) app.set('trust proxy', tp === 'true' ? true : /^\d+$/.test(tp) ? Number(
 const jsonSmall = express.json({ limit: '20kb' }), jsonBig = express.json({ limit: '300kb' });
 // The WhatsApp webhook keeps the raw body so Meta's signature can be checked.
 const jsonWebhook = express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } });
-app.use((req, res, next) => (req.path === '/api/whatsapp/webhook' ? jsonWebhook : req.path.endsWith('/challans') ? jsonBig : jsonSmall)(req, res, next));
+app.use((req, res, next) => (req.path === '/api/whatsapp/webhook' ? jsonWebhook : req.path.endsWith('/challans') || req.path === '/api/admin/whatsapp-web' ? jsonBig : jsonSmall)(req, res, next));
 
 const PHONE_RE = /^[6-9]\d{9}$/;
 const CITY_CODES = { noida: 'GBN', ghaziabad: 'GZB', delhi: 'DEL', gurugram: 'GGN' };
@@ -416,11 +416,15 @@ let waQueue = Promise.resolve();
 
 // Incoming message → find the customer's lead by mobile (or a lead for a new vehicle number in the
 // text), keep the message on it, and mark "I APPROVE" replies. Unknown numbers become new leads.
-export async function handleWhatsApp({ messages = [], statuses = [] }) {
+// opts.by: who captured it (WhatsApp Web add-on); opts.assign: { id, name } for leads it starts.
+export async function handleWhatsApp({ messages = [], statuses = [] }, opts = {}) {
+  const touched = new Set();
   for (const m of messages) {
     const phone = localPhone(m.from);
     if (!phone) continue;
+    const out = m.dir === 'out';
     const mine = (await listLeads()).filter((l) => l.phone === phone);
+    if (out && !mine.length) continue; // our own messages never start a lead
     const plateIn = (m.text.toUpperCase().replace(/[^A-Z0-9]/g, ' ').match(/\b[A-Z]{2}\s?\d{1,2}\s?[A-Z]{0,3}\s?\d{4}\b/) || [])[0];
     const plate = plateIn ? normalizePlate(plateIn) : '';
     let lead = (plate && mine.find((l) => l.plate === plate)) || (!plate && mine[0]) || null;
@@ -429,19 +433,23 @@ export async function handleWhatsApp({ messages = [], statuses = [] }) {
       const blank = plate && mine.find((l) => !l.plate && l.source === 'WhatsApp');
       if (blank) lead = await updateLead(blank.ref, { plate, note: `Vehicle ${plate} received on WhatsApp.` }, 'WhatsApp');
     }
+    if (!lead && out) lead = mine[0];
     if (!lead) {
-      const base = await autoAssign({
+      const fields = {
         createdAt: m.at, city: mine[0]?.city || 'noida', name: (m.name || mine[0]?.name || 'WhatsApp customer').slice(0, 120), plate: PLATE_RE.test(plate) ? plate : '',
         phone, lang: /[\u0900-\u097F]/.test(m.text) ? 'hi' : 'en', status: 'New', agent: '', agentId: '', notes: [], source: 'WhatsApp',
         ...(mine[0]?.groupRef ? { groupRef: mine[0].groupRef } : {}),
-      });
+      };
+      const base = opts.assign ? { ...fields, agent: opts.assign.name, agentId: opts.assign.id } : await autoAssign(fields);
       const ref = await saveNewLead(CITY_CODES[base.city] || 'GBN', base);
       lead = { ref };
     }
-    await updateLead(lead.ref, { waMsg: { id: m.id, dir: 'in', text: m.text, at: m.at, by: m.name || 'Customer' } }, 'WhatsApp');
-    if (saysApprove(m.text)) {
+    touched.add(lead.ref);
+    await updateLead(lead.ref, { waMsg: { id: m.id, dir: out ? 'out' : 'in', text: m.text, at: m.at, by: out ? (opts.by || 'Team') : (m.name || 'Customer'), ...(out ? { status: 'sent' } : {}), ...(opts.by ? { seen: true } : {}) } }, opts.by || 'WhatsApp');
+    if (!out && saysApprove(m.text)) {
       for (const l of mine.filter((x) => x.waApproval?.state === 'sent')) {
         await updateLead(l.ref, { waApproval: 'received', note: `Customer replied on WhatsApp: "${m.text.slice(0, 200)}"` }, 'WhatsApp');
+        touched.add(l.ref);
       }
     }
   }
@@ -452,7 +460,35 @@ export async function handleWhatsApp({ messages = [], statuses = [] }) {
       if (l) await updateLead(l.ref, { waStatus: st }, 'WhatsApp');
     }
   }
+  return [...touched];
 }
+
+// WhatsApp Web add-on: a team member opens a chat and presses "Save chat to Niptao". The visible
+// messages come here; new customers become leads assigned to whoever saved them (staff) or the
+// usual auto-assign (admins). Same matching and "I APPROVE" handling as the API webhook.
+app.post('/api/admin/whatsapp-web', requireUser, limit(120, 60_000), async (req, res) => {
+  const b = req.body || {};
+  const phone = localPhone(String(b.phone || '').replace(/\D/g, '').replace(/^0/, ''));
+  if (!phone || !PHONE_RE.test(phone)) return res.status(400).json({ error: 'invalid_phone' });
+  const messages = (Array.isArray(b.messages) ? b.messages : []).slice(-60).map((m) => ({
+    id: 'web:' + String(m.id || '').slice(0, 120), from: '91' + phone, name: String(b.name || '').slice(0, 120), dir: m.dir === 'out' ? 'out' : 'in',
+    text: String(m.text || '').slice(0, 4000), at: !isNaN(new Date(m.at)) ? new Date(m.at).toISOString() : new Date().toISOString(),
+  })).filter((m) => m.id !== 'web:' && m.text);
+  if (!messages.length && b.create !== true) return res.status(400).json({ error: 'no_messages' });
+  // "Add as lead" with nothing to save still needs one line so the lead is created.
+  if (!messages.length) messages.push({ id: `web:start:${phone}:${Date.now()}`, from: '91' + phone, name: String(b.name || '').slice(0, 120), dir: 'in', text: '[Lead added from WhatsApp Web]', at: new Date().toISOString() });
+  try {
+    const assign = req.user.role === 'admin' ? null : { id: req.user.uid, name: req.user.name };
+    const run = waQueue.then(() => handleWhatsApp({ messages }, { by: req.user.name, assign }));
+    waQueue = run.catch(() => {});
+    await run;
+    const leads = (await listLeads()).filter((l) => l.phone === phone && (req.user.role === 'admin' || l.agentId === req.user.uid));
+    res.json({ leads: leads.map((l) => ({ ref: l.ref, name: l.name, plate: l.plate, status: l.status, agent: l.agent, waApproval: l.waApproval?.state || '' })) });
+  } catch (err) {
+    console.error('[whatsapp-web] save failed', err.message);
+    res.status(500).json({ error: 'storage_unavailable' });
+  }
+});
 
 // Send from the admin panel through the API. Free text only inside the 24-hour window that opens
 // when the customer last wrote; outside it, only the approved approval template can be sent.

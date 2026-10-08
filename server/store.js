@@ -162,7 +162,7 @@ export function updateLead(ref, patch, by, onlyFor) {
     if (patch.waMsg) {
       if ((lead.waChat || []).some((m) => m.id && m.id === patch.waMsg.id)) return {}; // Meta can resend a webhook
       out.waChat = [...(lead.waChat || []), patch.waMsg].slice(-200);
-      if (patch.waMsg.dir === 'in') { out.waLastIn = patch.waMsg.at; out.waUnread = (lead.waUnread || 0) + 1; }
+      if (patch.waMsg.dir === 'in') { out.waLastIn = patch.waMsg.at; if (!patch.waMsg.seen) out.waUnread = (lead.waUnread || 0) + 1; }
     }
     if (patch.waStatus && Array.isArray(lead.waChat)) {
       const rank = { sent: 1, delivered: 2, read: 3, failed: 4 };
