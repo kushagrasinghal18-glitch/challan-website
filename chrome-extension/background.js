@@ -24,14 +24,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 // Parivahan's page asks us to save the challans it found onto the lead in the admin panel.
-const SITE = 'https://niptao-challan-site.onrender.com';
+const DEFAULT_SITE = 'https://www.niptao.co.in';
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg?.type !== 'saveChallans') return;
   (async () => {
     const { auth } = await chrome.storage.local.get('auth');
     if (!auth?.token) return reply({ ok: false, error: 'login' });
     try {
-      const res = await fetch(`${SITE}/api/admin/leads/${encodeURIComponent(msg.ref)}/challans`, {
+      const res = await fetch(`${auth.origin || DEFAULT_SITE}/api/admin/leads/${encodeURIComponent(msg.ref)}/challans`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
         body: JSON.stringify({ source: 'Parivahan', challans: msg.challans }),

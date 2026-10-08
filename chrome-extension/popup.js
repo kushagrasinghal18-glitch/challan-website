@@ -1,6 +1,6 @@
 import { fillPage } from './fill.js';
 
-const SITE = 'https://niptao-challan-site.onrender.com';
+const DEFAULT_SITE = 'https://www.niptao.co.in';
 const $ = (id) => document.getElementById(id);
 const store = chrome.storage.local;
 
@@ -8,7 +8,7 @@ let auth = null; // { token, user }
 let leads = [];
 
 async function api(path, opts = {}) {
-  const res = await fetch(SITE + path, {
+  const res = await fetch((auth?.origin || DEFAULT_SITE) + path, {
     ...opts,
     headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth.token}` } : {}) },
   });
@@ -38,6 +38,7 @@ $('login').addEventListener('submit', async (e) => {
       method: 'POST',
       body: JSON.stringify({ username: $('username').value, password: $('password').value }),
     });
+    auth.origin = DEFAULT_SITE;
     await store.set({ auth });
     $('password').value = '';
     await loadLeads();

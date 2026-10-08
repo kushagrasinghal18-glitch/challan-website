@@ -7,7 +7,7 @@ document.addEventListener('click', (e) => {
   const save = { pendingPlate: { plate: el.dataset.niptaoPlate, ref: el.dataset.niptaoRef || '', at: Date.now() } };
   try {
     const login = JSON.parse(localStorage.getItem('niptao-admin'));
-    if (login?.token) save.auth = { token: login.token, user: login.user };
+    if (login?.token) save.auth = { token: login.token, user: login.user, origin: location.origin };
   } catch { /* not logged in here */ }
   chrome.storage.local.set(save);
 }, true);
