@@ -60,19 +60,23 @@ const leadStates = (l) => {
 };
 // Pre-written message asking the customer to approve, in writing, the challans they agreed to on the call.
 function approvalMessage(l) {
-  const ok = approvedOf(l);
-  const lines = ok.map((c, i) => `${i + 1}. Challan ${c.challanNo || '-'}${c.date ? ` (${c.date})` : ''}${c.offence ? ` - ${String(c.offence).slice(0, 70)}` : ''} - ${inr(c.amount || 0)}`);
+  const all = l.challans || [];
+  const ok = all.filter((c) => c.approved), rest = all.filter((c) => !c.approved);
+  const line = (c, i) => `${i + 1}. Challan ${c.challanNo || '-'}${c.date ? ` (${c.date})` : ''}${c.offence ? ` - ${String(c.offence).slice(0, 70)}` : ''} - ${inr(c.amount || 0)}`;
+  const restTotal = rest.reduce((n, c) => n + (c.amount || 0), 0);
   return [
     `Hi ${l.name},`,
     '',
-    `This is Niptao. As discussed on the call, you have asked us to settle these challans on your vehicle ${fmtPlate(l.plate)}:`,
+    `This is Niptao. Your vehicle ${fmtPlate(l.plate)} has ${all.length} challan${all.length === 1 ? '' : 's'} totalling ${inr(challanTotal(l))}.`,
     '',
-    ...lines,
-    '',
-    `Total challan amount: ${inr(approvedTotal(l))}`,
+    `*Challans we will settle for you (${ok.length})*`,
+    ...ok.map(line),
+    `Challan amount: ${inr(approvedTotal(l))}`,
     `Amount you pay (${feeRate(l)}%): *${inr(payable(l))}*`,
+    ...(rest.length ? ['', `*Remaining challans, not included (${rest.length})*`, ...rest.map(line), `Remaining amount: ${inr(restTotal)}`,
+      'These stay pending on your vehicle. Tell us if you want us to settle these too.'] : []),
     '',
-    'Please reply *I APPROVE* to give your written approval for Niptao to settle the challans listed above for this amount.',
+    `Please reply *I APPROVE* to give your written approval for Niptao to settle the ${ok.length} challan${ok.length === 1 ? '' : 's'} listed under "Challans we will settle for you" for ${inr(payable(l))}.`,
     '',
     `Reference: ${l.ref}`,
     'Team Niptao',
