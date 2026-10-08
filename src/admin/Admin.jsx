@@ -12,7 +12,7 @@ const POLL_MS = 15_000;
 // Official e-challan site: search by vehicle number + captcha, no OTP.
 // Niptao Lead Filler Chrome add-on, served from public/. Replace the zip and bump this on each release.
 const ADDON_ZIP = '/niptao-lead-filler.zip';
-const ADDON_VERSION = '1.4.0';
+const ADDON_VERSION = '1.4.1';
 // Park+ challan check (search by vehicle number). Used until a paid challan API is switched on.
 const PARKPLUS_URL = 'https://parkplus.io/e-challan';
 const PARIVAHAN_URL = 'https://echallan.parivahan.gov.in/index/accused-challan';
@@ -786,8 +786,8 @@ function Addon() {
         <ol>
           <li>Open this admin panel once and sign in, so the add-on knows who you are.</li>
           <li>On <b>web.whatsapp.com</b>, open a customer's chat. A <b>Niptao</b> box appears at the top right.</li>
-          <li>Press <b>Save chat to Niptao</b> to save the messages on screen to the customer's lead (a new customer becomes a lead assigned to you), or <b>Add as lead</b> to only create the lead. If the number box is empty, type the customer's number.</li>
-          <li>When the customer replies <b>I APPROVE</b>, press Save chat again. The lead is marked approved by itself. Nothing is ever sent from the add-on.</li>
+          <li>Press <b>Save chat to Niptao</b> to save the messages on screen to the customer's lead (a new customer becomes a lead assigned to you), or <b>Add as lead</b> to only create the lead. If the number box is empty, type it once (or click the chat name at the top so WhatsApp shows it); it's remembered.</li>
+          <li>When the customer replies <b>I APPROVE</b> in the open chat, it is saved once by itself and the lead is marked approved. Nothing is ever sent on WhatsApp by the add-on.</li>
         </ol>
         <div className="sec-k">Update to a new version</div>
         <ol>
