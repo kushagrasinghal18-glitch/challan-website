@@ -11,7 +11,7 @@ const POLL_MS = 15_000;
 // Official e-challan site: search by vehicle number + captcha, no OTP.
 // Niptao Lead Filler Chrome add-on, served from public/. Replace the zip and bump this on each release.
 const ADDON_ZIP = '/niptao-lead-filler.zip';
-const ADDON_VERSION = '1.1.0';
+const ADDON_VERSION = '1.2.0';
 const PARIVAHAN_URL = 'https://echallan.parivahan.gov.in/index/accused-challan';
 
 // Saved sign-in is { token, user: { uid, name, role } }; anything older is dropped.
@@ -428,7 +428,7 @@ function Addon() {
   return (
     <section className="panel pad" id="addon">
       <h2>Chrome add-on: Niptao Lead Filler</h2>
-      <p className="hint">Fills the vehicle number on Parivahan when you click <b>Open Parivahan e-Challan</b> on a lead, and fills lead details into forms. You always type the captcha and OTP yourself. Works in Chrome or Edge on a computer, not on phones. Install it on every computer your team uses.</p>
+      <p className="hint">Fills the vehicle number on Parivahan when you click <b>Open Parivahan e-Challan</b> on a lead, then saves the challans it finds back to that lead. You always type the captcha and OTP yourself. Works in Chrome or Edge on a computer, not on phones. Install it on every computer your team uses.</p>
       <div><a className="btn primary dl" href={ADDON_ZIP} download>Download add-on (version {ADDON_VERSION})</a></div>
       <div className="steps-box">
         <div className="sec-k">Install (once per computer)</div>
@@ -437,12 +437,12 @@ function Addon() {
           <li>In Chrome's address bar type <code>chrome://extensions</code> and press Enter (in Edge: <code>edge://extensions</code>).</li>
           <li>Turn on <b>Developer mode</b> (switch at the top right).</li>
           <li>Click <b>Load unpacked</b> and choose the <code>niptao-lead-filler</code> folder.</li>
-          <li>Click the puzzle-piece icon next to the address bar and pin <b>Niptao Lead Filler</b>. Click its icon once and sign in with your admin username and password.</li>
+          <li>Click the puzzle-piece icon next to the address bar and pin <b>Niptao Lead Filler</b>. Then sign in to this admin panel in the same Chrome. The add-on uses that sign-in, so there's nothing else to log in to.</li>
         </ol>
         <div className="sec-k">Use it</div>
         <ol>
           <li>Open a lead here and click <b>Open Parivahan e-Challan</b>. The vehicle number is filled in for you.</li>
-          <li>Type the captcha and press Get Detail.</li>
+          <li>Type the captcha and press Get Detail. The challans are saved to the lead automatically (a small box says "Saved N challans") and show up here within 15 seconds.</li>
           <li>If a box isn't filled, click the add-on icon and press <b>Fill this page</b>, or right-click the box and pick <b>Niptao: fill vehicle number</b>.</li>
         </ol>
         <div className="sec-k">Update to a new version</div>
