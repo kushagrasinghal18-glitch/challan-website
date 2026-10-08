@@ -148,10 +148,10 @@ function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch }) {
           <div className="challan-check">
             <div className="sec-k">Check challans</div>
             <div className="cc-row">
-              <a className="btn primary" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate}>Open Parivahan e-Challan ↗</a>
+              <a className="btn primary" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate}>Open Parivahan e-Challan ↗</a>
               <button className="btn" onClick={copyPlate}>{copied ? 'Copied ✓' : `Copy ${fmtPlate(lead.plate)}`}</button>
             </div>
-            <p className="hint">The vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed.</p>
+            <p className="hint">The vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the Niptao Lead Filler add-on in Chrome, the number is filled in for you.</p>
           </div>
 
           <div>
