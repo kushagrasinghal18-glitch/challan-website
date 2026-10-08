@@ -33,6 +33,8 @@ function ago(iso) {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 const challanTotal = (l) => (l.challans || []).reduce((n, c) => n + (c.amount || 0), 0);
+const approvedOf = (l) => (l.challans || []).filter((c) => c.approved);
+const approvedTotal = (l) => approvedOf(l).reduce((n, c) => n + (c.amount || 0), 0);
 const fullDate = (iso) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 function Logo() {
@@ -167,12 +169,18 @@ function ChallanEditor({ lead, onSave, onCancel }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch, onSaveChallans }) {
+function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch, onSaveChallans, askApproval, onAsked }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   useEffect(() => { setDraft(''); setCopied(false); setEditing(false); }, [lead.ref]);
+  const approvalRef = useRef(null);
+  useEffect(() => { if (askApproval) approvalRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [askApproval, lead.ref]);
+  const toggleApproved = (i) => {
+    const now = (lead.challans || []).map((c, j) => (j === i ? !c.approved : !!c.approved));
+    patch({ approved: now.flatMap((on, j) => (on ? [j] : [])) });
+  };
   useEffect(() => {
     const k = (e) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', k);
@@ -227,6 +235,14 @@ function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch, onSaveChalla
             <p className="hint"><b>Parivahan:</b> the vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
           </div>
 
+          {askApproval && (
+            <div className="ask" ref={approvalRef} role="status">
+              <b>Customer contacted.</b> {lead.challans?.length
+                ? 'Tick the challans the customer approved for settlement below.'
+                : 'First add the challans (Open Park+, then + Add challan details), then tick the ones the customer approved.'}
+              <button className="btn" onClick={() => onAsked(false)}>Done</button>
+            </div>
+          )}
           {editing ? (
             <ChallanEditor lead={lead} onCancel={() => setEditing(false)}
               onSave={async (list, source) => { if (await onSaveChallans(lead.ref, list, source)) setEditing(false); }} />
@@ -234,16 +250,18 @@ function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch, onSaveChalla
             <button className="btn" onClick={() => setEditing(true)}>+ Add challan details</button>
           ) : (
             <div className="challans">
-              <div className="ch-head"><div className="sec-k">Challans · {lead.challans.length} · ₹{challanTotal(lead).toLocaleString('en-IN')}</div>
+              <div className="ch-head"><div className="sec-k">Challans · {lead.challans.length} · ₹{challanTotal(lead).toLocaleString('en-IN')}
+                {approvedOf(lead).length > 0 && <span className="appr"> · Approved {approvedOf(lead).length} · ₹{approvedTotal(lead).toLocaleString('en-IN')}</span>}</div>
                 <button className="btn ghost edit" onClick={() => setEditing(true)}>Edit</button></div>
               <div className="small">From {lead.challansSource || 'Parivahan'} · {fullDate(lead.challansAt)}{lead.challansBy ? ` · ${lead.challansBy}` : ''}</div>
               {lead.challans.length ? (
                 <div className="ch-list">
                   {lead.challans.map((c, i) => (
-                    <div className="ch" key={c.challanNo || i}>
+                    <div className={'ch' + (c.approved ? ' ok' : '')} key={c.challanNo || i}>
                       <div className="ch-top"><span className="no">{c.challanNo || '—'}</span><b>{c.amount ? `₹${c.amount.toLocaleString('en-IN')}` : ''}</b></div>
                       {c.offence && <div>{c.offence}</div>}
                       <div className="small">{[c.date, c.location, c.status].filter(Boolean).join(' · ')}</div>
+                      <label className="appr-box"><input type="checkbox" checked={!!c.approved} disabled={busy} onChange={() => toggleApproved(i)} /> Customer approved</label>
                     </div>
                   ))}
                 </div>
@@ -256,7 +274,7 @@ function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch, onSaveChalla
             <div className="status-btns">
               {statuses.map((s) => {
                 const on = lead.status === s, [, fg] = STATUS_COLORS[s];
-                return <button key={s} disabled={busy} onClick={() => !on && patch({ status: s })}
+                return <button key={s} disabled={busy} onClick={() => { if (on) return; patch({ status: s }); if (s === 'Contacted') onAsked(true); }}
                   style={on ? { background: fg, borderColor: fg, color: '#fff' } : undefined} aria-pressed={on}>{s}</button>;
               })}
             </div>
@@ -536,6 +554,7 @@ function toCsv(leads) {
   const cols = [['Reference', 'ref'], ['Received', (l) => fullDate(l.createdAt)], ['Name', 'name'], ['Vehicle', (l) => fmtPlate(l.plate)],
     ['Mobile', 'phone'], ['City', (l) => CITY[l.city] || l.city], ['Status', 'status'], ['Assigned to', 'agent'],
     ['Challans', (l) => (l.challans ? l.challans.length : '')], ['Challan total (₹)', (l) => (l.challans ? challanTotal(l) : '')],
+    ['Approved challans', (l) => (l.challans ? approvedOf(l).map((c) => c.challanNo).join(' ') : '')], ['Approved total (₹)', (l) => (l.challans ? approvedTotal(l) : '')],
     ['Latest note', (l) => l.notes?.[0]?.text || '']];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   return [cols.map((c) => esc(c[0])).join(','), ...leads.map((l) => cols.map(([, f]) => esc(typeof f === 'function' ? f(l) : l[f])).join(','))].join('\n');
@@ -633,6 +652,13 @@ export default function Admin() {
       else if (e.message === 'not_your_lead') { setErr('That lead is no longer assigned to you.'); setSel(null); load(); }
       else setErr('That change was not saved. Try again.');
     }
+  };
+
+  // After "Contacted", open the lead and ask which challans the customer approved.
+  const [ask, setAsk] = useState(null);
+  const changeStatus = async (ref, status) => {
+    await onPatch(ref, { status });
+    if (status === 'Contacted') { setSel(ref); setAsk(ref); }
   };
 
   const onSaveChallans = async (ref, challans, source) => {
@@ -746,11 +772,17 @@ export default function Admin() {
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.ref} className={(sel === l.ref ? 'sel' : '') + (fresh.includes(l.ref) ? ' fresh' : '')} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}</div></td>
+                    <td><div className="name">{l.name}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{approvedOf(l).length ? ` · approved ₹${approvedTotal(l).toLocaleString('en-IN')}` : ''}</div></td>
                     <td><span className="plate">{fmtPlate(l.plate)}</span></td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>
-                    <td><Pill status={l.status} /></td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <select className="status-sel" aria-label={`Status of ${l.name}`} value={l.status}
+                        style={{ background: (STATUS_COLORS[l.status] || STATUS_COLORS.New)[0], color: (STATUS_COLORS[l.status] || STATUS_COLORS.New)[1] }}
+                        onChange={(e) => changeStatus(l.ref, e.target.value)}>
+                        {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </td>
                     <td title={fullDate(l.createdAt)}>{ago(l.createdAt)}</td>
                   </tr>
                 ))}
@@ -763,7 +795,8 @@ export default function Admin() {
         </div>
         </>)}
       </main>
-      {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} staff={staff} onClose={() => setSel(null)} onPatch={onPatch} onSaveChallans={onSaveChallans} />}
+      {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} staff={staff} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans}
+        askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
     </>
   );
 }

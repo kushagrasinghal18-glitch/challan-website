@@ -127,6 +127,13 @@ export function updateLead(ref, patch, by, onlyFor) {
     const out = {};
     if (STATUSES.includes(patch.status)) out.status = patch.status;
     if (patch.assign) { out.agentId = patch.assign.id; out.agent = patch.assign.name; }
+    // approved: indexes into lead.challans that the customer agreed to settle.
+    if (Array.isArray(patch.approved) && Array.isArray(lead.challans)) {
+      const pick = new Set(patch.approved.filter(Number.isInteger));
+      out.challans = lead.challans.map((c, i) => ({ ...c, approved: pick.has(i) }));
+      out.approvedAt = new Date().toISOString();
+      out.approvedBy = by;
+    }
     if (Array.isArray(patch.challans)) {
       out.challans = patch.challans;
       out.challansAt = new Date().toISOString();

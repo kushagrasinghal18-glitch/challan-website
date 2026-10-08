@@ -256,7 +256,7 @@ app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
   if (!Array.isArray(list) || list.length > 300) return res.status(400).json({ error: 'invalid_challans' });
   const challans = list.map((c) => ({
     challanNo: clip(c?.challanNo, 60), date: clip(c?.date, 40), offence: clip(c?.offence, 300),
-    location: clip(c?.location, 200), status: clip(c?.status, 80),
+    location: clip(c?.location, 200), status: clip(c?.status, 80), approved: c?.approved === true,
     amount: Math.max(0, Math.round(Number(String(c?.amount ?? '').replace(/[^\d.]/g, '')) || 0)),
   })).filter((c) => c.challanNo || c.offence || c.amount);
   const total = challans.reduce((n, c) => n + c.amount, 0);
@@ -276,7 +276,7 @@ app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
 // Leads: anyone can change status and add notes on leads they can see; only admins reassign.
 app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
   const b = req.body || {};
-  const patch = { status: b.status, note: b.note };
+  const patch = { status: b.status, note: b.note, approved: Array.isArray(b.approved) ? b.approved.slice(0, 300) : undefined };
   try {
     if (b.assignTo !== undefined) {
       if (req.user.role !== 'admin') return res.status(403).json({ error: 'admins_only' });

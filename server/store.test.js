@@ -59,3 +59,10 @@ test('challans are saved on the lead with who fetched them', async () => {
   assert.ok(l.challansAt);
   assert.equal(l.notes[0].text, 'Fetched 1 challan');
 });
+
+test('customer-approved challans are marked on the lead', async () => {
+  await updateLead('GBN-1', { challans: [{ challanNo: 'A', amount: 500 }, { challanNo: 'B', amount: 1000 }] }, 'Priya');
+  const l = await updateLead('GBN-1', { approved: [1, 'x', 7] }, 'Priya');
+  assert.deepEqual(l.challans.map((c) => c.approved), [false, true]);
+  assert.equal(l.approvedBy, 'Priya');
+});
