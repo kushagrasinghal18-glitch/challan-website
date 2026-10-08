@@ -231,13 +231,26 @@ function ChallanEditor({ lead, onSave, onCancel }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen }) {
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend }) {
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
-  useEffect(() => { setDraft(''); setCopied(false); setEditing(false); setChSt(listState || ''); }, [lead.ref, listState]);
+  const [waDraft, setWaDraft] = useState('');
+  const [waErr, setWaErr] = useState('');
+  const [plateIn, setPlateIn] = useState('');
+  useEffect(() => { setDraft(''); setCopied(false); setEditing(false); setChSt(listState || ''); setWaDraft(''); setWaErr(''); setPlateIn(''); }, [lead.ref, listState]);
+  // Opening a lead clears its "new WhatsApp reply" badge.
+  useEffect(() => { if (lead.waUnread) onPatch(lead.ref, { waRead: true }); }, [lead.ref, lead.waUnread]); // eslint-disable-line react-hooks/exhaustive-deps
+  const waOpen = !!lead.waLastIn && Date.now() - new Date(lead.waLastIn) < 24 * 3600e3;
+  const WA_ERR = { window_closed: 'The customer has not messaged in the last 24 hours, so WhatsApp only allows the approval template. Use "Open in WhatsApp" instead, or ask an admin to add the template.',
+    whatsapp_not_set_up: 'WhatsApp is not connected yet.', not_your_lead: 'This lead is no longer assigned to you.' };
+  const waSend = async (body) => {
+    setBusy(true); setWaErr('');
+    try { const e = await onWaSend(lead.ref, body); if (e) setWaErr(WA_ERR[e] || 'WhatsApp did not send it. Try again, or use "Open in WhatsApp".'); return !e; }
+    finally { setBusy(false); }
+  };
   const approvalRef = useRef(null);
   useEffect(() => { if (askApproval) approvalRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [askApproval, lead.ref]);
   const toggleApproved = (i) => {
@@ -288,6 +301,40 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                 ))}
               </div>
               {siblings.length + 1 < (lead.vehicles || 0) && <div className="small">{lead.vehicles - siblings.length - 1} more vehicle(s) from this request are assigned to someone else or were deleted.</div>}
+            </div>
+          )}
+
+          {!lead.plate && (
+            <div className="add-plate">
+              <div className="sec-k">Vehicle number</div>
+              <div className="small">This lead came from WhatsApp without a vehicle number. Ask the customer and add it here.</div>
+              <form className="cc-row" onSubmit={(e) => { e.preventDefault(); if (plateIn.trim()) patch({ plate: plateIn, note: `Vehicle number ${plateIn.toUpperCase()} added.` }); }}>
+                <input className="plate-input" value={plateIn} onChange={(e) => setPlateIn(e.target.value.toUpperCase())} placeholder="UP16AB1234" aria-label="Vehicle number" />
+                <button className="btn primary" disabled={busy || !plateIn.trim()}>Save</button>
+              </form>
+            </div>
+          )}
+
+          {(waApi || lead.waChat?.length > 0) && (
+            <div className="wa-chat">
+              <div className="sec-k">WhatsApp chat{lead.source === 'WhatsApp' ? ' · lead came from WhatsApp' : ''}</div>
+              {lead.waChat?.length ? (
+                <div className="wa-msgs">
+                  {lead.waChat.slice(-50).map((m, i) => (
+                    <div key={m.id || i} className={'wa-bub ' + m.dir}>
+                      <div className="t">{m.text}</div>
+                      <div className="m">{m.dir === 'out' ? `${m.by} · ` : ''}{fullDate(m.at)}{m.dir === 'out' && m.status ? ` · ${m.status === 'read' ? '✓✓ read' : m.status === 'delivered' ? '✓✓ delivered' : m.status === 'failed' ? `failed${m.error ? `: ${m.error}` : ''}` : '✓ sent'}` : ''}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="small">No WhatsApp messages with this customer yet.</div>}
+              {waApi && (waOpen ? (
+                <form className="wa-reply" onSubmit={async (e) => { e.preventDefault(); if (waDraft.trim() && await waSend({ text: waDraft })) setWaDraft(''); }}>
+                  <textarea rows={2} value={waDraft} onChange={(e) => setWaDraft(e.target.value)} placeholder="Reply on WhatsApp" aria-label="WhatsApp reply" />
+                  <button className="btn wa-btn" disabled={busy || !waDraft.trim()}>Send</button>
+                </form>
+              ) : <div className="small">You can reply here for 24 hours after the customer's last message. Until they write again, use "Open in WhatsApp" or the approval request below.</div>)}
+              {waErr && <div className="stale">{waErr}</div>}
             </div>
           )}
 
@@ -379,11 +426,18 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                     {!w ? <div className="small">Send the customer the approved challans and amount, and ask them to reply "I APPROVE".</div>
                       : w.state === 'received' ? <div className="ok-line">✓ Customer approved in writing{stale ? ' (the earlier list)' : ''} · marked by {w.receivedBy} · {fullDate(w.receivedAt)}</div>
                       : <div className="small">Sent by {w.sentBy} · {fullDate(w.sentAt)}. Waiting for the customer to reply "I APPROVE".</div>}
+                    {waErr && !lead.waChat?.length && <div className="stale">{waErr}</div>}
+                    {waApi && w?.state === 'sent' && !stale && <div className="small">When the customer replies "I APPROVE" on WhatsApp, this is marked automatically.</div>}
                     {stale && <div className="stale">The approved challans or amount changed after the message was sent. Send it again.</div>}
                     <div className="cc-row">
-                      <a className={'btn ' + (!w || stale ? 'wa-btn' : '')} href={link} target="_blank" rel="noopener noreferrer"
+                      {waApi && (
+                        <button className={'btn ' + (!w || stale ? 'wa-btn' : '')} disabled={busy} onClick={() => waSend({ text: msg, approval: true })}>
+                          {!w ? 'Send on WhatsApp' : 'Send again on WhatsApp'}
+                        </button>
+                      )}
+                      <a className={'btn ' + (!waApi && (!w || stale) ? 'wa-btn' : '')} href={link} target="_blank" rel="noopener noreferrer"
                         onClick={(e) => { if (busy) { e.preventDefault(); return; } send(); }}>
-                        {!w ? 'Send on WhatsApp' : 'Send again on WhatsApp'}
+                        {waApi ? 'Open in WhatsApp' : !w ? 'Send on WhatsApp' : 'Send again on WhatsApp'}
                       </a>
                       {w?.state === 'sent' && !stale && (
                         <button className="btn primary" disabled={busy} onClick={() => patch({ waApproval: 'received', note: 'Customer gave written approval on WhatsApp.' })}>Customer replied "I APPROVE"</button>
@@ -757,6 +811,7 @@ export default function Admin() {
   const [leads, setLeads] = useState(null);
   const [storage, setStorage] = useState('');
   const [statuses, setStatuses] = useState(Object.keys(STATUS_COLORS));
+  const [waApi, setWaApi] = useState(false);
   const [tab, setTab] = useState('All');
   const [q, setQ] = useState('');
   const [st, setSt] = useState('');
@@ -828,7 +883,7 @@ export default function Admin() {
   };
 
   useEffect(() => {
-    call('/api/admin/status').then((s) => s.statuses && setStatuses(s.statuses)).catch(() => {});
+    call('/api/admin/status').then((s) => { if (s.statuses) setStatuses(s.statuses); setWaApi(!!s.whatsappApi); }).catch(() => {});
   }, []);
   useEffect(() => {
     load();
@@ -836,6 +891,17 @@ export default function Admin() {
     return () => clearInterval(iv);
   }, [load]);
 
+  // Returns '' when sent, else the error code.
+  const onWaSend = async (ref, body) => {
+    try {
+      const { lead } = await call(`/api/admin/leads/${encodeURIComponent(ref)}/whatsapp`, auth, { method: 'POST', body: JSON.stringify(body) });
+      setLeads((ls) => ls.map((l) => (l.ref === ref ? lead : l)));
+      return '';
+    } catch (e) {
+      if (e.status === 401) signOut();
+      return e.message;
+    }
+  };
   const onPatch = async (ref, p) => {
     try {
       const { lead } = await call(`/api/admin/leads/${encodeURIComponent(ref)}`, auth, { method: 'PATCH', body: JSON.stringify(p) });
@@ -987,8 +1053,8 @@ export default function Admin() {
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.ref} className={(sel === l.ref ? 'sel' : '') + (fresh.includes(l.ref) ? ' fresh' : '')} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}</div></td>
-                    <td><span className="plate">{fmtPlate(l.plate)}</span></td>
+                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{l.waUnread > 0 && <span className="multi unread">💬 {l.waUnread} new</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}</div></td>
+                    <td>{l.plate ? <span className="plate">{fmtPlate(l.plate)}</span> : <span className="small">Not given yet</span>}</td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>
                     <td onClick={(e) => e.stopPropagation()}>
@@ -1011,7 +1077,7 @@ export default function Admin() {
         </>)}
       </main>
       {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st} lokDates={site?.lokAdalatDates}
-        siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }}
+        siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
     </>
   );

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { getChallans, providerName } from './providers/index.js';
 import { PLATE_RE, normalizePlate } from './plate.js';
 import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, checkAdminPassword, hashPassword, verifyPassword, issueTeamToken, readTeamToken } from './auth.js';
+import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
 import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee } from './store.js';
 
 try { process.loadEnvFile(); } catch { /* no .env file: use defaults */ }
@@ -13,7 +14,9 @@ const app = express();
 const tp = process.env.TRUST_PROXY;
 if (tp) app.set('trust proxy', tp === 'true' ? true : /^\d+$/.test(tp) ? Number(tp) : tp);
 const jsonSmall = express.json({ limit: '20kb' }), jsonBig = express.json({ limit: '300kb' });
-app.use((req, res, next) => (req.path.endsWith('/challans') ? jsonBig : jsonSmall)(req, res, next));
+// The WhatsApp webhook keeps the raw body so Meta's signature can be checked.
+const jsonWebhook = express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } });
+app.use((req, res, next) => (req.path === '/api/whatsapp/webhook' ? jsonWebhook : req.path.endsWith('/challans') ? jsonBig : jsonSmall)(req, res, next));
 
 const PHONE_RE = /^[6-9]\d{9}$/;
 const CITY_CODES = { noida: 'GBN', ghaziabad: 'GZB', delhi: 'DEL', gurugram: 'GGN' };
@@ -87,6 +90,23 @@ app.get('/api/challans', limit(20, 10 * 60_000), requireSession, async (req, res
 });
 
 const MAX_VEHICLES = 5;
+// Saves a lead under a fresh reference like GBN-2612345, retrying the rare duplicate.
+async function saveNewLead(code, lead) {
+  for (let attempt = 0; ; attempt++) {
+    const ref = `${code}-26${String(Math.floor(10000 + Math.random() * 89999))}`;
+    try { await addLead({ ref, ...lead }); return ref; }
+    catch (err) { if (err.code === '23505' && attempt < 3) continue; throw err; }
+  }
+}
+async function autoAssign(lead) {
+  try {
+    if ((await getSettings()).autoAssign) {
+      const pick = await nextAssignee();
+      if (pick) Object.assign(lead, { agent: pick.name, agentId: pick.id });
+    }
+  } catch (err) { console.error('[leads] auto-assign failed', err.message); }
+  return lead;
+}
 // Lead capture: name + vehicle + phone. No OTP or challan lookup for now.
 app.post('/api/leads', limit(10, 10 * 60_000), async (req, res) => {
   const b = req.body || {};
@@ -114,12 +134,7 @@ app.post('/api/leads', limit(10, 10 * 60_000), async (req, res) => {
     name, phone, lang: b.lang === 'hi' ? 'hi' : 'en', status: 'New', agent: '', agentId: '', notes: [],
     ...(promo ? { promoCode: promo.code, feeRate: promo.pays } : {}),
   };
-  try {
-    if ((await getSettings()).autoAssign) {
-      const pick = await nextAssignee();
-      if (pick) Object.assign(base, { agent: pick.name, agentId: pick.id });
-    }
-  } catch (err) { console.error('[leads] auto-assign failed', err.message); }
+  await autoAssign(base);
   const refs = [];
   for (const p of plates) {
     const extraFields = plates.length > 1 ? { groupRef: refs[0] || null, vehicles: plates.length } : {};
@@ -201,6 +216,7 @@ app.get('/sitemap.xml', (req, res) => {
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>${siteUrl(req)}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>${siteUrl(req)}/privacy.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
 </urlset>
 `);
 });
@@ -223,7 +239,7 @@ app.get('/api/settings', async (req, res) => {
 });
 
 // ── Admin panel API ─────────────────────────────────────
-app.get('/api/admin/status', (req, res) => res.json({ enabled: adminEnabled(), storage: store().name, statuses: STATUSES }));
+app.get('/api/admin/status', (req, res) => res.json({ enabled: adminEnabled(), storage: store().name, statuses: STATUSES, whatsappApi: waConfigured() }));
 
 // Super admin: username "admin" + ADMIN_PASSWORD. Everyone else: a staff account.
 app.post('/api/admin/login', limit(10, 15 * 60_000), async (req, res) => {
@@ -356,7 +372,12 @@ app.delete('/api/admin/leads/:ref', requireUser, async (req, res) => {
 app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
   const b = req.body || {};
   const patch = { status: b.status, note: b.note, approved: Array.isArray(b.approved) ? b.approved.slice(0, 300) : undefined, feeRate: Number(b.feeRate) || undefined,
-    waApproval: ['sent', 'received', 'clear'].includes(b.waApproval) ? b.waApproval : undefined };
+    waApproval: ['sent', 'received', 'clear'].includes(b.waApproval) ? b.waApproval : undefined, waRead: b.waRead === true };
+  if (b.plate !== undefined) {
+    const p = normalizePlate(b.plate);
+    if (!PLATE_RE.test(p)) return res.status(400).json({ error: 'invalid_plate' });
+    patch.plate = p;
+  }
   try {
     if (b.assignTo !== undefined) {
       if (req.user.role !== 'admin') return res.status(403).json({ error: 'admins_only' });
@@ -373,6 +394,97 @@ app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
   } catch (err) {
     if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
     console.error('[admin] update failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
+  }
+});
+
+// ── WhatsApp Business Platform ──────────────────────────
+// Meta checks the webhook once with GET, then POSTs every incoming message and delivery update.
+app.get('/api/whatsapp/webhook', (req, res) => {
+  const ok = req.query['hub.mode'] === 'subscribe' && process.env.WHATSAPP_VERIFY_TOKEN && req.query['hub.verify_token'] === process.env.WHATSAPP_VERIFY_TOKEN;
+  if (!ok) return res.sendStatus(403);
+  res.type('text/plain').send(String(req.query['hub.challenge'] || ''));
+});
+
+app.post('/api/whatsapp/webhook', async (req, res) => {
+  if (!validSignature(req.rawBody, req.get('x-hub-signature-256'), process.env.WHATSAPP_APP_SECRET)) return res.sendStatus(401);
+  res.sendStatus(200); // answer Meta at once; work continues below
+  // One webhook at a time, so quick back-to-back messages don't each start a new lead.
+  const batch = parseWebhook(req.body);
+  waQueue = waQueue.then(() => handleWhatsApp(batch)).catch((err) => console.error('[whatsapp] webhook failed', err.message));
+});
+let waQueue = Promise.resolve();
+
+// Incoming message → find the customer's lead by mobile (or a lead for a new vehicle number in the
+// text), keep the message on it, and mark "I APPROVE" replies. Unknown numbers become new leads.
+export async function handleWhatsApp({ messages = [], statuses = [] }) {
+  for (const m of messages) {
+    const phone = localPhone(m.from);
+    if (!phone) continue;
+    const mine = (await listLeads()).filter((l) => l.phone === phone);
+    const plateIn = (m.text.toUpperCase().replace(/[^A-Z0-9]/g, ' ').match(/\b[A-Z]{2}\s?\d{1,2}\s?[A-Z]{0,3}\s?\d{4}\b/) || [])[0];
+    const plate = plateIn ? normalizePlate(plateIn) : '';
+    let lead = (plate && mine.find((l) => l.plate === plate)) || (!plate && mine[0]) || null;
+    if (!lead) {
+      // Fill in a WhatsApp lead that has no vehicle yet before starting another one.
+      const blank = plate && mine.find((l) => !l.plate && l.source === 'WhatsApp');
+      if (blank) lead = await updateLead(blank.ref, { plate, note: `Vehicle ${plate} received on WhatsApp.` }, 'WhatsApp');
+    }
+    if (!lead) {
+      const base = await autoAssign({
+        createdAt: m.at, city: mine[0]?.city || 'noida', name: (m.name || mine[0]?.name || 'WhatsApp customer').slice(0, 120), plate: PLATE_RE.test(plate) ? plate : '',
+        phone, lang: /[\u0900-\u097F]/.test(m.text) ? 'hi' : 'en', status: 'New', agent: '', agentId: '', notes: [], source: 'WhatsApp',
+        ...(mine[0]?.groupRef ? { groupRef: mine[0].groupRef } : {}),
+      });
+      const ref = await saveNewLead(CITY_CODES[base.city] || 'GBN', base);
+      lead = { ref };
+    }
+    await updateLead(lead.ref, { waMsg: { id: m.id, dir: 'in', text: m.text, at: m.at, by: m.name || 'Customer' } }, 'WhatsApp');
+    if (saysApprove(m.text)) {
+      for (const l of mine.filter((x) => x.waApproval?.state === 'sent')) {
+        await updateLead(l.ref, { waApproval: 'received', note: `Customer replied on WhatsApp: "${m.text.slice(0, 200)}"` }, 'WhatsApp');
+      }
+    }
+  }
+  if (statuses.length) {
+    const leads = await listLeads();
+    for (const st of statuses) {
+      const l = leads.find((x) => (x.waChat || []).some((c) => c.id === st.id));
+      if (l) await updateLead(l.ref, { waStatus: st }, 'WhatsApp');
+    }
+  }
+}
+
+// Send from the admin panel through the API. Free text only inside the 24-hour window that opens
+// when the customer last wrote; outside it, only the approved approval template can be sent.
+app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async (req, res) => {
+  if (!waConfigured()) return res.status(503).json({ error: 'whatsapp_not_set_up' });
+  const b = req.body || {};
+  const text = String(b.text || '').trim().slice(0, 4000);
+  if (!text) return res.status(400).json({ error: 'empty' });
+  try {
+    const lead = (await listLeads()).find((l) => l.ref === req.params.ref);
+    if (!lead) return res.status(404).json({ error: 'not_found' });
+    if (req.user.role !== 'admin' && lead.agentId !== req.user.uid) return res.status(403).json({ error: 'not_your_lead' });
+    const open = lead.waLastIn && Date.now() - new Date(lead.waLastIn) < WINDOW_MS;
+    const to = '91' + lead.phone;
+    let id, sentText = text, kind = 'text';
+    if (open) id = await sendText(to, text);
+    else if (b.approval && process.env.WHATSAPP_APPROVAL_TEMPLATE) {
+      const ok = (lead.challans || []).filter((c) => c.approved);
+      const total = ok.reduce((n, c) => n + (c.amount || 0), 0);
+      const rate = FEE_RATES.includes(lead.feeRate) ? lead.feeRate : 50;
+      const pay = '₹' + Math.round((total * rate) / 100).toLocaleString('en-IN');
+      const params = [lead.name, lead.plate, String(ok.length), pay, lead.ref];
+      id = await sendTemplate(to, process.env.WHATSAPP_APPROVAL_TEMPLATE, params);
+      sentText = `[Approval template] ${lead.name} · ${lead.plate} · ${ok.length} challan(s) · ${pay} · ${lead.ref}`;
+      kind = 'template';
+    } else return res.status(409).json({ error: 'window_closed' });
+    let out = await updateLead(lead.ref, { waMsg: { id, dir: 'out', text: sentText, at: new Date().toISOString(), by: req.user.name, status: 'sent', kind } }, req.user.name);
+    if (b.approval) out = await updateLead(lead.ref, { waApproval: 'sent', note: `Sent approval request on WhatsApp (${kind === 'template' ? 'template' : 'full list'}).` }, req.user.name);
+    res.json({ lead: out });
+  } catch (err) {
+    console.error('[whatsapp] send failed', err.message);
+    res.status(502).json({ error: 'send_failed', detail: err.message.slice(0, 200) });
   }
 });
 

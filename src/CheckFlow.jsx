@@ -147,7 +147,7 @@ export default function CheckFlow({ plate, plateHint = 'UP16 AB 1234', lang, cit
                 onClick={() => setForm({ ...form, consent: !form.consent })}
                 onKeyDown={(e) => (e.key === ' ' || e.key === 'Enter') && (e.preventDefault(), setForm({ ...form, consent: !form.consent }))}>
                 <span className={'box' + (form.consent ? ' on' : tried ? ' bad' : '')}>{form.consent && <Icon.Check stroke="#fff" sw={3.2} />}</span>
-                <span>{t('consent')} <a href="#privacy" onClick={(e) => e.stopPropagation()}>{t('privacy')}</a></span>
+                <span>{t('consent')} <a href="/privacy.html" target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()}>{t('privacy')}</a></span>
               </div>
               {error && <div className="field-err" role="alert">{error}</div>}
               <button type="submit" className="btn-amber" style={{ height: 58, fontSize: 17 }} disabled={busy}>{t('submit')} <span aria-hidden="true">→</span></button>

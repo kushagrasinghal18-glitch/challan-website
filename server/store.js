@@ -157,6 +157,19 @@ export function updateLead(ref, patch, by, onlyFor) {
     } else if (patch.waApproval === 'clear') {
       out.waApproval = null;
     }
+    if (typeof patch.plate === 'string' && patch.plate) out.plate = patch.plate;
+    // WhatsApp chat kept on the lead (latest 200 messages).
+    if (patch.waMsg) {
+      if ((lead.waChat || []).some((m) => m.id && m.id === patch.waMsg.id)) return {}; // Meta can resend a webhook
+      out.waChat = [...(lead.waChat || []), patch.waMsg].slice(-200);
+      if (patch.waMsg.dir === 'in') { out.waLastIn = patch.waMsg.at; out.waUnread = (lead.waUnread || 0) + 1; }
+    }
+    if (patch.waStatus && Array.isArray(lead.waChat)) {
+      const rank = { sent: 1, delivered: 2, read: 3, failed: 4 };
+      out.waChat = lead.waChat.map((m) => (m.id === patch.waStatus.id && (rank[patch.waStatus.status] || 0) > (rank[m.status] || 0)
+        ? { ...m, status: patch.waStatus.status, ...(patch.waStatus.error ? { error: patch.waStatus.error } : {}) } : m));
+    }
+    if (patch.waRead) out.waUnread = 0;
     if (Array.isArray(patch.challans)) {
       out.challans = patch.challans;
       out.challansAt = new Date().toISOString();
