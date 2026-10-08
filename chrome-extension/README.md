@@ -20,6 +20,21 @@ When Parivahan shows the challans, the add-on saves them to that lead in the adm
 (a small green-bordered box in the corner says "Saved N challans"). If Parivahan says there
 are no challans, the lead shows "No challans found".
 
+## WhatsApp Web
+
+Open the Niptao admin panel once in Chrome and log in, so the add-on knows who you are.
+Then open web.whatsapp.com and a chat with a customer. A small **Niptao** box appears at
+the top right:
+
+- **Save chat to Niptao** saves the messages on screen to that customer's lead (a new
+  number becomes a new lead). The box then shows the lead, its status and whether the
+  customer has approved.
+- **Add as lead** just creates the lead from the number and name.
+
+If the mobile number box is empty, type the customer's number in it first. When the
+customer's last message says "I APPROVE", the box reminds you to press Save. Nothing is
+sent unless you press a button, and group chats are skipped.
+
 ## Use it on any other page
 
 1. Click the green **N** icon and log in with your admin username and password
@@ -36,4 +51,4 @@ If a box isn't filled, right-click inside it and pick **Niptao: fill vehicle num
 ## Update
 
 Unzip the new version over the old folder, then press the round **reload** arrow on the
-add-on's card in `chrome://extensions`. Reload any open admin panel and Parivahan tabs.
+add-on's card in `chrome://extensions`. Reload any open admin panel, Parivahan and WhatsApp Web tabs.

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Niptao Lead Filler",
-  "version": "1.3.0",
-  "description": "Fills a Niptao lead's vehicle number, mobile and name into challan and Lok Adalat token forms. You type the captcha and OTP yourself.",
+  "version": "1.4.0",
+  "description": "Fills a Niptao lead's details into Parivahan and token forms (you type the captcha and OTP), and saves WhatsApp Web chats to the admin panel.",
   "permissions": [
     "storage",
     "activeTab",
@@ -43,6 +43,15 @@
       ],
       "js": [
         "parivahan-autofill.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "js": [
+        "whatsapp.js"
       ],
       "run_at": "document_idle"
     }
