@@ -39,16 +39,29 @@ function parseBlock(no, text) {
   return {
     challanNo: no,
     date: dateM ? clean(dateM[0]) : '',
-    offence: clean(offence).replace(/\.$/, '').slice(0, 300),
+    offence: clean(offence).replace(/\s*\.\s*$/, '').slice(0, 300),
     location: clean(location).slice(0, 200),
     amount: amountM ? Number((amountM[1] || amountM[2]).replace(/,/g, '')) || 0 : 0,
     status,
   };
 }
 
+// A challan number on its own line: letters + digits (UP16…, DL21…) or digits only
+// (Delhi Traffic Police notices such as 64473267).
+const NO_LINE = /^(?:[A-Z]{2,4}\d{6,}[A-Z0-9]*|\d{7,14})$/;
+
 export function parseChallans(text) {
-  const t = String(text || '');
-  const hits = [...t.matchAll(CHALLAN_NO)].filter((m, i, all) => all.findIndex((x) => x[0] === m[0]) === i);
-  if (!hits.length) return [];
-  return hits.map((m, i) => parseBlock(m[0], t.slice(m.index, i + 1 < hits.length ? hits[i + 1].index : undefined)));
+  const t = String(text || '').replace(/\r/g, '');
+  // 1) Numbers that sit on their own line (Park+, CarInfo and similar card layouts).
+  let hits = [];
+  let pos = 0;
+  for (const line of t.split('\n')) {
+    const l = line.trim();
+    if (NO_LINE.test(l)) hits.push({ no: l, index: t.indexOf(line, pos) });
+    pos += line.length + 1;
+  }
+  // 2) Otherwise, challan numbers inside running text (tables, Parivahan).
+  if (!hits.length) hits = [...t.matchAll(CHALLAN_NO)].map((m) => ({ no: m[0], index: m.index }));
+  hits = hits.filter((h, i, all) => all.findIndex((x) => x.no === h.no) === i);
+  return hits.map((h, i) => parseBlock(h.no, t.slice(h.index, i + 1 < hits.length ? hits[i + 1].index : undefined)));
 }

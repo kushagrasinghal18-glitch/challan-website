@@ -70,3 +70,43 @@ View details`;
   assert.deepEqual(b, { challanNo: 'DL10000250101000002', date: '05 Apr, 2025', offence: 'Not using seat-belt',
     location: 'Ito', amount: 6000, status: 'In court' });
 });
+
+test('reads number-only Delhi challan numbers next to state ones (made-up numbers)', () => {
+  const text = `12345678
+
+Verified
+
+₹200
+
+Stop sign on road surface : violating stop line
+
+Issued on 26 Mar, 2025
+
+Location: Ring road
+Medium: Court
+Source: Delhi
+Updated 7 days ago
+
+View details
+
+UP100000250101000003
+
+Verified
+
+₹2000
+
+Disobedience of any direction lawful given by the authority .
+
+Issued on 21 Apr, 2025
+
+Location: Indirapuram, ghaziabad
+Medium: Court
+Source: Parivahan
+Updated now
+
+View details`;
+  const rows = parseChallans(text);
+  assert.deepEqual(rows.map((r) => [r.challanNo, r.amount, r.status]), [['12345678', 200, 'In court'], ['UP100000250101000003', 2000, 'In court']]);
+  assert.equal(rows[0].offence, 'Stop sign on road surface : violating stop line');
+  assert.equal(rows[1].offence, 'Disobedience of any direction lawful given by the authority');
+});
