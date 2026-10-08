@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { parseChallans } from './parseChallans.js';
 
 const STATUS_COLORS = {
   New: ['#E8EEF8', '#2F5AA8'], Contacted: ['#F0EAF8', '#6A42A0'], 'Documents received': ['#FFF1D9', '#8A5200'],
@@ -110,11 +111,66 @@ function Login({ onIn }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch }) {
+const SOURCES = ['Park+', 'Parivahan', 'Delhi Traffic Police', 'Virtual Courts', 'Other'];
+const blankRow = () => ({ challanNo: '', date: '', offence: '', location: '', amount: '', status: '' });
+
+// Paste challan text copied from any site, check the rows, save them on the lead.
+function ChallanEditor({ lead, onSave, onCancel }) {
+  const [text, setText] = useState('');
+  const [rows, setRows] = useState(() => (lead.challans?.length ? lead.challans.map((c) => ({ ...c })) : []));
+  const [source, setSource] = useState(lead.challansSource && SOURCES.includes(lead.challansSource) ? lead.challansSource : 'Park+');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  const read = () => {
+    const found = parseChallans(text);
+    setMsg(found.length ? `Found ${found.length} challan${found.length === 1 ? '' : 's'}. Check each row, fix anything wrong, then Save.` : 'No challan numbers found in that text. Add rows by hand instead.');
+    if (found.length) setRows(found);
+  };
+  const save = async (list) => {
+    setBusy(true);
+    try { await onSave(list, source); } finally { setBusy(false); }
+  };
+  const total = rows.reduce((n, r) => n + (Number(String(r.amount).replace(/[^\d.]/g, '')) || 0), 0);
+  return (
+    <div className="ch-edit">
+      <div className="sec-k">Add challan details</div>
+      <p className="hint">On Park+ or any challan site, select the challan list with your mouse, copy it (Ctrl+C), and paste it here.</p>
+      <textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste the copied challan details here" />
+      <div className="row-btns">
+        <button className="btn primary" disabled={!text.trim()} onClick={read}>Read challans</button>
+        <button className="btn" onClick={() => setRows([...rows, blankRow()])}>+ Add a row by hand</button>
+      </div>
+      {msg && <div className="small" role="status">{msg}</div>}
+      {rows.map((r, i) => (
+        <div className="ch-row" key={i}>
+          <input aria-label="Challan number" placeholder="Challan no." value={r.challanNo} onChange={(e) => set(i, 'challanNo', e.target.value)} />
+          <input aria-label="Amount" placeholder="₹ Amount" inputMode="numeric" value={r.amount || ''} onChange={(e) => set(i, 'amount', e.target.value)} />
+          <input className="wide" aria-label="Offence" placeholder="Offence" value={r.offence} onChange={(e) => set(i, 'offence', e.target.value)} />
+          <input aria-label="Date" placeholder="Date" value={r.date} onChange={(e) => set(i, 'date', e.target.value)} />
+          <input aria-label="Status" placeholder="Status" value={r.status} onChange={(e) => set(i, 'status', e.target.value)} />
+          <input className="wide" aria-label="Place" placeholder="Place" value={r.location} onChange={(e) => set(i, 'location', e.target.value)} />
+          <button className="btn ghost" onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</button>
+        </div>
+      ))}
+      <div className="row-btns">
+        <label className="src">Source
+          <select value={source} onChange={(e) => setSource(e.target.value)}>{SOURCES.map((x) => <option key={x}>{x}</option>)}</select>
+        </label>
+        <button className="btn primary" disabled={busy || !rows.length} onClick={() => save(rows)}>Save {rows.length} challan{rows.length === 1 ? '' : 's'}{total ? ` · ₹${total.toLocaleString('en-IN')}` : ''}</button>
+        <button className="btn" disabled={busy} onClick={() => save([])} title="Mark that this vehicle has no challans">No challans</button>
+        <button className="btn ghost" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch, onSaveChallans }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
-  useEffect(() => { setDraft(''); setCopied(false); }, [lead.ref]);
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { setDraft(''); setCopied(false); setEditing(false); }, [lead.ref]);
   useEffect(() => {
     const k = (e) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', k);
@@ -158,9 +214,15 @@ function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch }) {
             <p className="hint">The vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
           </div>
 
-          {lead.challans && (
+          {editing ? (
+            <ChallanEditor lead={lead} onCancel={() => setEditing(false)}
+              onSave={async (list, source) => { if (await onSaveChallans(lead.ref, list, source)) setEditing(false); }} />
+          ) : !lead.challans ? (
+            <button className="btn" onClick={() => setEditing(true)}>+ Add challan details</button>
+          ) : (
             <div className="challans">
-              <div className="sec-k">Challans · {lead.challans.length} · ₹{challanTotal(lead).toLocaleString('en-IN')}</div>
+              <div className="ch-head"><div className="sec-k">Challans · {lead.challans.length} · ₹{challanTotal(lead).toLocaleString('en-IN')}</div>
+                <button className="btn ghost edit" onClick={() => setEditing(true)}>Edit</button></div>
               <div className="small">From {lead.challansSource || 'Parivahan'} · {fullDate(lead.challansAt)}{lead.challansBy ? ` · ${lead.challansBy}` : ''}</div>
               {lead.challans.length ? (
                 <div className="ch-list">
@@ -560,6 +622,18 @@ export default function Admin() {
     }
   };
 
+  const onSaveChallans = async (ref, challans, source) => {
+    try {
+      const { lead } = await call(`/api/admin/leads/${encodeURIComponent(ref)}/challans`, auth, { method: 'POST', body: JSON.stringify({ challans, source }) });
+      setLeads((ls) => ls.map((l) => (l.ref === ref ? lead : l)));
+      return true;
+    } catch (e) {
+      if (e.status === 401) signOut();
+      else setErr(e.message === 'not_your_lead' ? 'That lead is no longer assigned to you.' : 'Challans were not saved. Try again.');
+      return false;
+    }
+  };
+
   const filtered = useMemo(() => {
     const s = q.toLowerCase().replace(/\s/g, '');
     return (leads || []).filter((l) => !s || (l.name + l.plate + l.phone + l.ref).toLowerCase().replace(/\s/g, '').includes(s));
@@ -676,7 +750,7 @@ export default function Admin() {
         </div>
         </>)}
       </main>
-      {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} staff={staff} onClose={() => setSel(null)} onPatch={onPatch} />}
+      {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} staff={staff} onClose={() => setSel(null)} onPatch={onPatch} onSaveChallans={onSaveChallans} />}
     </>
   );
 }
