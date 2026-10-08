@@ -35,6 +35,12 @@ export default function App() {
   const [flowOpen, setFlowOpen] = useState(false);
   const [faq, setFaq] = useState(0);
   const [now, setNow] = useState(Date.now());
+  // Lok Adalat dates and contact numbers come from the admin panel (Settings).
+  const [settings, setSettings] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/settings').then((r) => (r.ok ? r.json() : Promise.reject())).then(setSettings).catch(() => setSettings({ failed: true }));
+  }, []);
 
   useEffect(() => {
     const iv = setInterval(() => setNow(Date.now()), 1000);
@@ -48,29 +54,40 @@ export default function App() {
   };
 
   const loc = lang === 'hi' ? 'hi-IN' : 'en-IN';
-  const target = useMemo(() => new Date(city.date), []);
+  // Next date for this city from the admin panel; the built-in date only if settings can't load.
+  const nextDate = settings?.lokAdalatDates?.find((d) => d.city === SITE.cityKey);
+  const target = useMemo(() => {
+    if (nextDate) return new Date(`${nextDate.date}T${nextDate.time || '10:00'}:00+05:30`);
+    if (settings?.failed) return new Date(city.date);
+    return null; // loading, or no date announced yet
+  }, [nextDate?.date, nextDate?.time, settings?.failed]);
   const tz = { timeZone: 'Asia/Kolkata' };
-  const dateShort = target.toLocaleDateString(loc, { ...tz, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-  const dateLong = target.toLocaleDateString(loc, { ...tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const tba = !target;
+  const dateShort = tba ? '' : target.toLocaleDateString(loc, { ...tz, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  const dateLong = tba ? '' : target.toLocaleDateString(loc, { ...tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const contact = {
+    whatsapp: settings?.whatsapp ? '91' + settings.whatsapp : SITE.whatsapp,
+    phone: settings?.phone ? '+91' + settings.phone : SITE.phone,
+  };
   const plateShown = plate || city.plateHint;
 
   const R = T[lang];
-  const vars = { city: city.name[lang], court: city.court[lang], brand: SITE.brand, plate: plateShown, date: dateShort };
+  const vars = { city: city.name[lang], court: city.court[lang], brand: SITE.brand, plate: plateShown, date: dateShort || T[lang].dateTbaInline };
   const t = (key, extra) => fill(R[key], { ...vars, ...extra });
 
-  const diff = Math.max(0, target - now);
+  const diff = tba ? 0 : Math.max(0, target - now);
   const countdown = [
     [Math.floor(diff / 864e5), t('days')], [Math.floor(diff / 36e5) % 24, t('hrs')],
     [Math.floor(diff / 6e4) % 60, t('min')], [Math.floor(diff / 1e3) % 60, t('sec')],
   ];
 
-  const calDate = target.toISOString().slice(0, 10).replace(/-/g, '');
-  const calUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+  const gcal = (d) => d.toISOString().replace(/[-:]|\.\d{3}/g, '');
+  const calUrl = tba ? '' : 'https://calendar.google.com/calendar/render?action=TEMPLATE'
     + '&text=' + encodeURIComponent('Lok Adalat — ' + city.court.en)
-    + '&dates=' + calDate + 'T043000Z/' + calDate + 'T113000Z'
+    + '&dates=' + gcal(target) + '/' + gcal(new Date(+target + 7 * 36e5))
     + '&details=' + encodeURIComponent('Reminder from ' + SITE.brand + '. We attend on your behalf; keep your RC, licence and photo ID handy on WhatsApp.')
     + '&location=' + encodeURIComponent(city.address.en);
-  const waUrl = `https://wa.me/${SITE.whatsapp}?text=` + encodeURIComponent('Hi, I need help with challans for ' + plateShown);
+  const waUrl = `https://wa.me/${contact.whatsapp}?text=` + encodeURIComponent('Hi, I need help with challans for ' + plateShown);
 
   const onCheck = (e) => {
     e.preventDefault();
@@ -98,7 +115,7 @@ export default function App() {
               <button aria-pressed={lang === 'en'} onClick={() => setLang('en')}>EN</button>
               <button aria-pressed={lang === 'hi'} onClick={() => setLang('hi')}>हिंदी</button>
             </div>
-            <a href={`tel:${SITE.phone}`} aria-label="Call" className="icon-btn"><Icon.Phone /></a>
+            <a href={`tel:${contact.phone}`} aria-label="Call" className="icon-btn"><Icon.Phone /></a>
           </div>
         </div>
       </header>
@@ -133,10 +150,10 @@ export default function App() {
               <div className="countdown-card">
                 <div className="top">
                   <span className="eyebrow on-dark">{t('countdownLabel')}</span>
-                  <span className="date">{dateShort}</span>
+                  <span className="date">{tba ? (settings ? t('dateTba') : '') : dateShort}</span>
                 </div>
                 <div className="countdown">
-                  {countdown.map(([v, l]) => <div key={l}><div className="v">{pad(v)}</div><div className="l">{l}</div></div>)}
+                  {countdown.map(([v, l]) => <div key={l}><div className="v">{tba ? '--' : pad(v)}</div><div className="l">{l}</div></div>)}
                 </div>
                 <div className="court"><Icon.Pin stroke="#F5C06A" style={{ flex: 'none', marginTop: 1 }} /><span>{city.court[lang]}</span></div>
                 <a href="#lok-adalat">{t('seeCarry')} ↓</a>
@@ -190,13 +207,14 @@ export default function App() {
               <div className="next-card">
                 <div style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
                   <div className="cal">
-                    <div className="m">{target.toLocaleDateString(loc, { ...tz, month: 'short' }).toUpperCase()}</div>
-                    <div className="d">{target.toLocaleDateString('en-IN', { ...tz, day: 'numeric' })}</div>
-                    <div className="w">{target.toLocaleDateString(loc, { ...tz, weekday: 'long' })}</div>
+                    <div className="m">{tba ? '—' : target.toLocaleDateString(loc, { ...tz, month: 'short' }).toUpperCase()}</div>
+                    <div className="d">{tba ? '?' : target.toLocaleDateString('en-IN', { ...tz, day: 'numeric' })}</div>
+                    <div className="w">{tba ? '' : target.toLocaleDateString(loc, { ...tz, weekday: 'long' })}</div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-                    <div style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.3 }}>{dateLong}</div>
-                    <div style={{ fontSize: 14, color: '#B9C0D2' }}>{t('reporting')}: {t('reportingVal')}</div>
+                    <div style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.3 }}>{tba ? (settings ? t('dateTba') : '') : dateLong}</div>
+                    <div style={{ fontSize: 14, color: '#B9C0D2' }}>{tba ? t('dateTbaDesc') : `${t('reporting')}: ${t('reportingVal')}`}</div>
+                    {nextDate?.note && <div style={{ fontSize: 14, color: '#F5C06A' }}>{nextDate.note}</div>}
                   </div>
                 </div>
                 <div className="next-block">
@@ -210,7 +228,7 @@ export default function App() {
                 </div>
                 <div className="next-actions">
                   <button className="btn-amber" onClick={reserve}>{t('reserveBtn')} →</button>
-                  <a href={calUrl} target="_blank" rel="noopener noreferrer">{t('addCal')}</a>
+                  {!tba && <a href={calUrl} target="_blank" rel="noopener noreferrer">{t('addCal')}</a>}
                 </div>
               </div>
               <div className="carry">
@@ -250,7 +268,7 @@ export default function App() {
           <div className="footer-cols">
             <div>
               <div className="k">{t('contact')}</div>
-              <a href={`tel:${SITE.phone}`}>{fmtPhone(SITE.phone)}</a>
+              <a href={`tel:${contact.phone}`}>{fmtPhone(contact.phone)}</a>
               <a href={`mailto:${SITE.email}`}>{SITE.email}</a>
               <span>{city.office[lang]}</span>
             </div>

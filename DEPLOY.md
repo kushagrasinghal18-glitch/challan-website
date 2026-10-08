@@ -36,7 +36,8 @@ the full lead is still written to Render's **Logs**.
 
 The admin panel is at `/admin` on your site (e.g. `https://niptao-challan-site.onrender.com/admin`).
 It lists every lead, lets you change status, assign a person, add notes, call or WhatsApp
-the customer, and download a CSV.
+the customer, and download a CSV. Its **Settings** page sets the website's WhatsApp and
+calling numbers and the Lok Adalat dates (the site counts down to the next one).
 
 **Database (Neon, free)** — so leads are kept permanently:
 1. Go to **neon.tech** and sign up with Google.

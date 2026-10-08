@@ -51,6 +51,10 @@ async function db() {
       created_at timestamptz NOT NULL DEFAULT now(),
       data jsonb NOT NULL
     )`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS settings (
+      key text PRIMARY KEY,
+      value jsonb NOT NULL
+    )`);
   }
   return pool;
 }
@@ -127,4 +131,27 @@ export function updateLead(ref, patch, by) {
     out.updatedAt = new Date().toISOString();
     return out;
   });
+}
+
+// ── Site settings (edited in the admin panel) ───────────
+// { whatsapp: '9876543210', phone: '9876543210', lokAdalatDates: [{ id, date: 'YYYY-MM-DD', time: 'HH:MM', city, note }] }
+const settingsFile = () => path.join(path.dirname(file()), 'settings.json');
+
+export async function getSettings() {
+  if (process.env.DATABASE_URL) {
+    const { rows } = await (await db()).query("SELECT value FROM settings WHERE key = 'site'");
+    return rows[0]?.value || {};
+  }
+  try { return JSON.parse(await fs.readFile(settingsFile(), 'utf8')); } catch { return {}; }
+}
+
+export async function saveSettings(value) {
+  if (process.env.DATABASE_URL) {
+    await (await db()).query(
+      "INSERT INTO settings (key, value) VALUES ('site', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [value]);
+    return value;
+  }
+  await fs.mkdir(path.dirname(settingsFile()), { recursive: true });
+  await fs.writeFile(settingsFile(), JSON.stringify(value, null, 2));
+  return value;
 }

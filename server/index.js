@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { getChallans, providerName } from './providers/index.js';
 import { PLATE_RE, normalizePlate } from './plate.js';
 import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, checkAdminPassword, issueAdminToken, readAdminToken } from './auth.js';
-import { addLead, listLeads, updateLead, store, STATUSES } from './store.js';
+import { addLead, listLeads, updateLead, store, STATUSES, getSettings, saveSettings } from './store.js';
 
 try { process.loadEnvFile(); } catch { /* no .env file: use defaults */ }
 
@@ -101,6 +101,40 @@ app.post('/api/leads', limit(10, 10 * 60_000), async (req, res) => {
   res.json({ ref });
 });
 
+// ── Site settings ───────────────────────────────────────
+const MOBILE_RE = /^[6-9]\d{9}$/;
+const todayIST = () => new Date(Date.now() + 5.5 * 36e5).toISOString().slice(0, 10);
+
+function cleanSettings(b) {
+  const digits = (v) => String(v || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+  const whatsapp = digits(b.whatsapp), phone = digits(b.phone);
+  if (whatsapp && !MOBILE_RE.test(whatsapp)) return { error: 'invalid_whatsapp' };
+  if (phone && !MOBILE_RE.test(phone)) return { error: 'invalid_phone' };
+  const dates = (Array.isArray(b.lokAdalatDates) ? b.lokAdalatDates : []).slice(0, 50).map((d) => ({
+    id: String(d.id || Math.random().toString(36).slice(2, 10)).slice(0, 20),
+    date: String(d.date || ''), time: /^\d{2}:\d{2}$/.test(d.time) ? d.time : '10:00',
+    city: CITY_CODES[d.city] ? d.city : 'noida', note: String(d.note || '').trim().slice(0, 200),
+  }));
+  if (dates.some((d) => !/^\d{4}-\d{2}-\d{2}$/.test(d.date) || isNaN(new Date(d.date)))) return { error: 'invalid_date' };
+  dates.sort((a, b2) => (a.date + a.time).localeCompare(b2.date + b2.time));
+  return { value: { whatsapp, phone, lokAdalatDates: dates } };
+}
+
+// Public: what the website needs. Only upcoming dates are sent.
+app.get('/api/settings', async (req, res) => {
+  try {
+    const s = await getSettings();
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      whatsapp: s.whatsapp || '', phone: s.phone || s.whatsapp || '',
+      lokAdalatDates: (s.lokAdalatDates || []).filter((d) => d.date >= todayIST()),
+    });
+  } catch (err) {
+    console.error('[settings] read failed', err.message);
+    res.status(500).json({ error: 'storage_unavailable' });
+  }
+});
+
 // ── Admin panel API ─────────────────────────────────────
 app.get('/api/admin/status', (req, res) => res.json({ enabled: adminEnabled(), storage: store().name, statuses: STATUSES }));
 
@@ -114,6 +148,18 @@ app.post('/api/admin/login', limit(10, 15 * 60_000), (req, res) => {
 app.get('/api/admin/leads', requireAdmin, async (req, res) => {
   try { res.json({ leads: await listLeads(), storage: store().name }); }
   catch (err) { console.error('[admin] list failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
+});
+
+app.get('/api/admin/settings', requireAdmin, async (req, res) => {
+  try { res.json(await getSettings()); }
+  catch (err) { console.error('[admin] settings read failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
+});
+
+app.put('/api/admin/settings', requireAdmin, async (req, res) => {
+  const { value, error } = cleanSettings(req.body || {});
+  if (error) return res.status(400).json({ error });
+  try { res.json(await saveSettings(value)); }
+  catch (err) { console.error('[admin] settings save failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
 });
 
 app.patch('/api/admin/leads/:ref', requireAdmin, async (req, res) => {

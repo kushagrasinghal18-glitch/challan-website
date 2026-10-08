@@ -45,6 +45,10 @@ function Login({ onIn }) {
   const [name, setName] = useState('');
   const [pw, setPw] = useState('');
   const [err, setErr] = useState('');
+  const [view, setView] = useState(() => (location.hash === '#settings' ? 'settings' : 'leads'));
+  const [site, setSite] = useState(null);
+  useEffect(() => { history.replaceState(null, '', view === 'settings' ? '#settings' : '#'); }, [view]);
+  useEffect(() => { call('/api/settings').then(setSite).catch(() => {}); }, []);
   const [busy, setBusy] = useState(false);
   const [enabled, setEnabled] = useState(true);
   useEffect(() => { call('/api/admin/status').then((s) => setEnabled(s.enabled)).catch(() => {}); }, []);
@@ -156,6 +160,97 @@ function Drawer({ lead, statuses, onClose, onPatch }) {
   );
 }
 
+const CITY_COURT = { noida: 'District Court, Surajpur', ghaziabad: 'District Court, Ghaziabad', delhi: 'Delhi court complex', gurugram: 'District Court, Gurugram' };
+const todayIST = () => new Date(Date.now() + 5.5 * 36e5).toISOString().slice(0, 10);
+const newId = () => Math.random().toString(36).slice(2, 10);
+const ERRORS = {
+  invalid_whatsapp: 'The WhatsApp number must be a 10-digit Indian mobile number.',
+  invalid_phone: 'The calling number must be a 10-digit Indian mobile number.',
+  invalid_date: 'One of the dates is not filled in. Pick a date or remove that row.',
+};
+
+function Settings({ auth, onSaved, signOut }) {
+  const [form, setForm] = useState(null);
+  const [msg, setMsg] = useState(null); // { ok, text }
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    call('/api/admin/settings', auth)
+      .then((s) => setForm({ whatsapp: s.whatsapp || '', phone: s.phone || '', lokAdalatDates: s.lokAdalatDates || [] }))
+      .catch((e) => (e.status === 401 ? signOut() : setMsg({ ok: false, text: 'Could not load settings. Refresh the page to try again.' })));
+  }, [auth, signOut]);
+
+  if (!form) return <div className="panel"><div className="empty">{msg?.text || 'Loading settings…'}</div></div>;
+
+  const setDate = (id, patch) => setForm({ ...form, lokAdalatDates: form.lokAdalatDates.map((d) => (d.id === id ? { ...d, ...patch } : d)) });
+  const addDate = () => setForm({ ...form, lokAdalatDates: [...form.lokAdalatDates, { id: newId(), date: '', time: '10:00', city: 'noida', note: '' }] });
+  const removeDate = (id) => setForm({ ...form, lokAdalatDates: form.lokAdalatDates.filter((d) => d.id !== id) });
+
+  async function save(e) {
+    e.preventDefault();
+    setBusy(true); setMsg(null);
+    try {
+      const saved = await call('/api/admin/settings', auth, { method: 'PUT', body: JSON.stringify(form) });
+      setForm({ whatsapp: saved.whatsapp, phone: saved.phone, lokAdalatDates: saved.lokAdalatDates });
+      setMsg({ ok: true, text: 'Saved. The website shows the new details straight away.' });
+      onSaved(saved);
+    } catch (e2) {
+      if (e2.status === 401) return signOut();
+      setMsg({ ok: false, text: ERRORS[e2.message] || 'Not saved. Check your connection and try again.' });
+    } finally { setBusy(false); }
+  }
+
+  const today = todayIST();
+  return (
+    <form className="settings" onSubmit={save}>
+      <section className="panel pad">
+        <h2>Contact numbers</h2>
+        <p className="hint">Shown on the website's WhatsApp button, the call button and the footer.</p>
+        <div className="grid2">
+          <label className="field">WhatsApp number
+            <div className="phone"><span>+91</span><input id="set-wa" inputMode="numeric" value={form.whatsapp} placeholder="98765 43210"
+              onChange={(e) => setForm({ ...form, whatsapp: e.target.value.replace(/\D/g, '').slice(-10) })} /></div>
+          </label>
+          <label className="field">Calling number <span className="opt">(leave empty to use the WhatsApp number)</span>
+            <div className="phone"><span>+91</span><input id="set-phone" inputMode="numeric" value={form.phone} placeholder="Same as WhatsApp"
+              onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(-10) })} /></div>
+          </label>
+        </div>
+      </section>
+
+      <section className="panel pad">
+        <h2>Lok Adalat dates</h2>
+        <p className="hint">The website counts down to the next upcoming date for its city. Past dates are hidden from visitors automatically.</p>
+        {form.lokAdalatDates.length === 0 && <div className="empty small-empty">No dates yet. The website shows "Date to be announced" until you add one.</div>}
+        <div className="dates">
+          {form.lokAdalatDates.map((d) => (
+            <div className={'date-row' + (d.date && d.date < today ? ' past' : '')} key={d.id}>
+              <label className="field">Date<input type="date" value={d.date} onChange={(e) => setDate(d.id, { date: e.target.value })} required /></label>
+              <label className="field">Time<input type="time" value={d.time} onChange={(e) => setDate(d.id, { time: e.target.value })} /></label>
+              <label className="field">City
+                <select value={d.city} onChange={(e) => setDate(d.id, { city: e.target.value })}>
+                  {Object.entries(CITY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </label>
+              <label className="field note-f">Note on website <span className="opt">(optional)</span>
+                <input value={d.note} maxLength={200} placeholder={`e.g. ${CITY_COURT[d.city]}, Hall 3`} onChange={(e) => setDate(d.id, { note: e.target.value })} />
+              </label>
+              <button type="button" className="btn ghost" onClick={() => removeDate(d.id)} aria-label="Remove this date">Remove</button>
+              {d.date && d.date < today && <span className="past-tag">Past</span>}
+            </div>
+          ))}
+        </div>
+        <button type="button" className="btn" onClick={addDate}>+ Add a date</button>
+      </section>
+
+      <div className="save-bar">
+        {msg && <span className={msg.ok ? 'ok-msg' : 'err'} role="status">{msg.text}</span>}
+        <button className="btn primary" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+      </div>
+    </form>
+  );
+}
+
 function toCsv(leads) {
   const cols = [['Reference', 'ref'], ['Received', (l) => fullDate(l.createdAt)], ['Name', 'name'], ['Vehicle', (l) => fmtPlate(l.plate)],
     ['Mobile', 'phone'], ['City', (l) => CITY[l.city] || l.city], ['Status', 'status'], ['Assigned to', 'agent'],
@@ -173,6 +268,10 @@ export default function Admin() {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);
   const [err, setErr] = useState('');
+  const [view, setView] = useState(() => (location.hash === '#settings' ? 'settings' : 'leads'));
+  const [site, setSite] = useState(null);
+  useEffect(() => { history.replaceState(null, '', view === 'settings' ? '#settings' : '#'); }, [view]);
+  useEffect(() => { call('/api/settings').then(setSite).catch(() => {}); }, []);
 
   const signOut = useCallback(() => { save(null); setAuth(null); setLeads(null); }, []);
 
@@ -223,6 +322,10 @@ export default function Admin() {
   ];
   const selLead = all.find((l) => l.ref === sel);
 
+  const next = site?.lokAdalatDates?.[0];
+  const nextLine = next
+    ? <>Next Lok Adalat: <strong>{new Date(`${next.date}T${next.time}:00+05:30`).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</strong> · {CITY_COURT[next.city]}</>
+    : <>No upcoming Lok Adalat date. <a href="#settings" onClick={(e) => { e.preventDefault(); setView('settings'); }}>Add one in Settings</a></>;
   const exportCsv = () => {
     const blob = new Blob(['﻿' + toCsv(rows)], { type: 'text/csv;charset=utf-8' });
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `niptao-leads-${new Date().toISOString().slice(0, 10)}.csv` });
@@ -233,15 +336,27 @@ export default function Admin() {
     <>
       <header className="bar">
         <div className="bar-in">
-          <div style={{ display: 'flex', alignItems: 'center' }}><Logo /><span className="tag">ADMIN</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}><Logo /><span className="tag">ADMIN</span></div>
+            <nav className="nav">
+              <button aria-pressed={view === 'leads'} onClick={() => setView('leads')}>Leads</button>
+              <button aria-pressed={view === 'settings'} onClick={() => setView('settings')}>Settings</button>
+            </nav>
+          </div>
           <div className="who"><span>{auth.name}</span><button onClick={signOut}>Sign out</button></div>
         </div>
       </header>
       <main className="page">
+        {view === 'settings' ? (
+          <>
+            <div className="head"><div><h1>Settings</h1><div className="sub">Changes show on the website as soon as you save.</div></div></div>
+            <Settings auth={auth} signOut={signOut} onSaved={(s) => setSite({ ...s, lokAdalatDates: s.lokAdalatDates.filter((d) => d.date >= todayIST()) })} />
+          </>
+        ) : (<>
         <div className="head">
           <div>
             <h1>Leads</h1>
-            <div className="sub">Next Lok Adalat: <strong>Sat, 12 Dec 2026</strong> · District Court, Surajpur</div>
+            <div className="sub">{nextLine}</div>
           </div>
           <div className="kpis">
             {kpis.map(([l, v]) => <div className="kpi" key={l}><div className="l">{l}</div><div className="v">{leads ? v : '–'}</div></div>)}
@@ -290,6 +405,7 @@ export default function Admin() {
           </div>
           {leads && <div className="foot">Showing {rows.length} of {all.length} leads · refreshes every minute</div>}
         </div>
+        </>)}
       </main>
       {selLead && <Drawer lead={selLead} statuses={statuses} onClose={() => setSel(null)} onPatch={onPatch} />}
     </>
