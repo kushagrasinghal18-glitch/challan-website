@@ -276,7 +276,7 @@ app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
 // Leads: anyone can change status and add notes on leads they can see; only admins reassign.
 app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
   const b = req.body || {};
-  const patch = { status: b.status, note: b.note, approved: Array.isArray(b.approved) ? b.approved.slice(0, 300) : undefined };
+  const patch = { status: b.status, note: b.note, approved: Array.isArray(b.approved) ? b.approved.slice(0, 300) : undefined, feeRate: Number(b.feeRate) || undefined };
   try {
     if (b.assignTo !== undefined) {
       if (req.user.role !== 'admin') return res.status(403).json({ error: 'admins_only' });

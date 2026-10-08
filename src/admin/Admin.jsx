@@ -35,6 +35,10 @@ function ago(iso) {
 const challanTotal = (l) => (l.challans || []).reduce((n, c) => n + (c.amount || 0), 0);
 const approvedOf = (l) => (l.challans || []).filter((c) => c.approved);
 const approvedTotal = (l) => approvedOf(l).reduce((n, c) => n + (c.amount || 0), 0);
+const FEE_RATES = [50, 40, 30];
+const feeRate = (l) => (FEE_RATES.includes(l.feeRate) ? l.feeRate : 50);
+const payable = (l) => Math.round((approvedTotal(l) * feeRate(l)) / 100);
+const inr = (n) => `₹${n.toLocaleString('en-IN')}`;
 const fullDate = (iso) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 function Logo() {
@@ -266,6 +270,17 @@ function Drawer({ lead, statuses, isAdmin, staff, onClose, onPatch, onSaveChalla
                   ))}
                 </div>
               ) : <div className="small">No challans found for this vehicle.</div>}
+              {approvedOf(lead).length > 0 && (
+                <div className="payable">
+                  <div><div className="k">Approved challans</div><div className="v">{inr(approvedTotal(lead))}</div></div>
+                  <label><span className="k">Customer pays</span>
+                    <select aria-label="Share of the challan amount the customer pays" value={feeRate(lead)} disabled={busy} onChange={(e) => patch({ feeRate: Number(e.target.value) })}>
+                      {FEE_RATES.map((r) => <option key={r} value={r}>{r}%</option>)}
+                    </select>
+                  </label>
+                  <div className="total"><div className="k">Amount payable</div><div className="v">{inr(payable(lead))}</div></div>
+                </div>
+              )}
             </div>
           )}
 
@@ -555,6 +570,7 @@ function toCsv(leads) {
     ['Mobile', 'phone'], ['City', (l) => CITY[l.city] || l.city], ['Status', 'status'], ['Assigned to', 'agent'],
     ['Challans', (l) => (l.challans ? l.challans.length : '')], ['Challan total (₹)', (l) => (l.challans ? challanTotal(l) : '')],
     ['Approved challans', (l) => (l.challans ? approvedOf(l).map((c) => c.challanNo).join(' ') : '')], ['Approved total (₹)', (l) => (l.challans ? approvedTotal(l) : '')],
+    ['Customer pays (%)', (l) => (approvedOf(l).length ? feeRate(l) : '')], ['Amount payable (₹)', (l) => (approvedOf(l).length ? payable(l) : '')],
     ['Latest note', (l) => l.notes?.[0]?.text || '']];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   return [cols.map((c) => esc(c[0])).join(','), ...leads.map((l) => cols.map(([, f]) => esc(typeof f === 'function' ? f(l) : l[f])).join(','))].join('\n');
@@ -772,7 +788,7 @@ export default function Admin() {
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.ref} className={(sel === l.ref ? 'sel' : '') + (fresh.includes(l.ref) ? ' fresh' : '')} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{approvedOf(l).length ? ` · approved ₹${approvedTotal(l).toLocaleString('en-IN')}` : ''}</div></td>
+                    <td><div className="name">{l.name}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}</div></td>
                     <td><span className="plate">{fmtPlate(l.plate)}</span></td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>

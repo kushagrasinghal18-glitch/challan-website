@@ -134,6 +134,12 @@ tbody tr.sel { background: var(--row-sel); }
 .err { color: var(--error); font-size: 13.5px; font-weight: 500; }
 
 /* Alerts, staff, challan check */
+.payable { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; margin-top: 6px; padding: 12px 14px; border-radius: 12px; background: #0E1B36; color: #fff; }
+.payable .k { display: block; font-size: 12px; color: #B9C0D2; margin-bottom: 2px; }
+.payable .v { font-size: 18px; font-weight: 700; }
+.payable select { height: 34px; border-radius: 8px; border: 0; padding: 0 8px; font-weight: 700; font-size: 15px; color: var(--navy); }
+.payable .total { margin-left: auto; text-align: right; }
+.payable .total .v { font-size: 24px; color: #F2C14E; }
 .status-sel { border: 0; border-radius: 999px; padding: 5px 10px; font-weight: 600; font-size: 13px; cursor: pointer; max-width: 170px; }
 .ask { background: #E1F2F4; border: 1px solid #9FD3DA; color: #0E4F58; border-radius: 12px; padding: 10px 12px; font-size: 14px; line-height: 1.5; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; scroll-margin-top: 12px; }
 .ask .btn { height: 32px; margin-left: auto; }

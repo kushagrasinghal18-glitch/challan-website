@@ -65,4 +65,6 @@ test('customer-approved challans are marked on the lead', async () => {
   const l = await updateLead('GBN-1', { approved: [1, 'x', 7] }, 'Priya');
   assert.deepEqual(l.challans.map((c) => c.approved), [false, true]);
   assert.equal(l.approvedBy, 'Priya');
+  assert.equal((await updateLead('GBN-1', { feeRate: 40 }, 'Priya')).feeRate, 40);
+  assert.equal((await updateLead('GBN-1', { feeRate: 10 }, 'Priya')).feeRate, 40);
 });

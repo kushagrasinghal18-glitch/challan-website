@@ -6,6 +6,9 @@ import path from 'node:path';
 // is wiped on hosts with throwaway disks such as Render's free plan.
 // Every new lead is also POSTed to LEADS_WEBHOOK_URL when set (e.g. a Google Sheet).
 
+// Share of the approved challan total the customer pays. 50% is the advertised default.
+export const FEE_RATES = [50, 40, 30];
+
 export const STATUSES = ['New', 'Contacted', 'Documents received', 'Scheduled', 'Settled', 'Lost'];
 
 // ── File backend ────────────────────────────────────────
@@ -127,6 +130,7 @@ export function updateLead(ref, patch, by, onlyFor) {
     const out = {};
     if (STATUSES.includes(patch.status)) out.status = patch.status;
     if (patch.assign) { out.agentId = patch.assign.id; out.agent = patch.assign.name; }
+    if (FEE_RATES.includes(patch.feeRate)) out.feeRate = patch.feeRate;
     // approved: indexes into lead.challans that the customer agreed to settle.
     if (Array.isArray(patch.approved) && Array.isArray(lead.challans)) {
       const pick = new Set(patch.approved.filter(Number.isInteger));
