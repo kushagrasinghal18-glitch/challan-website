@@ -12,7 +12,7 @@ const POLL_MS = 15_000;
 // Official e-challan site: search by vehicle number + captcha, no OTP.
 // Niptao Lead Filler Chrome add-on, served from public/. Replace the zip and bump this on each release.
 const ADDON_ZIP = '/niptao-lead-filler.zip';
-const ADDON_VERSION = '1.5.0';
+const ADDON_VERSION = '1.6.0';
 // Park+ challan check (search by vehicle number). Used until a paid challan API is switched on.
 const PARKPLUS_URL = 'https://parkplus.io/e-challan';
 const PARIVAHAN_URL = 'https://echallan.parivahan.gov.in/index/accused-challan';
@@ -885,6 +885,7 @@ function Addon() {
           <li>Open a lead here and click <b>Open Parivahan e-Challan</b>. The vehicle number is filled in for you.</li>
           <li>Type the captcha and press Get Detail. The challans are saved to the lead automatically (a small box says "Saved N challans") and show up here within 15 seconds.</li>
           <li>If a box isn't filled, click the add-on icon and press <b>Fill this page</b>, or right-click the box and pick <b>Niptao: fill vehicle number</b>.</li>
+          <li>If the Parivahan results show the owner's name, it is saved on the lead too. The lead then says whether it matches the name the customer gave, and the list shows a red <b>⚠ name</b> tag when it doesn't.</li>
         </ol>
         <div className="sec-k">WhatsApp Web</div>
         <ol>
