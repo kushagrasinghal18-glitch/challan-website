@@ -26,3 +26,47 @@ Rs. 1000 Paid`;
   assert.equal(rows[1].status, 'Paid');
   assert.deepEqual(parseChallans('nothing here'), []);
 });
+
+test('reads the Park+ card layout (made-up numbers)', () => {
+  const text = `UP100000260101000001
+
+Verified
+
+₹1500
+
+Violation of parking rules.
+
+Issued on 16 Apr, 2026
+
+Location: Sector 18, noida, uttar pradesh 201301, india
+Medium: Online
+Source: Parivahan
+Updated 7 days ago
+
+View details
+
+Challan may move to court in
+
+7 day(s)
+DL10000250101000002
+
+Verified
+
+₹6000
+
+Not using seat-belt
+
+Issued on 05 Apr, 2025
+
+Location: Ito
+Medium: Court
+Source: Parivahan
+Updated 2 days ago
+
+View details`;
+  const [a, b] = parseChallans(text);
+  assert.deepEqual(a, { challanNo: 'UP100000260101000001', date: '16 Apr, 2026', offence: 'Violation of parking rules',
+    location: 'Sector 18, noida, uttar pradesh 201301, india', amount: 1500, status: 'Pending · may move to court in 7 days' });
+  assert.deepEqual(b, { challanNo: 'DL10000250101000002', date: '05 Apr, 2025', offence: 'Not using seat-belt',
+    location: 'Ito', amount: 6000, status: 'In court' });
+});
