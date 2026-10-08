@@ -34,6 +34,8 @@ export default function App() {
   const [plateErr, setPlateErr] = useState(false);
   const [flowOpen, setFlowOpen] = useState(false);
   const [faq, setFaq] = useState(0);
+  const [promo, setPromo] = useState(''); // code picked from the offer banner, carried into the form
+  const [codeCopied, setCodeCopied] = useState(false);
   const [now, setNow] = useState(Date.now());
   // Lok Adalat dates and contact numbers come from the admin panel (Settings).
   const [settings, setSettings] = useState(null);
@@ -46,7 +48,12 @@ export default function App() {
     const iv = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(iv);
   }, []);
-  useEffect(() => { document.documentElement.lang = lang; }, [lang]);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.title = lang === 'hi'
+      ? 'ट्रैफ़िक चालान पर फ़्लैट 50% छूट | लोक अदालत में निपटारा | Niptao'
+      : 'Flat 50% Off Traffic Challans | Settle at Lok Adalat, No Court Visit | Niptao';
+  }, [lang]);
 
   const setLang = (l) => {
     setLangState(l);
@@ -92,6 +99,16 @@ export default function App() {
     + '&location=' + encodeURIComponent(dCity.address.en);
   const waUrl = `https://wa.me/${contact.whatsapp}?text=` + encodeURIComponent('Hi, I need help with challans for ' + plateShown);
 
+  // Exclusive offer from admin Settings. The timer runs to a real end time (Settings, or the next Lok Adalat).
+  const offer = settings?.offer || null;
+  const offerLeft = offer?.endsAt ? Math.max(0, new Date(offer.endsAt) - now) : null;
+  const offerParts = offerLeft ? [Math.floor(offerLeft / 864e5), Math.floor(offerLeft / 36e5) % 24, Math.floor(offerLeft / 6e4) % 60, Math.floor(offerLeft / 1e3) % 60] : null;
+  const useOffer = async () => {
+    setPromo(offer.code);
+    try { await navigator.clipboard.writeText(offer.code); } catch { /* clipboard blocked */ }
+    setCodeCopied(true); setTimeout(() => setCodeCopied(false), 2000);
+  };
+
   const onCheck = (e) => {
     e.preventDefault();
     if (PLATE_RE.test(plate.replace(/\s/g, ''))) { setPlateErr(false); setFlowOpen(true); }
@@ -127,6 +144,21 @@ export default function App() {
         <section className="hero">
           <div className="wrap">
             <div className="hero-main">
+              {offer && offerLeft !== 0 && (
+                <div className="offer" role="region" aria-label={t('offerTag')}>
+                  <div className="offer-l">
+                    <span className="offer-tag">🔥 {t('offerTag')}</span>
+                    <span className="offer-txt">{offer.title || t('heroTitle1')} · {t('offerUse')} <b className="code">{offer.code}</b></span>
+                  </div>
+                  <div className="offer-r">
+                    {offerParts
+                      ? <span className="offer-timer" aria-label={`${t('endsIn')} ${offerParts[0]} ${t('days')}`}>{t('endsIn')}
+                          {offerParts.map((v, i) => <b key={i}>{pad(v)}<small>{['d', 'h', 'm', 's'][i]}</small></b>)}</span>
+                      : <span className="offer-timer">{t('limited')}</span>}
+                    <button type="button" className="offer-copy" onClick={useOffer}>{codeCopied ? t('codeCopied') : t('copyCode')}</button>
+                  </div>
+                </div>
+              )}
               <span className="pill"><span className="dot" />{city.district[lang]} · {city.name[lang]}</span>
               <h1>{t('heroTitle1')} <span>{t('heroTitle2')}</span></h1>
               <p className="hero-sub">{t('heroSub')}</p>
@@ -143,6 +175,12 @@ export default function App() {
                   ? <div id="plate-help" className="field-err" role="alert">{t('plateError', { plate: city.plateHint })}</div>
                   : <div id="plate-help" className="field-hint">{t('plateHint')}: <b>{city.plateHint}</b></div>}
                 <button type="submit" className="btn-amber" style={{ height: 58, fontSize: 17 }}>{t('checkBtn')} <span aria-hidden="true">→</span></button>
+                <div className="price-ex" aria-label={t('priceEx')}>
+                  <span className="k">{t('priceEx')}</span>
+                  <span>{t('priceChallan')} <s>₹4,000</s></span>
+                  <span>{t('priceYouPay')} <b>₹2,000</b></span>
+                  <span className="save">{t('priceSave')} ₹2,000</span>
+                </div>
                 <div className="trust">
                   {['trust1', 'trust2', 'trust3'].map((k) => <span key={k}><Icon.Check stroke="#2E8B57" />{t(k)}</span>)}
                 </div>
@@ -304,6 +342,7 @@ export default function App() {
       {flowOpen && (
         <CheckFlow
           plate={plate} lang={lang} cityKey={SITE.cityKey} t={t} waUrl={waUrl}
+          promoCodes={settings?.promoCodes || []} initialPromo={promo}
           onClose={() => setFlowOpen(false)}
           onReset={() => { setFlowOpen(false); setPlate(''); }}
         />

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { getChallans, providerName } from './providers/index.js';
 import { PLATE_RE, normalizePlate } from './plate.js';
 import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, checkAdminPassword, hashPassword, verifyPassword, issueTeamToken, readTeamToken } from './auth.js';
-import { addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee } from './store.js';
+import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee } from './store.js';
 
 try { process.loadEnvFile(); } catch { /* no .env file: use defaults */ }
 
@@ -97,9 +97,17 @@ app.post('/api/leads', limit(10, 10 * 60_000), async (req, res) => {
   if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'invalid_phone' });
   if (!name || b.consent !== true) return res.status(400).json({ error: 'missing_fields' });
   const code = CITY_CODES[b.city] || 'GBN';
+  // Optional promo code: must be one from Settings; it sets the share the customer pays.
+  let promo = null;
+  const promoIn = String(b.promoCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (promoIn) {
+    try { promo = promoCodes(await getSettings()).find((c) => c.code === promoIn); } catch { /* storage down: ignore code */ }
+    if (!promo) return res.status(400).json({ error: 'invalid_promo' });
+  }
   const base = {
     createdAt: new Date().toISOString(), city: CITY_CODES[b.city] ? b.city : 'noida',
     name, plate, phone, lang: b.lang === 'hi' ? 'hi' : 'en', status: 'New', agent: '', agentId: '', notes: [],
+    ...(promo ? { promoCode: promo.code, feeRate: promo.pays } : {}),
   };
   try {
     if ((await getSettings()).autoAssign) {
@@ -136,8 +144,57 @@ function cleanSettings(b) {
   }));
   if (dates.some((d) => !/^\d{4}-\d{2}-\d{2}$/.test(d.date) || isNaN(new Date(d.date)))) return { error: 'invalid_date' };
   dates.sort((a, b2) => (a.date + a.time).localeCompare(b2.date + b2.time));
-  return { value: { whatsapp, phone, autoAssign: b.autoAssign === true, lokAdalatDates: dates } };
+  const codes = [];
+  for (const c of (Array.isArray(b.promoCodes) ? b.promoCodes : []).slice(0, 20)) {
+    const code = String(c.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20);
+    if (!code) return { error: 'invalid_code' };
+    if (codes.some((x) => x.code === code)) return { error: 'duplicate_code' };
+    codes.push({ code, title: String(c.title || '').trim().slice(0, 80), pays: FEE_RATES.includes(Number(c.pays)) ? Number(c.pays) : 50, show: c.show !== false });
+  }
+  // Exclusive offer banner: a code plus a real end time (no fake, self-resetting timers).
+  const o = b.offer || {};
+  const offerCode = String(o.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (offerCode && !codes.some((c) => c.code === offerCode)) return { error: 'offer_code_missing' };
+  const endsAt = o.endsAt && !isNaN(new Date(o.endsAt)) ? new Date(o.endsAt).toISOString() : '';
+  const offer = { on: o.on === true && !!offerCode, code: offerCode, endsAt };
+  return { value: { whatsapp, phone, autoAssign: b.autoAssign === true, lokAdalatDates: dates, promoCodes: codes, offer } };
 }
+
+// Promo codes from Settings; FLAT50 until the admin saves their own list.
+const DEFAULT_CODES = [{ code: 'FLAT50', title: 'Flat 50% off your challans', pays: 50, show: true }];
+const promoCodes = (s) => (Array.isArray(s.promoCodes) ? s.promoCodes : DEFAULT_CODES);
+// The offer ends at the time set in Settings, else at the next Lok Adalat, else it shows without a timer.
+function publicOffer(s) {
+  const o = s.offer || (s.promoCodes ? null : { on: true, code: 'FLAT50', endsAt: '' });
+  if (!o?.on || !promoCodes(s).some((c) => c.code === o.code)) return null;
+  const next = (s.lokAdalatDates || []).find((d) => d.date >= todayIST());
+  const endsAt = o.endsAt && new Date(o.endsAt) > new Date() ? o.endsAt
+    : next ? new Date(`${next.date}T${next.time || '10:00'}:00+05:30`).toISOString() : '';
+  const c = promoCodes(s).find((x) => x.code === o.code);
+  return { code: c.code, title: c.title, pays: c.pays, endsAt };
+}
+
+// Public: check a promo code typed on the website.
+app.get('/api/promo/:code', limit(30, 10 * 60_000), async (req, res) => {
+  try {
+    const c = promoCodes(await getSettings()).find((x) => x.code === String(req.params.code).toUpperCase().replace(/[^A-Z0-9]/g, ''));
+    if (!c) return res.status(404).json({ error: 'invalid_promo' });
+    res.json({ code: c.code, title: c.title, pays: c.pays });
+  } catch { res.status(500).json({ error: 'storage_unavailable' }); }
+});
+
+// Search engines: allow the site, keep the admin panel and API out.
+const siteUrl = (req) => (process.env.SITE_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n\nSitemap: ${siteUrl(req)}/sitemap.xml\n`);
+});
+app.get('/sitemap.xml', (req, res) => {
+  res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${siteUrl(req)}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+</urlset>
+`);
+});
 
 // Public: what the website needs. Only upcoming dates are sent.
 app.get('/api/settings', async (req, res) => {
@@ -147,6 +204,8 @@ app.get('/api/settings', async (req, res) => {
     res.json({
       whatsapp: s.whatsapp || '', phone: s.phone || s.whatsapp || '',
       lokAdalatDates: (s.lokAdalatDates || []).filter((d) => d.date >= todayIST()),
+      promoCodes: promoCodes(s).filter((c) => c.show).map(({ code, title, pays }) => ({ code, title, pays })),
+      offer: publicOffer(s),
     });
   } catch (err) {
     console.error('[settings] read failed', err.message);

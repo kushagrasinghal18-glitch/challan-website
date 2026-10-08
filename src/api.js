@@ -29,3 +29,4 @@ export async function verifyOtp(phone, code) {
 }
 export const fetchChallans = (plate) => call(`/api/challans?plate=${encodeURIComponent(plate.replace(/\s/g, ''))}`);
 export const createLead = (lead) => call('/api/leads', { method: 'POST', body: lead });
+export const checkPromo = (code) => call(`/api/promo/${encodeURIComponent(code)}`);

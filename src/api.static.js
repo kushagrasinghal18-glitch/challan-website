@@ -16,3 +16,7 @@ export async function fetchChallans(plate) {
 export const createLead = async ({ city }) => ({
   ref: ({ ghaziabad: 'GZB', delhi: 'DEL', gurugram: 'GGN' }[city] || 'GBN') + '-26' + Math.floor(10000 + Math.random() * 89999),
 });
+export const checkPromo = async (code) => {
+  if (String(code).toUpperCase() !== 'FLAT50') throw Object.assign(new Error('invalid_promo'), { status: 404 });
+  return { code: 'FLAT50', title: 'Flat 50% off your challans', pays: 50 };
+};

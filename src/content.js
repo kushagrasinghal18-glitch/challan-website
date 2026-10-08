@@ -29,8 +29,11 @@ export const CITIES = {
 
 export const T = {
  en: {
-  heroTitle1:'Pending challans?', heroTitle2:'Settle them at Lok Adalat, without the hassle.',
-  heroSub:'Reserve your Lok Adalat spot online. Our team handles the documents, the court visit and the settlement in {city} — you never have to go. Flat 50% of your challan amount.',
+  heroTitle1:'Flat 50% off on your challans.', heroTitle2:'Settled at Lok Adalat, no court visit.',
+  heroSub:'Pending traffic e-challans in {city}? Reserve your Lok Adalat spot online and pay only half. Our team handles the documents, the court visit and the settlement for you.',
+  offerTag:'Exclusive offer', offerUse:'Use code', endsIn:'Ends in', limited:'Limited period', copyCode:'Copy code', codeCopied:'Copied ✓',
+  priceEx:'Example', priceChallan:'Challan', priceYouPay:'You pay', priceSave:'You save',
+  promoLabel:'Promo code', promoPh:'Enter code', promoApply:'Apply', promoApplied:'Applied: {title}', promoBad:"That code isn't valid. Try one of these.", promoAvail:'Available codes', promoRemove:'Remove',
   plateLabel:'Your vehicle number', plateHint:'Format', plateError:'Enter a valid vehicle number, e.g. {plate}', checkBtn:'Get my challans checked',
   trust1:'Free check', trust2:'WhatsApp reply in 2 hours', trust3:'Flat 50% of challan',
   countdownLabel:'Next Lok Adalat', days:'Days', hrs:'Hrs', min:'Min', sec:'Sec', seeCarry:'How booking works',
@@ -76,8 +79,11 @@ export const T = {
   sampleData:'Sample data · live challan API not connected yet',
  },
  hi: {
-  heroTitle1:'चालान पेंडिंग हैं?', heroTitle2:'लोक अदालत में निपटाएँ, बिना झंझट के।',
-  heroSub:'लोक अदालत में अपनी जगह ऑनलाइन रिज़र्व करें। दस्तावेज़, कोर्ट जाना और निपटारा — {city} में सब हमारी टीम करती है, आपको जाना नहीं पड़ता। चालान राशि का सिर्फ़ 50%।',
+  heroTitle1:'आपके चालान पर फ़्लैट 50% छूट।', heroTitle2:'लोक अदालत में निपटारा, कोर्ट जाने की ज़रूरत नहीं।',
+  heroSub:'{city} में ट्रैफ़िक ई-चालान पेंडिंग हैं? लोक अदालत में अपनी जगह ऑनलाइन रिज़र्व करें और सिर्फ़ आधा भरें। दस्तावेज़, कोर्ट जाना और निपटारा — सब हमारी टीम करती है।',
+  offerTag:'ख़ास ऑफ़र', offerUse:'कोड लगाएँ', endsIn:'ख़त्म होने में', limited:'सीमित समय', copyCode:'कोड कॉपी करें', codeCopied:'कॉपी हो गया ✓',
+  priceEx:'उदाहरण', priceChallan:'चालान', priceYouPay:'आप भरेंगे', priceSave:'आपकी बचत',
+  promoLabel:'प्रोमो कोड', promoPh:'कोड डालें', promoApply:'लगाएँ', promoApplied:'लग गया: {title}', promoBad:'यह कोड सही नहीं है। इनमें से कोई चुनें।', promoAvail:'उपलब्ध कोड', promoRemove:'हटाएँ',
   plateLabel:'आपका वाहन नंबर', plateHint:'फ़ॉर्मेट', plateError:'सही वाहन नंबर डालें, जैसे {plate}', checkBtn:'मेरे चालान जाँचें',
   trust1:'मुफ़्त जाँच', trust2:'2 घंटे में WhatsApp जवाब', trust3:'चालान का सिर्फ़ 50%',
   countdownLabel:'अगली लोक अदालत', days:'दिन', hrs:'घंटे', min:'मिनट', sec:'सेकंड', seeCarry:'बुकिंग कैसे होती है',

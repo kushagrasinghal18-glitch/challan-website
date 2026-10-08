@@ -254,3 +254,33 @@ button { cursor: pointer; }
 .steps .i { width: 26px; height: 26px; flex: none; border-radius: 50%; background: var(--navy); color: var(--amber-soft); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
 .btn-wa { height: 56px; border-radius: 14px; background: var(--wa); color: #fff; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; text-decoration: none; }
 .btn-wa:hover { color: #fff; }
+
+/* Exclusive offer banner, price example, promo codes */
+.offer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px 14px; border-radius: 16px; color: #fff;
+  background: linear-gradient(100deg, #B4232C 0%, #D9480F 55%, #F08C00 100%); box-shadow: 0 12px 28px -16px rgba(180, 35, 44, .7); max-width: 560px; }
+.offer-l { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.offer-tag { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #FFE8A3; }
+.offer-txt { font-size: 15px; font-weight: 600; line-height: 1.35; }
+.offer .code { font-family: var(--mono); background: rgba(255, 255, 255, .18); border: 1px dashed rgba(255, 255, 255, .7); border-radius: 6px; padding: 1px 6px; letter-spacing: .06em; }
+.offer-r { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.offer-timer { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #FFE8A3; white-space: nowrap; }
+.offer-timer b { font-family: var(--mono); font-size: 15px; color: #fff; background: rgba(0, 0, 0, .22); border-radius: 6px; padding: 3px 5px; margin-left: 3px; font-variant-numeric: tabular-nums; }
+.offer-timer small { font-size: 10px; opacity: .8; margin-left: 1px; }
+.offer-copy { border: 0; border-radius: 10px; background: #fff; color: #B4232C; font-weight: 700; font-size: 13px; height: 34px; padding: 0 12px; cursor: pointer; white-space: nowrap; }
+.hero h1 { color: var(--navy); }
+.hero h1 > span { display: block; font-size: .62em; margin-top: 8px; letter-spacing: -0.015em; }
+.price-ex { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 14px; color: var(--ink-2); background: #F7F4EC; border-radius: 12px; padding: 9px 12px; }
+.price-ex .k { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--amber-ink); }
+.price-ex s { color: #8A90A0; }
+.price-ex b { color: var(--navy); font-size: 16px; }
+.price-ex .save { margin-left: auto; color: var(--green, #1F7A4D); font-weight: 700; }
+.promo .opt { font-style: normal; }
+.promo-row { display: flex; gap: 8px; }
+.promo-row .text-input { flex: 1; min-width: 0; font-family: var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.promo-apply { height: 54px; padding: 0 18px; }
+.promo-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.promo-chips .chip { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; border: 1.5px dashed #E0A13A; background: #FFF8EA; border-radius: 10px; padding: 6px 10px; cursor: pointer; text-align: left; }
+.promo-chips .chip b { font-family: var(--mono); font-size: 14px; color: var(--navy); letter-spacing: .05em; }
+.promo-chips .chip span { font-size: 12px; color: var(--amber-ink); }
+.promo-ok { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; border: 1.5px solid #8CCBA6; background: #EEF8F2; color: #1F6B45; border-radius: 12px; padding: 10px 12px; font-size: 14px; }
+.promo-ok b { font-family: var(--mono); }

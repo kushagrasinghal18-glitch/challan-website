@@ -5,12 +5,23 @@ import * as Icon from './icons.jsx';
 // Lead capture: one form (name + mobile, vehicle carried over from the hero) → thanks.
 // The OTP and live challan lookup steps are switched off for now; their server
 // code is still in /server for when they're needed again.
-export default function CheckFlow({ plate, lang, cityKey, t, waUrl, onClose, onReset }) {
+export default function CheckFlow({ plate, lang, cityKey, t, waUrl, promoCodes = [], initialPromo = '', onClose, onReset }) {
   const [form, setForm] = useState({ name: '', phone: '', consent: false, website: '' });
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [ref, setRef] = useState('');
+  // Promo code: typed or picked from the codes shown beside the box; checked with the server.
+  const [promoIn, setPromoIn] = useState(initialPromo);
+  const [promo, setPromo] = useState(null); // { code, title, pays }
+  const [promoErr, setPromoErr] = useState(false);
+  const applyPromo = async (code) => {
+    const c = String(code || '').trim().toUpperCase();
+    if (!c) return;
+    setPromoIn(c); setPromoErr(false);
+    try { setPromo(await api.checkPromo(c)); } catch { setPromo(null); setPromoErr(true); }
+  };
+  useEffect(() => { if (initialPromo) applyPromo(initialPromo); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
@@ -29,9 +40,11 @@ export default function CheckFlow({ plate, lang, cityKey, t, waUrl, onClose, onR
     if (!form.name.trim() || !phoneOk || !form.consent) return setTried(true);
     setBusy(true); setError('');
     try {
-      const r = await api.createLead({ ...form, plate, city: cityKey, lang });
+      const promoCode = promo?.code || promoIn.trim().toUpperCase();
+      const r = await api.createLead({ ...form, plate, city: cityKey, lang, ...(promoCode ? { promoCode } : {}) });
       setRef(r.ref);
     } catch (err) {
+      if (err.code === 'invalid_promo' || err.message === 'invalid_promo') { setPromo(null); setPromoErr(true); return; }
       setError(err.status === 429 ? t('tooMany') : t('netErr'));
     } finally { setBusy(false); }
   }
@@ -66,6 +79,33 @@ export default function CheckFlow({ plate, lang, cityKey, t, waUrl, onClose, onR
                 </div>
               </label>
               {tried && !phoneOk && <div className="field-err" role="alert" style={{ marginTop: -8 }}>{t('phoneErr')}</div>}
+              <div className="field promo">
+                <span>{t('promoLabel')} <em className="opt">{t('optional')}</em></span>
+                {promo ? (
+                  <div className="promo-ok" role="status">
+                    <span>🎉 <b>{promo.code}</b> · {t('promoApplied', { title: promo.title || `${promo.pays}%` })}</span>
+                    <button type="button" className="btn-link" onClick={() => { setPromo(null); setPromoIn(''); }}>{t('promoRemove')}</button>
+                  </div>
+                ) : (
+                  <div className="promo-row">
+                    <input id="lead-promo" className={'text-input' + (promoErr ? ' bad' : '')} value={promoIn} placeholder={t('promoPh')}
+                      autoCapitalize="characters" autoComplete="off" spellCheck="false"
+                      onChange={(e) => { setPromoIn(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20)); setPromoErr(false); }}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), applyPromo(promoIn))} />
+                    <button type="button" className="btn-outline promo-apply" disabled={!promoIn} onClick={() => applyPromo(promoIn)}>{t('promoApply')}</button>
+                  </div>
+                )}
+                {promoErr && <div className="field-err" role="alert">{t('promoBad')}</div>}
+                {!promo && promoCodes.length > 0 && (
+                  <div className="promo-chips" aria-label={t('promoAvail')}>
+                    {promoCodes.map((c) => (
+                      <button type="button" key={c.code} className="chip" onClick={() => applyPromo(c.code)} title={c.title}>
+                        <b>{c.code}</b>{c.title && <span>{c.title}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               {/* Honeypot: hidden from people, bots fill it in */}
               <input type="text" tabIndex={-1} autoComplete="off" aria-hidden="true" value={form.website}
                 onChange={(e) => setForm({ ...form, website: e.target.value })}

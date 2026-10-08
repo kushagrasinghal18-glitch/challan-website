@@ -91,6 +91,9 @@ tbody tr.sel { background: var(--row-sel); }
 .dates { display: flex; flex-direction: column; gap: 10px; }
 .date-row { position: relative; display: grid; grid-template-columns: 150px 110px 170px minmax(0, 1fr) auto; gap: 10px; align-items: end; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #FAF9F6; }
 .date-row.past { opacity: .6; }
+.date-row.promo-row-a { grid-template-columns: 150px 120px minmax(0, 1fr) auto auto; }
+.toggle.small-t { font-size: 13px; align-items: center; padding-bottom: 12px; white-space: nowrap; }
+.toggle.small-t input { width: 16px; height: 16px; margin: 0; }
 .past-tag { position: absolute; top: 8px; right: 12px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .btn.ghost { border-color: transparent; background: transparent; color: var(--error); }
 .small-empty { padding: 14px; border: 1px dashed #CFCAC0; border-radius: 12px; }
@@ -208,6 +211,7 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 @media (max-width: 860px) {
   .date-row { grid-template-columns: 1fr 1fr; }
   .date-row .note-f { grid-column: 1 / -1; }
+  .date-row.promo-row-a { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 720px) {
   .bar .who span { display: none; }

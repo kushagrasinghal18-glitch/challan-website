@@ -300,6 +300,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
             <div className="kv"><div className="k">Mobile</div><div className="v">+91 {fmtPhone(lead.phone)}</div></div>
             <div className="kv"><div className="k">City</div><div className="v">{CITY[lead.city] || lead.city}</div></div>
             <div className="kv"><div className="k">Language</div><div className="v">{lead.lang === 'hi' ? 'Hindi' : 'English'}</div></div>
+            {lead.promoCode && <div className="kv"><div className="k">Promo code</div><div className="v" style={{ fontFamily: 'var(--mono)' }}>{lead.promoCode}</div></div>}
             <div className="kv" style={{ gridColumn: '1 / -1' }}>
               <label className="k" htmlFor="agent">Assigned to</label>
               {isAdmin ? (
@@ -351,7 +352,19 @@ const ERRORS = {
   invalid_whatsapp: 'The WhatsApp number must be a 10-digit Indian mobile number.',
   invalid_phone: 'The calling number must be a 10-digit Indian mobile number.',
   invalid_date: 'One of the dates is not filled in. Pick a date or remove that row.',
+  invalid_code: 'A promo code is empty. Type a code or remove that row.',
+  duplicate_code: 'Two promo codes are the same. Each code must be different.',
+  offer_code_missing: 'The offer uses a code that is not in the promo code list.',
 };
+
+const DEFAULT_CODES = [{ code: 'FLAT50', title: 'Flat 50% off your challans', pays: 50, show: true }];
+// datetime-local works in the browser's local time; settings keep an ISO time.
+const toLocalInput = (iso) => { if (!iso) return ''; const d = new Date(iso); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
+const formFrom = (s) => ({
+  whatsapp: s.whatsapp || '', phone: s.phone || '', autoAssign: !!s.autoAssign, lokAdalatDates: s.lokAdalatDates || [],
+  promoCodes: Array.isArray(s.promoCodes) ? s.promoCodes : DEFAULT_CODES,
+  offer: s.offer ? { ...s.offer, endsAt: toLocalInput(s.offer.endsAt) } : (Array.isArray(s.promoCodes) ? { on: false, code: '', endsAt: '' } : { on: true, code: 'FLAT50', endsAt: '' }),
+});
 
 function Settings({ auth, me, staff, reloadStaff, onSaved, signOut }) {
   const [form, setForm] = useState(null);
@@ -360,7 +373,7 @@ function Settings({ auth, me, staff, reloadStaff, onSaved, signOut }) {
 
   useEffect(() => {
     call('/api/admin/settings', auth)
-      .then((s) => setForm({ whatsapp: s.whatsapp || '', phone: s.phone || '', autoAssign: !!s.autoAssign, lokAdalatDates: s.lokAdalatDates || [] }))
+      .then((s) => setForm(formFrom(s)))
       .catch((e) => (e.status === 401 ? signOut() : setMsg({ ok: false, text: 'Could not load settings. Refresh the page to try again.' })));
   }, [auth, signOut]);
 
@@ -368,14 +381,16 @@ function Settings({ auth, me, staff, reloadStaff, onSaved, signOut }) {
 
   const setDate = (id, patch) => setForm({ ...form, lokAdalatDates: form.lokAdalatDates.map((d) => (d.id === id ? { ...d, ...patch } : d)) });
   const addDate = () => setForm({ ...form, lokAdalatDates: [...form.lokAdalatDates, { id: newId(), date: '', time: '10:00', city: 'noida', note: '' }] });
+  const setCode = (i, patch) => setForm({ ...form, promoCodes: form.promoCodes.map((c, j) => (j === i ? { ...c, ...patch } : c)) });
   const removeDate = (id) => setForm({ ...form, lokAdalatDates: form.lokAdalatDates.filter((d) => d.id !== id) });
 
   async function save(e) {
     e.preventDefault();
     setBusy(true); setMsg(null);
     try {
-      const saved = await call('/api/admin/settings', auth, { method: 'PUT', body: JSON.stringify(form) });
-      setForm({ whatsapp: saved.whatsapp, phone: saved.phone, autoAssign: !!saved.autoAssign, lokAdalatDates: saved.lokAdalatDates });
+      const body = { ...form, offer: { ...form.offer, endsAt: form.offer.endsAt ? new Date(form.offer.endsAt).toISOString() : '' } };
+      const saved = await call('/api/admin/settings', auth, { method: 'PUT', body: JSON.stringify(body) });
+      setForm(formFrom(saved));
       setMsg({ ok: true, text: 'Saved. The website shows the new details straight away.' });
       onSaved(saved);
     } catch (e2) {
@@ -426,6 +441,45 @@ function Settings({ auth, me, staff, reloadStaff, onSaved, signOut }) {
           ))}
         </div>
         <button type="button" className="btn" onClick={addDate}>+ Add a date</button>
+      </section>
+
+      <section className="panel pad">
+        <h2>Promo codes</h2>
+        <p className="hint">Customers can type these in the form on the website. Codes marked "Show on website" appear as buttons next to the code box. "Customer pays" sets the starting percentage on the lead.</p>
+        <div className="dates">
+          {form.promoCodes.map((c, i) => (
+            <div className="date-row promo-row-a" key={i}>
+              <label className="field">Code<input value={c.code} placeholder="e.g. FLAT50" style={{ textTransform: 'uppercase', fontFamily: 'var(--mono)' }}
+                onChange={(e) => setCode(i, { code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20) })} /></label>
+              <label className="field">Customer pays
+                <select value={c.pays} onChange={(e) => setCode(i, { pays: Number(e.target.value) })}>{FEE_RATES.map((r) => <option key={r} value={r}>{r}%</option>)}</select>
+              </label>
+              <label className="field note-f">Text shown with it<input value={c.title} maxLength={80} placeholder="e.g. Flat 50% off your challans" onChange={(e) => setCode(i, { title: e.target.value })} /></label>
+              <label className="toggle small-t"><input type="checkbox" checked={c.show !== false} onChange={(e) => setCode(i, { show: e.target.checked })} /> Show on website</label>
+              <button type="button" className="btn ghost" onClick={() => setForm({ ...form, promoCodes: form.promoCodes.filter((_, j) => j !== i) })}>Remove</button>
+            </div>
+          ))}
+        </div>
+        <button type="button" className="btn" onClick={() => setForm({ ...form, promoCodes: [...form.promoCodes, { code: '', title: '', pays: 50, show: true }] })}>+ Add a code</button>
+
+        <h2 style={{ marginTop: 22 }}>Exclusive offer banner</h2>
+        <label className="toggle">
+          <input id="set-offer" type="checkbox" checked={form.offer.on} onChange={(e) => setForm({ ...form, offer: { ...form.offer, on: e.target.checked, code: form.offer.code || form.promoCodes[0]?.code || '' } })} />
+          <span><b>Show the offer at the top of the website, with a countdown</b><br />
+            <span className="hint">The timer counts down to the end time you set. Leave it empty to end the offer at the next Lok Adalat date. When the time is up the banner hides by itself.</span></span>
+        </label>
+        {form.offer.on && (
+          <div className="grid2" style={{ marginTop: 12 }}>
+            <label className="field">Offer code
+              <select value={form.offer.code} onChange={(e) => setForm({ ...form, offer: { ...form.offer, code: e.target.value } })}>
+                {form.promoCodes.filter((c) => c.code).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+              </select>
+            </label>
+            <label className="field">Offer ends <span className="opt">(optional)</span>
+              <input type="datetime-local" value={form.offer.endsAt} onChange={(e) => setForm({ ...form, offer: { ...form.offer, endsAt: e.target.value } })} />
+            </label>
+          </div>
+        )}
       </section>
 
       <section className="panel pad">
