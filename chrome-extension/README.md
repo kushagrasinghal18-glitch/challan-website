@@ -18,7 +18,7 @@ In the admin panel, open a lead and click **Open Parivahan e-Challan**. Parivaha
 "Vehicle Number" picked and the plate already filled. Type the captcha and continue.
 When Parivahan shows the challans, the add-on saves them to that lead in the admin panel
 (a small green-bordered box in the corner says "Saved N challans"). If Parivahan says there
-are no challans, the lead shows "No challans found".
+are no challans, the lead shows "No challans found". The owner's name shown by Parivahan is saved too, so the admin panel can flag a lead whose name doesn't match.
 
 ## WhatsApp Web
 

@@ -48,8 +48,18 @@
   ];
   const clean = (s) => s.replace(/\s+/g, ' ').trim();
 
+  // The owner's name as Parivahan shows it (often part-hidden, e.g. "RA*** KUMAR").
+  const NAME_COL = /violator|owner|accused|name/i, NOT_NAME = /challan|payment|department|officer|state/i;
+  let ownerNames = [];
+  const ownerName = () => {
+    const count = {};
+    for (const n of ownerNames) count[n] = (count[n] || 0) + 1;
+    return Object.keys(count).sort((a, b) => count[b] - count[a])[0] || '';
+  };
+
   function readChallans() {
     const out = [];
+    ownerNames = [];
     for (const table of document.querySelectorAll('table')) {
       if (!table.offsetParent) continue;
       const rows = [...table.rows];
@@ -62,6 +72,7 @@
         if (i >= 0) cols[key] = i;
       }
       if (cols.challanNo === undefined) continue;
+      const nameCol = heads.findIndex((h) => NAME_COL.test(h) && !NOT_NAME.test(h));
       for (const row of rows.slice(headIdx + 1)) {
         if (row.cells.length < heads.length - 1) continue;
         const c = {};
@@ -69,7 +80,11 @@
           const v = clean(row.cells[i]?.textContent || '');
           if (v) c[key] = v;
         }
-        if (c.challanNo && !/challan/i.test(c.challanNo) && !out.some((o) => o.challanNo === c.challanNo)) out.push(c);
+        if (c.challanNo && !/challan/i.test(c.challanNo) && !out.some((o) => o.challanNo === c.challanNo)) {
+          out.push(c);
+          const n = nameCol >= 0 ? clean(row.cells[nameCol]?.textContent || '') : '';
+          if (n && /[a-z]/i.test(n)) ownerNames.push(n.toUpperCase());
+        }
       }
     }
     return out;
@@ -79,10 +94,11 @@
   let lastSent = null;
   async function send(challans) {
     say(`Saving ${challans.length} challan${challans.length === 1 ? '' : 's'} to ${activeLead.ref}…`);
-    const res = await chrome.runtime.sendMessage({ type: 'saveChallans', ref: activeLead.ref, challans });
+    const owner = challans.length ? ownerName() : '';
+    const res = await chrome.runtime.sendMessage({ type: 'saveChallans', ref: activeLead.ref, challans, ownerName: owner });
     const why = { login: 'Click the N icon and log in, then press Send again.', not_your_lead: 'This lead is assigned to someone else.', not_found: 'This lead no longer exists in the admin panel.' };
     say(res?.ok
-      ? (challans.length ? `Saved ${challans.length} challan${challans.length === 1 ? '' : 's'} to ${activeLead.ref}.` : `Saved "No challans found" to ${activeLead.ref}.`)
+      ? (challans.length ? `Saved ${challans.length} challan${challans.length === 1 ? '' : 's'} to ${activeLead.ref}.${owner ? ` Owner on Parivahan: ${owner}.` : ''}` : `Saved "No challans found" to ${activeLead.ref}.`)
       : `Not saved. ${why[res?.error] || `(${res?.error || 'no answer'})`}`);
     $('#send').hidden = false;
   }

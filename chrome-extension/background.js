@@ -45,7 +45,7 @@ async function call(path, body, method = body ? 'POST' : 'GET') {
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg?.type === 'saveChallans') {
-    call(`/api/admin/leads/${encodeURIComponent(msg.ref)}/challans`, { source: 'Parivahan', challans: msg.challans }).then(reply);
+    call(`/api/admin/leads/${encodeURIComponent(msg.ref)}/challans`, { source: 'Parivahan', challans: msg.challans, ...(msg.ownerName ? { ownerName: msg.ownerName } : {}) }).then(reply);
   } else if (msg?.type === 'saveWhatsApp') {
     call('/api/admin/whatsapp-web', msg.body).then(reply);
   } else if (msg?.type === 'getPayment') {
