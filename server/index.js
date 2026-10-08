@@ -5,6 +5,7 @@ import { getChallans, providerName } from './providers/index.js';
 import { PLATE_RE, normalizePlate } from './plate.js';
 import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, checkAdminPassword, hashPassword, verifyPassword, issueTeamToken, readTeamToken } from './auth.js';
 import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
+import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
 import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee } from './store.js';
 
 try { process.loadEnvFile(); } catch { /* no .env file: use defaults */ }
@@ -16,7 +17,7 @@ if (tp) app.set('trust proxy', tp === 'true' ? true : /^\d+$/.test(tp) ? Number(
 const jsonSmall = express.json({ limit: '20kb' }), jsonBig = express.json({ limit: '300kb' });
 // The WhatsApp webhook keeps the raw body so Meta's signature can be checked.
 const jsonWebhook = express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } });
-app.use((req, res, next) => (req.path === '/api/whatsapp/webhook' ? jsonWebhook : req.path.endsWith('/challans') || req.path === '/api/admin/whatsapp-web' ? jsonBig : jsonSmall)(req, res, next));
+app.use((req, res, next) => (req.path === '/api/whatsapp/webhook' ? jsonWebhook : req.path.endsWith('/challans') || req.path === '/api/admin/whatsapp-web' || req.path === '/api/admin/settings' ? jsonBig : jsonSmall)(req, res, next));
 
 const PHONE_RE = /^[6-9]\d{9}$/;
 const CITY_CODES = { noida: 'GBN', ghaziabad: 'GZB', delhi: 'DEL', gurugram: 'GGN' };
@@ -181,7 +182,14 @@ function cleanSettings(b) {
   if (offerCode && !codes.some((c) => c.code === offerCode)) return { error: 'offer_code_missing' };
   const endsAt = o.endsAt && !isNaN(new Date(o.endsAt)) ? new Date(o.endsAt).toISOString() : '';
   const offer = { on: o.on === true && !!offerCode, code: offerCode, endsAt };
-  return { value: { whatsapp, phone, autoAssign: b.autoAssign === true, lokAdalatDates: dates, promoCodes: codes, offer } };
+  // Payment details sent on WhatsApp after approval. The QR is a small image kept as a data URL.
+  const p = b.payment || {};
+  const upiId = String(p.upiId || '').trim();
+  if (upiId && !UPI_RE.test(upiId)) return { error: 'invalid_upi' };
+  const qr = String(p.qr || '');
+  if (qr && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(qr) || qr.length > 700_000)) return { error: 'invalid_qr' };
+  const payment = { upiId, payeeName: String(p.payeeName || '').trim().slice(0, 60), qr };
+  return { value: { whatsapp, phone, autoAssign: b.autoAssign === true, lokAdalatDates: dates, promoCodes: codes, offer, payment } };
 }
 
 // Promo codes from Settings; FLAT50 until the admin saves their own list.
@@ -372,7 +380,8 @@ app.delete('/api/admin/leads/:ref', requireUser, async (req, res) => {
 app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
   const b = req.body || {};
   const patch = { status: b.status, note: b.note, approved: Array.isArray(b.approved) ? b.approved.slice(0, 300) : undefined, feeRate: Number(b.feeRate) || undefined,
-    waApproval: ['sent', 'received', 'clear'].includes(b.waApproval) ? b.waApproval : undefined, waRead: b.waRead === true };
+    waApproval: ['sent', 'received', 'clear'].includes(b.waApproval) ? b.waApproval : undefined, waRead: b.waRead === true,
+    paymentSent: b.paymentSent === true };
   if (b.plate !== undefined) {
     const p = normalizePlate(b.plate);
     if (!PLATE_RE.test(p)) return res.status(400).json({ error: 'invalid_plate' });
@@ -395,6 +404,21 @@ app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
     if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
     console.error('[admin] update failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
   }
+});
+
+// Payment request for an approved lead: message text, UPI pay link and QR (from Settings).
+app.get('/api/admin/leads/:ref/payment', requireUser, async (req, res) => {
+  try {
+    const lead = (await listLeads()).find((l) => l.ref === req.params.ref);
+    if (!lead) return res.status(404).json({ error: 'not_found' });
+    if (req.user.role !== 'admin' && lead.agentId !== req.user.uid) return res.status(403).json({ error: 'not_your_lead' });
+    const s = await getSettings();
+    const pay = s.payment || {};
+    if (!pay.upiId) return res.status(409).json({ error: 'payment_not_set' });
+    const dates = (s.lokAdalatDates || []).filter((d) => d.date >= todayIST());
+    const { payable } = paymentAmounts(lead);
+    res.json({ text: paymentMessage(lead, pay, dates), upiId: pay.upiId, payeeName: pay.payeeName || '', upiLink: upiLink(pay, payable, lead.ref), amount: payable, qr: pay.qr || null });
+  } catch (err) { console.error('[payment] failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
 });
 
 // ── WhatsApp Business Platform ──────────────────────────
@@ -483,7 +507,9 @@ app.post('/api/admin/whatsapp-web', requireUser, limit(120, 60_000), async (req,
     waQueue = run.catch(() => {});
     await run;
     const leads = (await listLeads()).filter((l) => l.phone === phone && (req.user.role === 'admin' || l.agentId === req.user.uid));
-    res.json({ leads: leads.map((l) => ({ ref: l.ref, name: l.name, plate: l.plate, status: l.status, agent: l.agent, waApproval: l.waApproval?.state || '' })) });
+    const upiSet = !!(await getSettings()).payment?.upiId;
+    res.json({ leads: leads.map((l) => ({ ref: l.ref, name: l.name, plate: l.plate, status: l.status, agent: l.agent, waApproval: l.waApproval?.state || '',
+      paymentReady: upiSet && l.waApproval?.state === 'received', paymentSent: !!l.paymentSent })) });
   } catch (err) {
     console.error('[whatsapp-web] save failed', err.message);
     res.status(500).json({ error: 'storage_unavailable' });

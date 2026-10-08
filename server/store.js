@@ -170,6 +170,11 @@ export function updateLead(ref, patch, by, onlyFor) {
         ? { ...m, status: patch.waStatus.status, ...(patch.waStatus.error ? { error: patch.waStatus.error } : {}) } : m));
     }
     if (patch.waRead) out.waUnread = 0;
+    if (patch.paymentSent) {
+      const ok = (lead.challans || []).filter((c) => c.approved);
+      const rate = FEE_RATES.includes(lead.feeRate) ? lead.feeRate : 50;
+      out.paymentSent = { at: new Date().toISOString(), by, amount: Math.round((ok.reduce((n, c) => n + (c.amount || 0), 0) * rate) / 100) };
+    }
     if (Array.isArray(patch.challans)) {
       out.challans = patch.challans;
       out.challansAt = new Date().toISOString();

@@ -80,6 +80,13 @@ test('WhatsApp approval records what was sent and when the customer agreed', asy
   assert.equal((await updateLead('GBN-1', { waApproval: 'clear' }, 'Amit')).waApproval, null);
 });
 
+test('payment details sent are recorded with the amount', async () => {
+  await updateLead('GBN-1', { challans: [{ challanNo: 'A', amount: 500, approved: true }, { challanNo: 'B', amount: 1000, approved: true }] }, 'Priya');
+  const l = await updateLead('GBN-1', { paymentSent: true }, 'Priya');
+  assert.equal(l.paymentSent.by, 'Priya');
+  assert.equal(l.paymentSent.amount, 600); // 40% from the earlier feeRate test
+});
+
 test('a lead can be deleted', async () => {
   await addLead({ ref: 'GBN-9', createdAt: '2026-10-03T00:00:00Z', name: 'Z', plate: 'UP16AB9999', phone: '9876543299', status: 'New', notes: [] });
   assert.equal((await deleteLead('GBN-9')).ref, 'GBN-9');

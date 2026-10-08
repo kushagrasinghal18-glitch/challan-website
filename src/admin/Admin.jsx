@@ -231,7 +231,7 @@ function ChallanEditor({ lead, onSave, onCancel }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend }) {
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser }) {
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
@@ -240,6 +240,24 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
   const [waDraft, setWaDraft] = useState('');
   const [waErr, setWaErr] = useState('');
   const [plateIn, setPlateIn] = useState('');
+  const [pay, setPay] = useState(null); // { text, upiLink, qr, amount } or { error }
+  const [qrCopied, setQrCopied] = useState(false);
+  const approvedIn = lead.waApproval?.state === 'received';
+  const payKey = `${lead.ref}|${approvedIn}|${feeRate(lead)}|${approvedTotal(lead)}`;
+  useEffect(() => {
+    setPay(null);
+    if (approvedIn && getPayment) getPayment(lead.ref).then(setPay);
+  }, [payKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const copyQr = async () => {
+    try {
+      const blob = await (await fetch(pay.qr)).blob();
+      const png = blob.type === 'image/png' ? blob : await new Promise((ok) => {
+        const img = new Image(); img.onload = () => { const c = Object.assign(document.createElement('canvas'), { width: img.width, height: img.height }); c.getContext('2d').drawImage(img, 0, 0); c.toBlob(ok, 'image/png'); }; img.src = pay.qr;
+      });
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+      setQrCopied(true); setTimeout(() => setQrCopied(false), 2500);
+    } catch { /* clipboard blocked: staff can use Download */ }
+  };
   useEffect(() => { setDraft(''); setCopied(false); setEditing(false); setChSt(listState || ''); setWaDraft(''); setWaErr(''); setPlateIn(''); }, [lead.ref, listState]);
   // Opening a lead clears its "new WhatsApp reply" badge.
   useEffect(() => { if (lead.waUnread) onPatch(lead.ref, { waRead: true }); }, [lead.ref, lead.waUnread]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -447,6 +465,30 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                   </div>
                 );
               })()}
+              {approvedIn && (
+                <div className={'wa-appr pay-box' + (lead.paymentSent ? ' done' : '')}>
+                  <div className="sec-k">Payment details on WhatsApp</div>
+                  {!pay ? <div className="small">Loading…</div>
+                    : pay.error === 'payment_not_set' ? <div className="stale">{isAdminUser ? 'Add your UPI ID and QR in Settings → Payment details first.' : 'Ask an admin to add the UPI ID and QR in Settings → Payment details.'}</div>
+                    : pay.error ? <div className="stale">Could not load the payment details. Close and reopen this lead.</div>
+                    : (<>
+                      {lead.paymentSent
+                        ? <div className="ok-line">✓ Sent by {lead.paymentSent.by} · {fullDate(lead.paymentSent.at)} · {inr(lead.paymentSent.amount)}</div>
+                        : <div className="small">Send the UPI ID and QR for {inr(pay.amount)}, with the 100% refund note.</div>}
+                      {lead.paymentSent && lead.paymentSent.amount !== pay.amount && <div className="stale">The amount changed to {inr(pay.amount)} after it was sent. Send it again.</div>}
+                      <div className="cc-row">
+                        <a className={'btn ' + (!lead.paymentSent ? 'wa-btn' : '')} href={`https://wa.me/91${lead.phone}?text=${encodeURIComponent(pay.text)}`} target="_blank" rel="noopener noreferrer"
+                          onClick={(e) => { if (busy) { e.preventDefault(); return; } patch({ paymentSent: true, note: `Sent payment details on WhatsApp: ${inr(pay.amount)} to ${pay.upiId}.` }); }}>
+                          {lead.paymentSent ? 'Send again on WhatsApp' : 'Send payment details'}
+                        </a>
+                        {pay.qr && <button type="button" className="btn" onClick={copyQr}>{qrCopied ? 'QR copied ✓' : 'Copy QR'}</button>}
+                        {pay.qr && <a className="btn" href={pay.qr} download={`niptao-upi-qr-${lead.ref}.png`}>Download QR</a>}
+                      </div>
+                      {pay.qr && <div className="small">After sending the message, paste the QR in the same WhatsApp chat (Ctrl+V) and press Enter.</div>}
+                      <details className="guide"><summary>See the message</summary><pre className="wa-msg">{pay.text}</pre></details>
+                    </>)}
+                </div>
+              )}
             </div>
           )}
 
@@ -516,6 +558,8 @@ const todayIST = () => new Date(Date.now() + 5.5 * 36e5).toISOString().slice(0, 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const ERRORS = {
   invalid_whatsapp: 'The WhatsApp number must be a 10-digit Indian mobile number.',
+  invalid_upi: 'Check the UPI ID. It looks like name@bank, for example niptao@okaxis.',
+  invalid_qr: 'The QR image could not be used. Upload a PNG or JPG photo of the QR code.',
   invalid_phone: 'The calling number must be a 10-digit Indian mobile number.',
   invalid_date: 'One of the dates is not filled in. Pick a date or remove that row.',
   invalid_code: 'A promo code is empty. Type a code or remove that row.',
@@ -530,7 +574,26 @@ const formFrom = (s) => ({
   whatsapp: s.whatsapp || '', phone: s.phone || '', autoAssign: !!s.autoAssign, lokAdalatDates: s.lokAdalatDates || [],
   promoCodes: Array.isArray(s.promoCodes) ? s.promoCodes : DEFAULT_CODES,
   offer: s.offer ? { ...s.offer, endsAt: toLocalInput(s.offer.endsAt) } : (Array.isArray(s.promoCodes) ? { on: false, code: '', endsAt: '' } : { on: true, code: 'FLAT50', endsAt: '' }),
+  payment: { upiId: s.payment?.upiId || '', payeeName: s.payment?.payeeName || '', qr: s.payment?.qr || '' },
 });
+
+// Shrinks an uploaded QR photo so it stays small enough to store with the settings.
+function readQr(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 800 / Math.max(img.width, img.height));
+      const c = Object.assign(document.createElement('canvas'), { width: Math.round(img.width * k), height: Math.round(img.height * k) });
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      let out = c.toDataURL('image/png');
+      if (out.length > 600_000) out = c.toDataURL('image/jpeg', 0.85);
+      resolve(out);
+    };
+    img.onerror = () => reject(new Error('bad_image'));
+    img.src = URL.createObjectURL(file);
+  });
+}
 
 function Settings({ auth, me, staff, reloadStaff, onSaved, signOut }) {
   const [form, setForm] = useState(null);
@@ -646,6 +709,34 @@ function Settings({ auth, me, staff, reloadStaff, onSaved, signOut }) {
             </label>
           </div>
         )}
+      </section>
+
+      <section className="panel pad">
+        <h2>Payment details</h2>
+        <p className="hint" style={{ marginTop: 0 }}>Sent to the customer on WhatsApp after they approve, with the amount, UPI ID, QR and the 100% refund note.</p>
+        <div className="pay-grid">
+          <label className="field"><span>UPI ID</span>
+            <input id="set-upi" value={form.payment.upiId} placeholder="niptao@okaxis" autoCapitalize="none" spellCheck="false"
+              onChange={(e) => setForm({ ...form, payment: { ...form.payment, upiId: e.target.value.trim() } })} /></label>
+          <label className="field"><span>Name shown for payment</span>
+            <input id="set-payee" value={form.payment.payeeName} placeholder="Niptao"
+              onChange={(e) => setForm({ ...form, payment: { ...form.payment, payeeName: e.target.value } })} /></label>
+        </div>
+        <div className="qr-row">
+          {form.payment.qr ? <img className="qr-prev" src={form.payment.qr} alt="Payment QR code" /> : <div className="qr-prev empty">No QR yet</div>}
+          <div>
+            <label className="btn">{form.payment.qr ? 'Change QR image' : 'Upload QR image'}
+              <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={async (e) => {
+                const f = e.target.files?.[0]; e.target.value = '';
+                if (!f) return;
+                try { setForm((x) => ({ ...x, payment: { ...x.payment, qr: '' } })); const qr = await readQr(f); setForm((x) => ({ ...x, payment: { ...x.payment, qr } })); }
+                catch { setMsg({ ok: false, text: ERRORS.invalid_qr }); }
+              }} />
+            </label>
+            {form.payment.qr && <button type="button" className="btn ghost" onClick={() => setForm({ ...form, payment: { ...form.payment, qr: '' } })}>Remove</button>}
+            <div className="hint">A screenshot or photo of your UPI QR code. Remember to press Save changes.</div>
+          </div>
+        </div>
       </section>
 
       <section className="panel pad">
@@ -808,6 +899,7 @@ function toCsv(leads) {
     ['Challan states', (l) => leadStates(l).map((st) => STATES[st]).join(', ')], ['Approved challans', (l) => (l.challans ? approvedOf(l).map((c) => c.challanNo).join(' ') : '')], ['Approved total (₹)', (l) => (l.challans ? approvedTotal(l) : '')],
     ['Customer pays (%)', (l) => (approvedOf(l).length ? feeRate(l) : '')], ['Amount payable (₹)', (l) => (approvedOf(l).length ? payable(l) : '')],
     ['WhatsApp approval', (l) => (!l.waApproval ? '' : waStale(l) ? 'Changed after sending' : l.waApproval.state === 'received' ? `Approved ${fullDate(l.waApproval.receivedAt)}` : `Sent ${fullDate(l.waApproval.sentAt)}`)],
+    ['Payment details sent', (l) => (l.paymentSent ? fullDate(l.paymentSent.at) : '')],
     ['Latest note', (l) => l.notes?.[0]?.text || '']];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   return [cols.map((c) => esc(c[0])).join(','), ...leads.map((l) => cols.map(([, f]) => esc(typeof f === 'function' ? f(l) : l[f])).join(','))].join('\n');
@@ -898,6 +990,10 @@ export default function Admin() {
     return () => clearInterval(iv);
   }, [load]);
 
+  const getPayment = async (ref) => {
+    try { return await call(`/api/admin/leads/${encodeURIComponent(ref)}/payment`, auth); }
+    catch (e) { if (e.status === 401) signOut(); return { error: e.message }; }
+  };
   // Returns '' when sent, else the error code.
   const onWaSend = async (ref, body) => {
     try {
@@ -1060,7 +1156,7 @@ export default function Admin() {
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.ref} className={(sel === l.ref ? 'sel' : '') + (fresh.includes(l.ref) ? ' fresh' : '')} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{l.waUnread > 0 && <span className="multi unread">💬 {l.waUnread} new</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}</div></td>
+                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{l.waUnread > 0 && <span className="multi unread">💬 {l.waUnread} new</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}</div></td>
                     <td>{l.plate ? <span className="plate">{fmtPlate(l.plate)}</span> : <span className="small">Not given yet</span>}</td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>
@@ -1084,7 +1180,7 @@ export default function Admin() {
         </>)}
       </main>
       {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st} lokDates={site?.lokAdalatDates}
-        siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend}
+        siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend} getPayment={getPayment} isAdminUser={isAdmin}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
     </>
   );
