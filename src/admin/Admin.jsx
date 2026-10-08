@@ -58,6 +58,33 @@ const leadStates = (l) => {
   if (!set.size && !l.challans?.length && plateState(l)) set.add(plateState(l));
   return [...set];
 };
+// Pre-written message asking the customer to approve, in writing, the challans they agreed to on the call.
+function approvalMessage(l) {
+  const ok = approvedOf(l);
+  const lines = ok.map((c, i) => `${i + 1}. Challan ${c.challanNo || '-'}${c.date ? ` (${c.date})` : ''}${c.offence ? ` - ${String(c.offence).slice(0, 70)}` : ''} - ${inr(c.amount || 0)}`);
+  return [
+    `Hi ${l.name},`,
+    '',
+    `This is Niptao. As discussed on the call, you have asked us to settle these challans on your vehicle ${fmtPlate(l.plate)}:`,
+    '',
+    ...lines,
+    '',
+    `Total challan amount: ${inr(approvedTotal(l))}`,
+    `Amount you pay (${feeRate(l)}%): *${inr(payable(l))}*`,
+    '',
+    'Please reply *I APPROVE* to give your written approval for Niptao to settle the challans listed above for this amount.',
+    '',
+    `Reference: ${l.ref}`,
+    'Team Niptao',
+  ].join('\n');
+}
+// True when the approved challans or the rate changed after the approval message went out.
+const waStale = (l) => {
+  const w = l.waApproval;
+  if (!w) return false;
+  const ok = approvedOf(l);
+  return w.feeRate !== feeRate(l) || w.total !== approvedTotal(l) || ok.map((c) => c.challanNo || '').join('|') !== (w.challanNos || []).join('|');
+};
 const fullDate = (iso) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 function Logo() {
@@ -317,6 +344,30 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                   <div className="total"><div className="k">Amount payable</div><div className="v">{inr(payable(lead))}</div></div>
                 </div>
               )}
+              {approvedOf(lead).length > 0 && (() => {
+                const w = lead.waApproval, stale = waStale(lead), msg = approvalMessage(lead);
+                const link = `https://wa.me/91${lead.phone}?text=${encodeURIComponent(msg)}`;
+                const send = () => patch({ waApproval: 'sent', note: `Sent approval request on WhatsApp: ${approvedOf(lead).length} challan${approvedOf(lead).length === 1 ? '' : 's'}, ${inr(payable(lead))} payable (${feeRate(lead)}%).` });
+                return (
+                  <div className={'wa-appr' + (w?.state === 'received' && !stale ? ' done' : '')}>
+                    <div className="sec-k">Written approval on WhatsApp</div>
+                    {!w ? <div className="small">Send the customer the approved challans and amount, and ask them to reply "I APPROVE".</div>
+                      : w.state === 'received' ? <div className="ok-line">✓ Customer approved in writing{stale ? ' (the earlier list)' : ''} · marked by {w.receivedBy} · {fullDate(w.receivedAt)}</div>
+                      : <div className="small">Sent by {w.sentBy} · {fullDate(w.sentAt)}. Waiting for the customer to reply "I APPROVE".</div>}
+                    {stale && <div className="stale">The approved challans or amount changed after the message was sent. Send it again.</div>}
+                    <div className="cc-row">
+                      <a className={'btn ' + (!w || stale ? 'wa-btn' : '')} href={link} target="_blank" rel="noopener noreferrer"
+                        onClick={(e) => { if (busy) { e.preventDefault(); return; } send(); }}>
+                        {!w ? 'Send on WhatsApp' : 'Send again on WhatsApp'}
+                      </a>
+                      {w?.state === 'sent' && !stale && (
+                        <button className="btn primary" disabled={busy} onClick={() => patch({ waApproval: 'received', note: 'Customer gave written approval on WhatsApp.' })}>Customer replied "I APPROVE"</button>
+                      )}
+                    </div>
+                    <details className="guide"><summary>See the message</summary><pre className="wa-msg">{msg}</pre></details>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -670,6 +721,7 @@ function toCsv(leads) {
     ['Challans', (l) => (l.challans ? l.challans.length : '')], ['Challan total (₹)', (l) => (l.challans ? challanTotal(l) : '')],
     ['Challan states', (l) => leadStates(l).map((st) => STATES[st]).join(', ')], ['Approved challans', (l) => (l.challans ? approvedOf(l).map((c) => c.challanNo).join(' ') : '')], ['Approved total (₹)', (l) => (l.challans ? approvedTotal(l) : '')],
     ['Customer pays (%)', (l) => (approvedOf(l).length ? feeRate(l) : '')], ['Amount payable (₹)', (l) => (approvedOf(l).length ? payable(l) : '')],
+    ['WhatsApp approval', (l) => (!l.waApproval ? '' : waStale(l) ? 'Changed after sending' : l.waApproval.state === 'received' ? `Approved ${fullDate(l.waApproval.receivedAt)}` : `Sent ${fullDate(l.waApproval.sentAt)}`)],
     ['Latest note', (l) => l.notes?.[0]?.text || '']];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   return [cols.map((c) => esc(c[0])).join(','), ...leads.map((l) => cols.map(([, f]) => esc(typeof f === 'function' ? f(l) : l[f])).join(','))].join('\n');
@@ -910,7 +962,7 @@ export default function Admin() {
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.ref} className={(sel === l.ref ? 'sel' : '') + (fresh.includes(l.ref) ? ' fresh' : '')} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}</div></td>
+                    <td><div className="name">{l.name}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}</div></td>
                     <td><span className="plate">{fmtPlate(l.plate)}</span></td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>

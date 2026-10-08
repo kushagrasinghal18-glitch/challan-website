@@ -69,6 +69,17 @@ test('customer-approved challans are marked on the lead', async () => {
   assert.equal((await updateLead('GBN-1', { feeRate: 10 }, 'Priya')).feeRate, 40);
 });
 
+test('WhatsApp approval records what was sent and when the customer agreed', async () => {
+  const sent = await updateLead('GBN-1', { waApproval: 'sent' }, 'Priya');
+  assert.deepEqual(sent.waApproval.challanNos, ['B']);
+  assert.equal(sent.waApproval.total, 1000);
+  assert.equal(sent.waApproval.feeRate, 40);
+  const got = await updateLead('GBN-1', { waApproval: 'received' }, 'Amit');
+  assert.equal(got.waApproval.state, 'received');
+  assert.equal(got.waApproval.receivedBy, 'Amit');
+  assert.equal((await updateLead('GBN-1', { waApproval: 'clear' }, 'Amit')).waApproval, null);
+});
+
 test('a lead can be deleted', async () => {
   await addLead({ ref: 'GBN-9', createdAt: '2026-10-03T00:00:00Z', name: 'Z', plate: 'UP16AB9999', phone: '9876543299', status: 'New', notes: [] });
   assert.equal((await deleteLead('GBN-9')).ref, 'GBN-9');

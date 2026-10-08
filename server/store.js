@@ -147,6 +147,16 @@ export function updateLead(ref, patch, by, onlyFor) {
       out.approvedAt = new Date().toISOString();
       out.approvedBy = by;
     }
+    // Written approval over WhatsApp: 'sent' snapshots what was asked for, 'received' records the customer's yes.
+    if (patch.waApproval === 'sent') {
+      const ok = (lead.challans || []).filter((c) => c.approved);
+      out.waApproval = { state: 'sent', sentAt: new Date().toISOString(), sentBy: by, challanNos: ok.map((c) => c.challanNo || ''),
+        total: ok.reduce((n, c) => n + (c.amount || 0), 0), feeRate: FEE_RATES.includes(lead.feeRate) ? lead.feeRate : 50 };
+    } else if (patch.waApproval === 'received' && lead.waApproval) {
+      out.waApproval = { ...lead.waApproval, state: 'received', receivedAt: new Date().toISOString(), receivedBy: by };
+    } else if (patch.waApproval === 'clear') {
+      out.waApproval = null;
+    }
     if (Array.isArray(patch.challans)) {
       out.challans = patch.challans;
       out.challansAt = new Date().toISOString();
