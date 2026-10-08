@@ -39,6 +39,25 @@ const FEE_RATES = [50, 40, 30];
 const feeRate = (l) => (FEE_RATES.includes(l.feeRate) ? l.feeRate : 50);
 const payable = (l) => Math.round((approvedTotal(l) * feeRate(l)) / 100);
 const inr = (n) => `₹${n.toLocaleString('en-IN')}`;
+// State a challan was issued in, read from the challan number's prefix (UP…, HR…). Delhi Traffic Police
+// challan numbers are digits only. Leads with no challans fall back to the vehicle's registration state.
+const STATES = { AN: 'Andaman & Nicobar', AP: 'Andhra Pradesh', AR: 'Arunachal Pradesh', AS: 'Assam', BR: 'Bihar', CG: 'Chhattisgarh', CH: 'Chandigarh',
+  DD: 'Daman & Diu', DL: 'Delhi', DN: 'Dadra & Nagar Haveli', GA: 'Goa', GJ: 'Gujarat', HP: 'Himachal Pradesh', HR: 'Haryana', JH: 'Jharkhand',
+  JK: 'Jammu & Kashmir', KA: 'Karnataka', KL: 'Kerala', LA: 'Ladakh', LD: 'Lakshadweep', MH: 'Maharashtra', ML: 'Meghalaya', MN: 'Manipur',
+  MP: 'Madhya Pradesh', MZ: 'Mizoram', NL: 'Nagaland', OD: 'Odisha', OR: 'Odisha', PB: 'Punjab', PY: 'Puducherry', RJ: 'Rajasthan', SK: 'Sikkim',
+  TN: 'Tamil Nadu', TR: 'Tripura', TS: 'Telangana', TG: 'Telangana', UK: 'Uttarakhand', UA: 'Uttarakhand', UP: 'Uttar Pradesh', WB: 'West Bengal' };
+const challanState = (c) => {
+  const no = String(c.challanNo || '').toUpperCase().replace(/\s/g, '');
+  if (/^\d{6,}$/.test(no)) return 'DL';
+  const st = no.slice(0, 2);
+  return STATES[st] ? st : '';
+};
+const plateState = (l) => (STATES[(l.plate || '').slice(0, 2)] ? l.plate.slice(0, 2) : '');
+const leadStates = (l) => {
+  const set = new Set((l.challans || []).map(challanState).filter(Boolean));
+  if (!set.size && !l.challans?.length && plateState(l)) set.add(plateState(l));
+  return [...set];
+};
 const fullDate = (iso) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 function Logo() {
@@ -264,7 +283,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                     <div className={'ch' + (c.approved ? ' ok' : '')} key={c.challanNo || i}>
                       <div className="ch-top"><span className="no">{c.challanNo || '—'}</span><b>{c.amount ? `₹${c.amount.toLocaleString('en-IN')}` : ''}</b></div>
                       {c.offence && <div>{c.offence}</div>}
-                      <div className="small">{[c.date, c.location, c.status].filter(Boolean).join(' · ')}</div>
+                      <div className="small">{[STATES[challanState(c)], c.date, c.location, c.status].filter(Boolean).join(' · ')}</div>
                       <label className="appr-box"><input type="checkbox" checked={!!c.approved} disabled={busy} onChange={() => toggleApproved(i)} /> Customer approved</label>
                     </div>
                   ))}
@@ -632,7 +651,7 @@ function toCsv(leads) {
   const cols = [['Reference', 'ref'], ['Received', (l) => fullDate(l.createdAt)], ['Name', 'name'], ['Vehicle', (l) => fmtPlate(l.plate)],
     ['Mobile', 'phone'], ['City', (l) => CITY[l.city] || l.city], ['Status', 'status'], ['Assigned to', 'agent'],
     ['Challans', (l) => (l.challans ? l.challans.length : '')], ['Challan total (₹)', (l) => (l.challans ? challanTotal(l) : '')],
-    ['Approved challans', (l) => (l.challans ? approvedOf(l).map((c) => c.challanNo).join(' ') : '')], ['Approved total (₹)', (l) => (l.challans ? approvedTotal(l) : '')],
+    ['Challan states', (l) => leadStates(l).map((st) => STATES[st]).join(', ')], ['Approved challans', (l) => (l.challans ? approvedOf(l).map((c) => c.challanNo).join(' ') : '')], ['Approved total (₹)', (l) => (l.challans ? approvedTotal(l) : '')],
     ['Customer pays (%)', (l) => (approvedOf(l).length ? feeRate(l) : '')], ['Amount payable (₹)', (l) => (approvedOf(l).length ? payable(l) : '')],
     ['Latest note', (l) => l.notes?.[0]?.text || '']];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -646,6 +665,7 @@ export default function Admin() {
   const [statuses, setStatuses] = useState(Object.keys(STATUS_COLORS));
   const [tab, setTab] = useState('All');
   const [q, setQ] = useState('');
+  const [st, setSt] = useState('');
   const [sel, setSel] = useState(null);
   const [err, setErr] = useState('');
   const [view, setView] = useState(() => (location.hash === '#settings' ? 'settings' : 'leads'));
@@ -764,8 +784,16 @@ export default function Admin() {
 
   const filtered = useMemo(() => {
     const s = q.toLowerCase().replace(/\s/g, '');
-    return (leads || []).filter((l) => !s || (l.name + l.plate + l.phone + l.ref).toLowerCase().replace(/\s/g, '').includes(s));
-  }, [leads, q]);
+    return (leads || []).filter((l) => (!s || (l.name + l.plate + l.phone + l.ref).toLowerCase().replace(/\s/g, '').includes(s))
+      && (!st || leadStates(l).includes(st)));
+  }, [leads, q, st]);
+  // States that appear in the leads, most leads first, for the State filter.
+  const stateOpts = useMemo(() => {
+    const n = {};
+    (leads || []).forEach((l) => leadStates(l).forEach((x) => { n[x] = (n[x] || 0) + 1; }));
+    if (st && !n[st]) n[st] = 0;
+    return Object.entries(n).sort((a, b) => b[1] - a[1] || STATES[a[0]].localeCompare(STATES[b[0]]));
+  }, [leads, st]);
   const rows = tab === 'All' ? filtered : filtered.filter((l) => l.status === tab);
 
   if (!auth) return <Login onIn={(a) => { save(a); setAuth(a); setSoundReady(sound.ready()); }} />;
@@ -834,7 +862,7 @@ export default function Admin() {
         {fresh.length > 0 && (
           <div className="new-banner" role="status">
             <b>{fresh.length === 1 ? '1 new lead' : `${fresh.length} new leads`}</b> arrived while this page was open.
-            <button className="btn" onClick={() => { setTab('All'); setQ(''); setFresh([]); }}>Got it</button>
+            <button className="btn" onClick={() => { setTab('All'); setQ(''); setSt(''); setFresh([]); }}>Got it</button>
           </div>
         )}
         {!isAdmin && <div className="sub" style={{ marginBottom: 12 }}>You see the leads assigned to you.</div>}
@@ -852,6 +880,10 @@ export default function Admin() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6B7385" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
               <input id="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search vehicle number, name, phone or reference" />
             </div>
+            <select className="state-sel" aria-label="Filter by challan state" value={st} onChange={(e) => setSt(e.target.value)}>
+              <option value="">All states</option>
+              {stateOpts.map(([x, n]) => <option key={x} value={x}>{STATES[x]} ({n})</option>)}
+            </select>
             <button className="btn" onClick={load}>Refresh</button>
             <button className="btn" onClick={exportCsv} disabled={!rows.length}>Download CSV</button>
           </div>
@@ -861,7 +893,7 @@ export default function Admin() {
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.ref} className={(sel === l.ref ? 'sel' : '') + (fresh.includes(l.ref) ? ' fresh' : '')} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}</div></td>
+                    <td><div className="name">{l.name}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}</div></td>
                     <td><span className="plate">{fmtPlate(l.plate)}</span></td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>
@@ -877,7 +909,7 @@ export default function Admin() {
                 ))}
               </tbody>
             </table>
-            {leads && !rows.length && <div className="empty">{all.length ? 'No leads match this search.' : isAdmin ? 'No leads yet. They appear here as soon as someone submits the form on the website.' : 'No leads are assigned to you yet.'}</div>}
+            {leads && !rows.length && <div className="empty">{all.length ? (st ? `No leads with challans in ${STATES[st]}${q ? ' match this search' : ''}.` : 'No leads match this search.') : isAdmin ? 'No leads yet. They appear here as soon as someone submits the form on the website.' : 'No leads are assigned to you yet.'}</div>}
             {!leads && !err && <div className="empty">Loading leads…</div>}
           </div>
           {leads && <div className="foot">Showing {rows.length} of {all.length} leads · checks for new leads every 15 seconds</div>}

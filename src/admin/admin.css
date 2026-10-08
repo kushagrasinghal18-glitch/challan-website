@@ -54,6 +54,7 @@ button { cursor: pointer; }
 .search { flex: 1 1 260px; min-width: 0; display: flex; align-items: center; gap: 8px; border: 1px solid #D6D2C9; border-radius: 10px; padding: 0 12px; height: 40px; }
 .search input { border: 0; flex: 1; min-width: 0; height: 100%; font-size: 14px; background: transparent; }
 .search input:focus { outline: none; }
+.state-sel { height: 40px; border: 1px solid #D6D2C9; border-radius: 10px; padding: 0 10px; font-size: 14px; background: #fff; max-width: 220px; }
 .btn { height: 40px; border-radius: 10px; border: 1px solid #D6D2C9; background: #fff; color: var(--navy); font-weight: 600; font-size: 14px; padding: 0 14px; }
 .btn.primary { background: var(--amber); border-color: var(--amber); }
 .btn:disabled { opacity: .5; cursor: default; }
