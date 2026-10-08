@@ -26,14 +26,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // Pages on Parivahan and WhatsApp Web ask us to save things to the admin panel. Only this
 // background worker may call the Niptao site, so they send the data here.
 const DEFAULT_SITE = 'https://www.niptao.co.in';
-async function post(path, body) {
+async function call(path, body) {
   const { auth } = await chrome.storage.local.get('auth');
   if (!auth?.token) return { ok: false, error: 'login' };
   try {
     const res = await fetch(`${auth.origin || DEFAULT_SITE}${path}`, {
-      method: 'POST',
+      method: body ? 'POST' : 'GET',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
-      body: JSON.stringify(body),
+      body: body ? JSON.stringify(body) : undefined,
     });
     if (res.status === 401) { await chrome.storage.local.remove('auth'); return { ok: false, error: 'login' }; }
     const data = await res.json().catch(() => ({}));
@@ -45,9 +45,11 @@ async function post(path, body) {
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg?.type === 'saveChallans') {
-    post(`/api/admin/leads/${encodeURIComponent(msg.ref)}/challans`, { source: 'Parivahan', challans: msg.challans }).then(reply);
+    call(`/api/admin/leads/${encodeURIComponent(msg.ref)}/challans`, { source: 'Parivahan', challans: msg.challans }).then(reply);
   } else if (msg?.type === 'saveWhatsApp') {
-    post('/api/admin/whatsapp-web', msg.body).then(reply);
+    call('/api/admin/whatsapp-web', msg.body).then(reply);
+  } else if (msg?.type === 'getPayment') {
+    call(`/api/admin/leads/${encodeURIComponent(msg.ref)}/payment`).then(reply);
   } else return;
   return true; // keep the channel open for the async reply
 });

@@ -1,7 +1,8 @@
 // Runs on WhatsApp Web. A small Niptao panel for the open chat: "Save chat to Niptao" sends the
 // messages on screen to the admin panel, "Add as lead" starts a lead for this number. The only
 // thing it does by itself: when the open chat shows a new "I APPROVE" from the customer, it saves
-// that chat once so the approval reaches the admin panel. It never sends WhatsApp messages.
+// that chat once so the approval reaches the admin panel, and puts the payment details in the
+// message box. It never sends WhatsApp messages itself: a person always presses Send.
 (() => {
   const PHONE_ID = /(?:^|_)(\d{10,15})@c\.us/;
   const PHONE_TEXT = /^\+?\d[\d\s()-]{8,16}\d$/;
@@ -34,6 +35,7 @@
       <p id="hint" class="hint" hidden></p>
       <div class="btns"><button id="save">Save chat to Niptao</button><button id="add" class="alt">Add as lead</button></div>
       <p id="msg"></p><div id="leads"></div>
+      <div id="pay" class="hint" hidden><span id="payMsg"></span> <button id="copyQr" class="link" hidden>Copy QR</button></div>
       <p><button id="debug" class="link">Not working? Copy page details for support</button></p></div></div></div>`;
   const $ = (s) => root.querySelector(s);
   $('.min').onclick = () => { $('#body').hidden = !$('#body').hidden; $('.min').textContent = $('#body').hidden ? '▸' : '▾'; };
@@ -131,6 +133,7 @@
         $('#name').value = PHONE_TEXT.test(key) ? '' : key;
         $('#msg').textContent = '';
         $('#leads').replaceChildren();
+        $('#pay').hidden = true;
       }
     }
     if (!open || $('#chat').hidden) return;
@@ -157,8 +160,13 @@
     if (!digits($('#phone').value)) { $('#hint').textContent = 'The customer wrote "I APPROVE". Enter their mobile number above and it will be saved.'; return; }
     if (busy) return;
     $('#hint').textContent = 'The customer wrote "I APPROVE". Saving to Niptao…';
-    if (await send(false)) await store.set({ waApprovalsSaved: [...waApprovalsSaved, key].slice(-500) });
-    else { failedKey = key; $('#hint').textContent = 'The customer wrote "I APPROVE" but it could not be saved. See below, then press Save chat to Niptao.'; }
+    const leads = await send(false);
+    if (leads) {
+      await store.set({ waApprovalsSaved: [...waApprovalsSaved, key].slice(-500) });
+      // Right after the approval, put the payment details in the chat box (only one lead, or it's ambiguous).
+      const ready = leads.filter((l) => l.paymentReady);
+      if (ready.length === 1) preparePayment(ready[0].ref);
+    } else { failedKey = key; $('#hint').textContent = 'The customer wrote "I APPROVE" but it could not be saved. See below, then press Save chat to Niptao.'; }
   }
 
   // ── Buttons ──
@@ -176,6 +184,13 @@
       d.querySelector('.plate').textContent = l.plate || '';
       const approval = { sent: 'approval sent, waiting', received: 'approved ✓' }[l.waApproval] || '';
       d.lastChild.textContent = [l.status, l.agent, approval].filter(Boolean).join(' · ');
+      if (l.paymentReady) {
+        const b = document.createElement('button');
+        b.className = 'link';
+        b.textContent = 'Put payment details in the chat';
+        b.onclick = () => preparePayment(l.ref);
+        d.append(b);
+      }
       return d;
     }));
   }
@@ -188,17 +203,69 @@
     $('#msg').textContent = create ? 'Adding lead…' : `Saving ${messages.length} messages…`;
     try {
       const res = await chrome.runtime.sendMessage({ type: 'saveWhatsApp', body });
-      if (!res?.ok) { $('#msg').textContent = `Not saved. ${ERRORS[res?.error] || `(${res?.error || 'no answer'})`}`; return false; }
+      if (!res?.ok) { $('#msg').textContent = `Not saved. ${ERRORS[res?.error] || `(${res?.error || 'no answer'})`}`; return null; }
       rememberPhone(current, digits($('#phone').value));
       const leads = res.leads || [];
       $('#msg').textContent = leads.length ? (create ? 'Lead saved.' : `Saved ${messages.length} messages.`) : 'Saved, but this lead is assigned to someone else.';
       showLeads(leads);
-      return true;
+      return leads;
     } finally {
       busy = false;
       for (const b of root.querySelectorAll('.btns button')) b.disabled = false;
     }
   }
+
+  // ── Payment details: typed into the WhatsApp message box, QR copied. The person presses Send. ──
+  let qrBlob = null;
+  function typeIntoChat(text) {
+    const box = main()?.querySelector('footer [contenteditable="true"]') || main()?.querySelector('[contenteditable="true"][role="textbox"]');
+    if (!box) return false;
+    box.focus();
+    // WhatsApp's editor understands a paste, which keeps the line breaks (typing "\n" would mean Enter).
+    const dt = new DataTransfer();
+    dt.setData('text/plain', text);
+    const pasted = !box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    if (!pasted || !clean(box.innerText)) document.execCommand('insertText', false, text);
+    return Boolean(clean(box.innerText));
+  }
+  async function toPng(dataUrl) {
+    const img = new Image();
+    img.src = dataUrl;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.getContext('2d').drawImage(img, 0, 0);
+    return new Promise((r) => c.toBlob(r, 'image/png'));
+  }
+  async function copyQr() {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': qrBlob })]);
+      return true;
+    } catch { return false; }
+  }
+  async function preparePayment(ref) {
+    const res = await chrome.runtime.sendMessage({ type: 'getPayment', ref });
+    if (!res?.ok) {
+      const why = { payment_not_set: 'Add the UPI ID and QR code in the admin panel under Settings, Payment details.', login: ERRORS.login };
+      $('#pay').hidden = false;
+      $('#payMsg').textContent = `Payment details not ready. ${why[res?.error] || `(${res?.error || 'no answer'})`}`;
+      $('#copyQr').hidden = true;
+      return;
+    }
+    const typed = typeIntoChat(res.text);
+    qrBlob = res.qr ? await toPng(res.qr).catch(() => null) : null;
+    const copied = qrBlob ? await copyQr() : false;
+    $('#pay').hidden = false;
+    $('#copyQr').hidden = !qrBlob || copied;
+    $('#payMsg').textContent = [
+      typed ? 'Payment details are in the message box. Check them and press Enter to send.' : 'Could not reach the message box. Click in it and press "Put payment details in the chat" again.',
+      qrBlob ? (copied ? 'Then press Ctrl+V and Enter to send the QR code.' : 'Then press "Copy QR", Ctrl+V and Enter to send the QR code.') : '',
+    ].filter(Boolean).join(' ');
+  }
+  $('#copyQr').onclick = async () => {
+    if (await copyQr()) { $('#copyQr').hidden = true; $('#payMsg').textContent = 'QR copied. Click in the message box, press Ctrl+V, then Enter.'; }
+  };
+
   $('#save').onclick = () => send(false);
   $('#add').onclick = () => send(true);
 

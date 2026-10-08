@@ -35,7 +35,14 @@ If the mobile number box is empty, type the customer's number once (or click the
 the top of the chat so WhatsApp shows the number); it's remembered for that chat. When the
 customer writes "I APPROVE", the box saves the chat by itself so the approval shows in the
 admin panel. Everything else waits for a button press, the add-on never sends WhatsApp
-messages, and group chats are skipped. If something isn't read correctly, press
+messages, and group chats are skipped.
+
+After an approval, the box puts the payment message (details, UPI ID and refund note) in
+WhatsApp's message box and copies the QR code. Check it and press Enter, then Ctrl+V and
+Enter to send the QR. Set the UPI ID and QR in the admin panel under Settings. You can
+also press "Put payment details in the chat" under a lead at any time.
+
+If something isn't read correctly, press
 "Not working? Copy page details" and paste the result to support (it contains no names,
 numbers or message text).
 
