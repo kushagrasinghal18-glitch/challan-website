@@ -86,6 +86,7 @@ app.get('/api/challans', limit(20, 10 * 60_000), requireSession, async (req, res
   }
 });
 
+const MAX_VEHICLES = 5;
 // Lead capture: name + vehicle + phone. No OTP or challan lookup for now.
 app.post('/api/leads', limit(10, 10 * 60_000), async (req, res) => {
   const b = req.body || {};
@@ -94,6 +95,10 @@ app.post('/api/leads', limit(10, 10 * 60_000), async (req, res) => {
   const phone = String(b.phone || '').replace(/\D/g, '').slice(-10);
   const name = String(b.name || '').trim().slice(0, 120);
   if (!PLATE_RE.test(plate)) return res.status(400).json({ error: 'invalid_plate' });
+  // More vehicles from the same customer: each becomes its own lead, linked by groupRef.
+  const extra = (Array.isArray(b.extraPlates) ? b.extraPlates : []).slice(0, MAX_VEHICLES - 1).map(normalizePlate);
+  if (extra.some((p) => !PLATE_RE.test(p))) return res.status(400).json({ error: 'invalid_plate' });
+  const plates = [...new Set([plate, ...extra])];
   if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'invalid_phone' });
   if (!name || b.consent !== true) return res.status(400).json({ error: 'missing_fields' });
   const code = CITY_CODES[b.city] || 'GBN';
@@ -106,7 +111,7 @@ app.post('/api/leads', limit(10, 10 * 60_000), async (req, res) => {
   }
   const base = {
     createdAt: new Date().toISOString(), city: CITY_CODES[b.city] ? b.city : 'noida',
-    name, plate, phone, lang: b.lang === 'hi' ? 'hi' : 'en', status: 'New', agent: '', agentId: '', notes: [],
+    name, phone, lang: b.lang === 'hi' ? 'hi' : 'en', status: 'New', agent: '', agentId: '', notes: [],
     ...(promo ? { promoCode: promo.code, feeRate: promo.pays } : {}),
   };
   try {
@@ -115,17 +120,21 @@ app.post('/api/leads', limit(10, 10 * 60_000), async (req, res) => {
       if (pick) Object.assign(base, { agent: pick.name, agentId: pick.id });
     }
   } catch (err) { console.error('[leads] auto-assign failed', err.message); }
-  let ref;
-  for (let attempt = 0; ; attempt++) {
-    ref = `${code}-26${String(Math.floor(10000 + Math.random() * 89999))}`;
-    try { await addLead({ ref, ...base }); break; }
-    catch (err) {
-      // Retry on the rare duplicate reference; anything else is a real failure.
-      if (err.code === '23505' && attempt < 3) continue;
-      return res.status(500).json({ error: 'save_failed' });
+  const refs = [];
+  for (const p of plates) {
+    const extraFields = plates.length > 1 ? { groupRef: refs[0] || null, vehicles: plates.length } : {};
+    for (let attempt = 0; ; attempt++) {
+      const ref = `${code}-26${String(Math.floor(10000 + Math.random() * 89999))}`;
+      try { await addLead({ ref, ...base, plate: p, ...extraFields, ...(plates.length > 1 && !refs.length ? { groupRef: ref } : {}) }); refs.push(ref); break; }
+      catch (err) {
+        // Retry on the rare duplicate reference; anything else is a real failure.
+        if (err.code === '23505' && attempt < 3) continue;
+        if (refs.length) return res.json({ ref: refs[0], refs, plates: plates.slice(0, refs.length) });
+        return res.status(500).json({ error: 'save_failed' });
+      }
     }
   }
-  res.json({ ref });
+  res.json({ ref: refs[0], refs, plates });
 });
 
 // ── Site settings ───────────────────────────────────────

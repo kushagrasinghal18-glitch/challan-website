@@ -192,8 +192,8 @@ tbody tr.sel { background: var(--row-sel); }
 tbody tr.fresh td:first-child { box-shadow: inset 4px 0 0 #1F7A4D; }
 tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px; letter-spacing: .1em; background: #1F7A4D; color: #fff; border-radius: 4px; padding: 2px 5px; vertical-align: 2px; }
 .challan-check { border: 1px solid #F3D9A4; background: #FFF9EE; border-radius: 12px; padding: 12px 14px; }
-.challan-check .cc-row, .wa-appr .cc-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px; }
-.challan-check .cc-row .btn, .wa-appr .cc-row .btn { display: inline-flex; align-items: center; text-decoration: none; }
+.challan-check .cc-row, .wa-appr .cc-row, .siblings .cc-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px; }
+.challan-check .cc-row .btn, .wa-appr .cc-row .btn, .siblings .cc-row .btn { display: inline-flex; align-items: center; text-decoration: none; }
 .challan-check .hint { margin: 0; font-size: 13px; }
 .kv select { width: 100%; height: 36px; border: 1.5px solid #CFCAC0; border-radius: 8px; padding: 0 8px; margin-top: 4px; font-weight: 600; color: var(--navy); background: #fff; }
 .kv .hint { margin: 6px 0 0; font-size: 12px; }
@@ -235,3 +235,7 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 .wa-appr .stale { color: #9A5B00; background: #FFF6E5; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
 .btn.wa-btn { background: #25D366; border-color: #25D366; color: #fff; }
 .wa-msg { white-space: pre-wrap; font: 13px/1.5 inherit; font-family: inherit; background: #F7F5F0; border-radius: 8px; padding: 10px; margin: 8px 0 0; }
+
+.siblings .plate.cur { align-self: center; }
+.siblings .btn .small { font-weight: 400; margin-left: 4px; }
+.name .multi { margin-left: 8px; font-size: 11px; font-weight: 600; background: #E8EDF8; color: #2B3A67; border-radius: 999px; padding: 2px 8px; vertical-align: middle; }

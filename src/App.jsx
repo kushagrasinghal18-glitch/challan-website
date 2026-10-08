@@ -173,7 +173,7 @@ export default function App() {
                 </div>
                 {plateErr
                   ? <div id="plate-help" className="field-err" role="alert">{t('plateError', { plate: city.plateHint })}</div>
-                  : <div id="plate-help" className="field-hint">{t('plateHint')}: <b>{city.plateHint}</b></div>}
+                  : <div id="plate-help" className="field-hint">{t('plateHint')}: <b>{city.plateHint}</b> · {t('multiHint')}</div>}
                 <button type="submit" className="btn-amber" style={{ height: 58, fontSize: 17 }}>{t('checkBtn')} <span aria-hidden="true">→</span></button>
                 <div className="price-ex" aria-label={t('priceEx')}>
                   <span className="k">{t('priceEx')}</span>
@@ -346,6 +346,7 @@ export default function App() {
 
       {flowOpen && (
         <CheckFlow
+          plateHint={city.plateHint}
           plate={plate} lang={lang} cityKey={SITE.cityKey} t={t} waUrl={waUrl}
           promoCodes={settings?.promoCodes || []} initialPromo={promo}
           onClose={() => setFlowOpen(false)}

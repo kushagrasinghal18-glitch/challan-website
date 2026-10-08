@@ -1,16 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import * as api from './api.js';
 import * as Icon from './icons.jsx';
+import { PLATE_RE, fmtPlate } from './format.js';
+
+const MAX_VEHICLES = 5;
+const bare = (p) => p.replace(/\s/g, '');
 
 // Lead capture: one form (name + mobile, vehicle carried over from the hero) → thanks.
 // The OTP and live challan lookup steps are switched off for now; their server
 // code is still in /server for when they're needed again.
-export default function CheckFlow({ plate, lang, cityKey, t, waUrl, promoCodes = [], initialPromo = '', onClose, onReset }) {
+export default function CheckFlow({ plate, plateHint = 'UP16 AB 1234', lang, cityKey, t, waUrl, promoCodes = [], initialPromo = '', onClose, onReset }) {
   const [form, setForm] = useState({ name: '', phone: '', consent: false, website: '' });
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [ref, setRef] = useState('');
+  const [done, setDone] = useState([]); // [{ ref, plate }] after submit
+  // Extra vehicles for the same customer; each becomes its own lead.
+  const [extra, setExtra] = useState([]);
+  const plateErr = (p, i) => (!PLATE_RE.test(bare(p)) ? 'bad'
+    : [plate, ...extra.slice(0, i)].some((q) => bare(q) === bare(p)) ? 'dup' : '');
+  const extraErrs = extra.map(plateErr);
   // Promo code: typed or picked from the codes shown beside the box; checked with the server.
   const [promoIn, setPromoIn] = useState(initialPromo);
   const [promo, setPromo] = useState(null); // { code, title, pays }
@@ -37,11 +47,15 @@ export default function CheckFlow({ plate, lang, cityKey, t, waUrl, promoCodes =
 
   async function submit(e) {
     e.preventDefault();
-    if (!form.name.trim() || !phoneOk || !form.consent) return setTried(true);
+    if (!form.name.trim() || !phoneOk || !form.consent || extraErrs.some(Boolean)) return setTried(true);
     setBusy(true); setError('');
     try {
       const promoCode = promo?.code || promoIn.trim().toUpperCase();
-      const r = await api.createLead({ ...form, plate, city: cityKey, lang, ...(promoCode ? { promoCode } : {}) });
+      const extraPlates = extra.map(bare);
+      const r = await api.createLead({ ...form, plate, city: cityKey, lang, ...(extraPlates.length ? { extraPlates } : {}), ...(promoCode ? { promoCode } : {}) });
+      const refs = r.refs || [r.ref];
+      const plates = [plate, ...extra];
+      setDone(refs.map((x, i) => ({ ref: x, plate: fmtPlate(r.plates?.[i] || plates[i] || '') })));
       setRef(r.ref);
     } catch (err) {
       if (err.code === 'invalid_promo' || err.message === 'invalid_promo') { setPromo(null); setPromoErr(true); return; }
@@ -79,6 +93,25 @@ export default function CheckFlow({ plate, lang, cityKey, t, waUrl, promoCodes =
                 </div>
               </label>
               {tried && !phoneOk && <div className="field-err" role="alert" style={{ marginTop: -8 }}>{t('phoneErr')}</div>}
+              <div className="field vehicles">
+                <span>{t('fVehicles')}</span>
+                <div className="veh-list">
+                  <span className="plate-chip">{plate}</span>
+                  {extra.map((p, i) => (
+                    <div className="veh-row" key={i}>
+                      <input className={'text-input plate-in' + (tried && extraErrs[i] ? ' bad' : '')} value={p} placeholder={plateHint}
+                        aria-label={`${t('fVehicle')} ${i + 2}`} autoComplete="off" autoCapitalize="characters" spellCheck="false" maxLength={13}
+                        autoFocus={i === extra.length - 1}
+                        onChange={(e) => setExtra(extra.map((q, j) => (j === i ? fmtPlate(e.target.value) : q)))} />
+                      <button type="button" className="btn-link" onClick={() => setExtra(extra.filter((_, j) => j !== i))}>{t('removeVehicle')}</button>
+                      {tried && extraErrs[i] && <div className="field-err" role="alert">{extraErrs[i] === 'dup' ? t('vehicleDup') : t('vehicleBad', { plate: plateHint })}</div>}
+                    </div>
+                  ))}
+                </div>
+                {extra.length < MAX_VEHICLES - 1
+                  ? <button type="button" className="btn-outline add-veh" onClick={() => setExtra([...extra, ''])}>{t('addVehicle')}</button>
+                  : <div className="note">{t('vehiclesMax', { n: MAX_VEHICLES })}</div>}
+              </div>
               <div className="field promo">
                 <span>{t('promoLabel')} <em className="opt">{t('optional')}</em></span>
                 {promo ? (
@@ -127,11 +160,19 @@ export default function CheckFlow({ plate, lang, cityKey, t, waUrl, promoCodes =
                 <h3>{t('thanksTitle')}</h3>
                 <p><Icon.WhatsApp size={20} sw={2} stroke="#1FA855" />{t('thanksWa')}</p>
               </div>
-              <div className="ref">
-                <span className="k">{t('refLabel')}</span>
-                <span className="v">{ref}</span>
-                <span className="s">{plate} · {phoneShown}</span>
-              </div>
+              {done.length > 1 ? (
+                <div className="ref">
+                  <span className="k">{t('refsLabel')}</span>
+                  {done.map((d) => <span className="ref-row" key={d.ref}><span className="v">{d.ref}</span><span className="s">{d.plate}</span></span>)}
+                  <span className="s">{phoneShown}</span>
+                </div>
+              ) : (
+                <div className="ref">
+                  <span className="k">{t('refLabel')}</span>
+                  <span className="v">{ref}</span>
+                  <span className="s">{plate} · {phoneShown}</span>
+                </div>
+              )}
               <div className="steps">
                 <div className="k">{t('nextTitle2')}</div>
                 {['next1', 'next2', 'next3'].map((k, i) => (

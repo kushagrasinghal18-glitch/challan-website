@@ -13,9 +13,11 @@ export async function fetchChallans(plate) {
   const rows = await mockFetch(p);
   return { plate: p, source: 'mock', fetchedAt: new Date().toISOString(), challans: rows.map((c) => ({ ...c, offenceHi: lookupOffence(c.offence)?.hi ?? null, ...classify(c) })) };
 }
-export const createLead = async ({ city }) => ({
-  ref: ({ ghaziabad: 'GZB', delhi: 'DEL', gurugram: 'GGN' }[city] || 'GBN') + '-26' + Math.floor(10000 + Math.random() * 89999),
-});
+export const createLead = async ({ city, plate, extraPlates = [] }) => {
+  const plates = [plate, ...extraPlates];
+  const refs = plates.map(() => ({ ghaziabad: 'GZB', delhi: 'DEL', gurugram: 'GGN' }[city] || 'GBN') + '-26' + Math.floor(10000 + Math.random() * 89999));
+  return { ref: refs[0], refs, plates };
+};
 export const checkPromo = async (code) => {
   if (String(code).toUpperCase() !== 'FLAT50') throw Object.assign(new Error('invalid_promo'), { status: 404 });
   return { code: 'FLAT50', title: 'Flat 50% off your challans', pays: 50 };
