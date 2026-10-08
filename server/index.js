@@ -341,7 +341,7 @@ app.patch('/api/admin/staff/:id', requireAdmin, async (req, res) => {
 });
 
 // Challans read from Parivahan (by the Niptao Lead Filler add-on) and saved on the lead.
-// body: { challans: [{ challanNo, date, offence, location, amount, status }], source? }
+// body: { challans: [{ challanNo, date, offence, location, amount, status }], source?, ownerName? }
 const clip = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
   const list = req.body?.challans;
@@ -352,10 +352,12 @@ app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
     amount: Math.max(0, Math.round(Number(String(c?.amount ?? '').replace(/[^\d.]/g, '')) || 0)),
   })).filter((c) => c.challanNo || c.offence || c.amount);
   const total = challans.reduce((n, c) => n + c.amount, 0);
-  const note = `Fetched ${challans.length} challan${challans.length === 1 ? '' : 's'} from ${clip(req.body.source, 40) || 'Parivahan'}`
+  const source = clip(req.body.source, 40) || 'Parivahan';
+  const ownerName = clip(req.body.ownerName, 120);
+  const note = `Fetched ${challans.length} challan${challans.length === 1 ? '' : 's'} from ${source}`
     + (total ? `, total ₹${total.toLocaleString('en-IN')}` : '') + '.';
   try {
-    const lead = await updateLead(req.params.ref, { challans, challansSource: clip(req.body.source, 40) || 'Parivahan', note },
+    const lead = await updateLead(req.params.ref, { challans, challansSource: source, note, ...(ownerName ? { rcOwner: { name: ownerName, source } } : {}) },
       req.user.name, req.user.role === 'admin' ? null : req.user.uid);
     if (!lead) return res.status(404).json({ error: 'not_found' });
     res.json({ lead, count: challans.length, total });

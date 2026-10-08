@@ -508,6 +508,19 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
             <div className="kv"><div className="k">Mobile</div><div className="v">+91 {fmtPhone(lead.phone)}</div></div>
             <div className="kv"><div className="k">City</div><div className="v">{CITY[lead.city] || lead.city}</div></div>
             <div className="kv"><div className="k">Language</div><div className="v">{lead.lang === 'hi' ? 'Hindi' : 'English'}</div></div>
+            {lead.rcOwner?.name && (
+              <div className="kv" style={{ gridColumn: '1 / -1' }}>
+                <div className="k">RC owner ({lead.rcOwner.source || 'Parivahan'})</div>
+                <div className="v">{lead.rcOwner.name}{' '}
+                  <span className={`namechk ${lead.rcOwner.match || 'unknown'}`}>
+                    {lead.rcOwner.match === 'match' ? '✓ matches the name given'
+                      : lead.rcOwner.match === 'partial' ? '⚠ partly matches the name given'
+                        : lead.rcOwner.match === 'mismatch' ? "⚠ doesn't match the name given" : 'could not be compared'}
+                  </span>
+                </div>
+                {lead.rcOwner.match === 'mismatch' && <div className="hint">The vehicle is registered to someone else. Ask the customer before going ahead.</div>}
+              </div>
+            )}
             {lead.promoCode && <div className="kv"><div className="k">Promo code</div><div className="v" style={{ fontFamily: 'var(--mono)' }}>{lead.promoCode}</div></div>}
             <div className="kv" style={{ gridColumn: '1 / -1' }}>
               <label className="k" htmlFor="agent">Assigned to</label>
@@ -901,6 +914,8 @@ function toCsv(leads) {
     ['Customer pays (%)', (l) => (approvedOf(l).length ? feeRate(l) : '')], ['Amount payable (₹)', (l) => (approvedOf(l).length ? payable(l) : '')],
     ['WhatsApp approval', (l) => (!l.waApproval ? '' : waStale(l) ? 'Changed after sending' : l.waApproval.state === 'received' ? `Approved ${fullDate(l.waApproval.receivedAt)}` : `Sent ${fullDate(l.waApproval.sentAt)}`)],
     ['Payment details sent', (l) => (l.paymentSent ? fullDate(l.paymentSent.at) : '')],
+    ['RC owner (Parivahan)', (l) => l.rcOwner?.name || ''],
+    ['RC owner name check', (l) => (!l.rcOwner ? '' : l.rcOwner.match === 'match' ? 'Matches' : l.rcOwner.match === 'partial' ? 'Partly matches' : l.rcOwner.match === 'mismatch' ? "Doesn't match" : 'Not compared')],
     ['Latest note', (l) => l.notes?.[0]?.text || '']];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   return [cols.map((c) => esc(c[0])).join(','), ...leads.map((l) => cols.map(([, f]) => esc(typeof f === 'function' ? f(l) : l[f])).join(','))].join('\n');
@@ -1157,7 +1172,7 @@ export default function Admin() {
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.ref} className={(sel === l.ref ? 'sel' : '') + (fresh.includes(l.ref) ? ' fresh' : '')} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{l.waUnread > 0 && <span className="multi unread">💬 {l.waUnread} new</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}</div></td>
+                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{l.waUnread > 0 && <span className="multi unread">💬 {l.waUnread} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}</div></td>
                     <td>{l.plate ? <span className="plate">{fmtPlate(l.plate)}</span> : <span className="small">Not given yet</span>}</td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>

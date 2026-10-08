@@ -242,6 +242,12 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 
 .name .multi.wa { background: #DCF8E6; color: #146C3A; }
 .name .multi.unread { background: #25D366; color: #fff; }
+.name .multi.warn { background: #FDE8E8; color: #9B1C1C; }
+.namechk { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.namechk.match { color: #146C3A; }
+.namechk.partial { color: #92400E; }
+.namechk.mismatch { color: #9B1C1C; }
+.namechk.unknown { color: var(--muted, #6B7280); font-weight: 500; }
 .add-plate { border: 1px dashed #E3A008; border-radius: 12px; padding: 12px; background: #FFFBEB; }
 .add-plate .plate-input { height: 40px; border: 1px solid #D6D2C9; border-radius: 10px; padding: 0 12px; font-family: var(--mono, monospace); font-size: 15px; letter-spacing: .05em; flex: 1 1 160px; min-width: 0; }
 .wa-chat { border: 1px solid #D6D2C9; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: #fff; }

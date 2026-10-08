@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { nameMatch } from './names.js';
 
 // Lead storage. With DATABASE_URL set, leads live in Postgres (survives restarts
 // and redeploys). Without it they go to data/leads.json, which is fine locally but
@@ -174,6 +175,11 @@ export function updateLead(ref, patch, by, onlyFor) {
       const ok = (lead.challans || []).filter((c) => c.approved);
       const rate = FEE_RATES.includes(lead.feeRate) ? lead.feeRate : 50;
       out.paymentSent = { at: new Date().toISOString(), by, amount: Math.round((ok.reduce((n, c) => n + (c.amount || 0), 0) * rate) / 100) };
+    }
+    // Vehicle owner's name as shown on Parivahan, with how it compares to the name the customer gave.
+    if (patch.rcOwner && typeof patch.rcOwner.name === 'string' && patch.rcOwner.name.trim()) {
+      const name = patch.rcOwner.name.trim().slice(0, 120);
+      out.rcOwner = { name, at: new Date().toISOString(), source: patch.rcOwner.source || 'Parivahan', match: nameMatch(lead.name, name) };
     }
     if (Array.isArray(patch.challans)) {
       out.challans = patch.challans;
