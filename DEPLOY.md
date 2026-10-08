@@ -34,7 +34,7 @@ the full lead is still written to Render's **Logs**.
 
 ## 3. Admin panel
 
-The admin panel is at `/admin` on your site (e.g. `https://niptao-challan-site.onrender.com/admin`).
+The admin panel is at `/admin` on your site (`https://www.niptao.co.in/admin`; the old `https://niptao-challan-site.onrender.com/admin` also works).
 It lists every lead, lets you change status, assign a person, add notes, call or WhatsApp
 the customer, open the Parivahan e-Challan site with the vehicle number copied, and download
 a CSV. It checks for new leads every 15 seconds and plays a buzzer when one arrives.

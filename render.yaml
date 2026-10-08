@@ -16,6 +16,9 @@ services:
         value: "22"
       - key: TRUST_PROXY
         value: "1"
+      # Main public address, used for Google (canonical links, sitemap)
+      - key: SITE_URL
+        value: https://www.niptao.co.in
       - key: SESSION_SECRET
         generateValue: true
       - key: OTP_MODE

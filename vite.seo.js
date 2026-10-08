@@ -9,7 +9,7 @@ export default function seo() {
   return {
     name: 'niptao-seo',
     configResolved(config) {
-      siteUrl = (config.env.VITE_SITE_URL || process.env.SITE_URL || 'https://niptao-challan-site.onrender.com').replace(/\/$/, '');
+      siteUrl = (config.env.VITE_SITE_URL || process.env.SITE_URL || 'https://www.niptao.co.in').replace(/\/$/, '');
     },
     transformIndexHtml: {
       order: 'pre',

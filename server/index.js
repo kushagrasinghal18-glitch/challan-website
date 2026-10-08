@@ -184,7 +184,7 @@ app.get('/api/promo/:code', limit(30, 10 * 60_000), async (req, res) => {
 });
 
 // Search engines: allow the site, keep the admin panel and API out.
-const siteUrl = (req) => (process.env.SITE_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+const siteUrl = (req) => (process.env.SITE_URL || (process.env.NODE_ENV === 'production' ? 'https://www.niptao.co.in' : `${req.protocol}://${req.get('host')}`)).replace(/\/$/, '');
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n\nSitemap: ${siteUrl(req)}/sitemap.xml\n`);
 });
