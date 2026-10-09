@@ -225,7 +225,17 @@
     const dt = new DataTransfer();
     dt.setData('text/plain', text);
     const pasted = !box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
-    if (!pasted || !clean(box.innerText)) document.execCommand('insertText', false, text);
+    // If the paste was ignored or lost the line breaks (all on one line), put it in line by line.
+    const lines = text.split('\n');
+    const breaks = () => (box.innerText.match(/\n/g) || []).length;
+    if (!pasted || !clean(box.innerText) || breaks() < (lines.length - 1) / 2) {
+      document.execCommand('selectAll', false);
+      document.execCommand('delete', false);
+      lines.forEach((l, i) => {
+        if (i) document.execCommand('insertLineBreak', false);
+        if (l) document.execCommand('insertText', false, l);
+      });
+    }
     return Boolean(clean(box.innerText));
   }
   async function toPng(dataUrl) {
