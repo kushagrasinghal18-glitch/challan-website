@@ -267,3 +267,28 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 .qr-prev { width: 120px; height: 120px; object-fit: contain; border: 1px solid #D6D2C9; border-radius: 10px; background: #fff; }
 .qr-prev.empty { display: flex; align-items: center; justify-content: center; font-size: 12px; color: #8A90A0; }
 .pay-box { margin-top: 10px; }
+
+/* Name on RC */
+.rc-name .rc-same { display: flex; gap: 8px; align-items: center; font-weight: 600; margin: 6px 0 4px; cursor: pointer; }
+.rc-name .rc-same input { width: 18px; height: 18px; flex: none; margin: 0; }
+.rc-name .rc-row { display: flex; gap: 8px; margin: 6px 0; }
+.rc-name .rc-row input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid #D6D3CC; border-radius: 8px; font: inherit; background: #fff; margin: 0; }
+
+/* Documents on a lead */
+.docs { display: grid; gap: 8px; }
+.doc-type { border: 1px solid #E6E3DC; border-radius: 10px; padding: 10px 12px; background: #fff; }
+.doc-type.done { background: #F4FAF6; border-color: #CFE6D7; }
+.doc-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.doc-head .btn { cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; flex: none; }
+.doc-head .btn.disabled { opacity: .55; pointer-events: none; }
+.doc-files { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.doc-files li { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 13px; }
+.doc-files .linkish { background: none; border: 0; padding: 0; color: #2F5AA8; text-decoration: underline; cursor: pointer; font: inherit; word-break: break-all; text-align: left; }
+.doc-files .x { margin-left: auto; background: none; border: 0; font-size: 18px; line-height: 1; color: #9B1C1C; cursor: pointer; padding: 0 4px; }
+.docs-verify { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Settings: document types */
+.doc-set { display: grid; gap: 8px; margin: 10px 0; }
+.doc-set-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.doc-set-row input[aria-label="Document name"] { flex: 1; min-width: 200px; padding: 8px 10px; border: 1px solid #D6D3CC; border-radius: 8px; font: inherit; }
+.toggle-sm { display: flex; gap: 6px; align-items: center; font-size: 14px; cursor: pointer; }

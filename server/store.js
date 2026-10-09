@@ -10,7 +10,19 @@ import { nameMatch } from './names.js';
 // Share of the approved challan total the customer pays. 50% is the advertised default.
 export const FEE_RATES = [50, 40, 30];
 
-export const STATUSES = ['New', 'Contacted', 'Documents received', 'Scheduled', 'Settled', 'Lost'];
+export const STATUSES = ['New', 'Contacted', 'Documents received', 'Documents verified', 'Scheduled', 'Settled', 'Lost'];
+// Stages a lead can be in and still be moved on to "Documents received" by itself once every document is in.
+const BEFORE_DOCS = ['New', 'Contacted'];
+
+// Document types the team collects, set in Settings. These are used until the admin saves their own list.
+export const DEFAULT_DOC_TYPES = [
+  { id: 'rc', name: 'RC (registration certificate)', required: true },
+  { id: 'dl', name: 'Driving licence', required: true },
+  { id: 'aadhaar', name: 'Aadhaar card', required: true },
+];
+export const docTypesOf = (site) => (Array.isArray(site?.docTypes) ? site.docTypes : DEFAULT_DOC_TYPES);
+// Required types that have no file yet.
+export const docsMissing = (lead, types) => types.filter((t) => t.required && !(lead.docs || []).some((d) => d.type === t.id));
 
 // ── File backend ────────────────────────────────────────
 const file = () => path.resolve(process.env.LEADS_FILE || 'data/leads.json');
@@ -48,22 +60,35 @@ const fileStore = {
 };
 
 // ── Postgres backend ────────────────────────────────────
-let pool;
+let pool, ready;
+// Tables are created on first use. If that fails (database asleep or unreachable), the next call tries again.
 async function db() {
-  if (!pool) {
+  if (!ready) ready = (async () => {
     const { default: pg } = await import('pg');
-    const local = /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL);
-    pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: local ? false : { rejectUnauthorized: false }, max: 5 });
+    if (!pool) {
+      const local = /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL);
+      pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: local ? false : { rejectUnauthorized: false }, max: 5 });
+    }
     await pool.query(`CREATE TABLE IF NOT EXISTS leads (
       ref text PRIMARY KEY,
       created_at timestamptz NOT NULL DEFAULT now(),
       data jsonb NOT NULL
     )`);
+    // Customers' documents. Only the admin API reads these, never a public route.
+    await pool.query(`CREATE TABLE IF NOT EXISTS lead_docs (
+      id text PRIMARY KEY,
+      ref text NOT NULL,
+      mime text NOT NULL,
+      data bytea NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`);
+    await pool.query('CREATE INDEX IF NOT EXISTS lead_docs_ref ON lead_docs (ref)');
     await pool.query(`CREATE TABLE IF NOT EXISTS settings (
       key text PRIMARY KEY,
       value jsonb NOT NULL
     )`);
-  }
+  })().catch((err) => { ready = null; throw err; });
+  await ready;
   return pool;
 }
 
@@ -130,7 +155,58 @@ export async function addLead(lead) {
 }
 
 export const listLeads = () => store().list();
-export const deleteLead = (ref) => store().remove(ref);
+
+export async function getLead(ref) {
+  if (process.env.DATABASE_URL) {
+    const { rows } = await (await db()).query('SELECT data FROM leads WHERE ref = $1', [ref]);
+    return rows[0]?.data || null;
+  }
+  return (await readFile()).find((l) => l.ref === ref) || null;
+}
+
+export async function deleteLead(ref) {
+  const lead = await store().remove(ref);
+  if (lead) await removeDocsFor(ref).catch((err) => console.error('[docs] cleanup failed', ref, err.message));
+  return lead;
+}
+
+// ── Document files ──────────────────────────────────────
+// Postgres when DATABASE_URL is set (survives redeploys), else data/docs/ next to leads.json.
+const docDir = () => path.join(path.dirname(file()), 'docs');
+const safeId = (id) => /^[a-z0-9]{8,40}$/.test(id);
+
+export async function saveDoc(id, ref, mime, data) {
+  if (!safeId(id)) throw new Error('bad doc id');
+  if (process.env.DATABASE_URL) {
+    await (await db()).query('INSERT INTO lead_docs (id, ref, mime, data) VALUES ($1, $2, $3, $4)', [id, ref, mime, data]);
+    return;
+  }
+  await fs.mkdir(docDir(), { recursive: true });
+  await fs.writeFile(path.join(docDir(), id), data);
+}
+
+export async function getDoc(id) {
+  if (!safeId(id)) return null;
+  if (process.env.DATABASE_URL) {
+    const { rows } = await (await db()).query('SELECT ref, mime, data FROM lead_docs WHERE id = $1', [id]);
+    return rows[0] || null;
+  }
+  try { return { data: await fs.readFile(path.join(docDir(), id)) }; } catch { return null; }
+}
+
+export async function removeDoc(id) {
+  if (!safeId(id)) return;
+  if (process.env.DATABASE_URL) { await (await db()).query('DELETE FROM lead_docs WHERE id = $1', [id]); return; }
+  await fs.rm(path.join(docDir(), id), { force: true });
+}
+
+async function removeDocsFor(ref) {
+  if (process.env.DATABASE_URL) { await (await db()).query('DELETE FROM lead_docs WHERE ref = $1', [ref]); return; }
+  // File backend: the lead record is already gone, so files are matched by the id prefix set at upload.
+  const prefix = ref.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const names = await fs.readdir(docDir()).catch(() => []);
+  await Promise.all(names.filter((n) => n.startsWith(prefix)).map((n) => fs.rm(path.join(docDir(), n), { force: true })));
+}
 
 // patch: { status?, assign?: { id, name }, note? } — note is appended with who wrote it and when.
 // onlyFor: a staff id; the update is refused unless the lead is assigned to them.
@@ -180,15 +256,35 @@ export function updateLead(ref, patch, by, onlyFor) {
     if (patch.rcOwner && typeof patch.rcOwner.name === 'string' && patch.rcOwner.name.trim()) {
       const name = patch.rcOwner.name.trim().slice(0, 120);
       out.rcOwner = { name, at: new Date().toISOString(), source: patch.rcOwner.source || 'Parivahan', match: nameMatch(lead.name, name) };
+      // A clear match fills in "RC is in the customer's name" unless someone already set the RC name.
+      if (out.rcOwner.match === 'match' && !lead.rcName) out.rcName = { same: true, name: '', at: out.rcOwner.at, by: `${out.rcOwner.source} check` };
     }
+    // Name on the RC. Messages to the customer always use lead.name.
+    if (patch.rcName && typeof patch.rcName === 'object') {
+      const same = patch.rcName.same === true;
+      out.rcName = { same, name: same ? '' : String(patch.rcName.name || '').replace(/\s+/g, ' ').trim().slice(0, 120), at: new Date().toISOString(), by };
+    }
+    // Uploaded documents (only the details here; the file itself is kept by saveDoc).
+    const autoNotes = [];
+    if (patch.addDoc) {
+      out.docs = [...(lead.docs || []), { ...patch.addDoc, at: new Date().toISOString(), by }];
+      const types = patch.docTypes || [];
+      const status = out.status || lead.status;
+      if (types.some((t) => t.required) && !docsMissing({ docs: out.docs }, types).length && BEFORE_DOCS.includes(status)) {
+        out.status = 'Documents received';
+        autoNotes.push('All documents uploaded. Moved to Documents received.');
+      }
+    }
+    if (patch.removeDoc) out.docs = (lead.docs || []).filter((d) => d.id !== patch.removeDoc);
     if (Array.isArray(patch.challans)) {
       out.challans = patch.challans;
       out.challansAt = new Date().toISOString();
       out.challansBy = by;
       out.challansSource = patch.challansSource || '';
     }
-    if (typeof patch.note === 'string' && patch.note.trim()) {
-      out.notes = [{ by, at: new Date().toISOString(), text: patch.note.trim().slice(0, 2000) }, ...(lead.notes || [])];
+    if (typeof patch.note === 'string' && patch.note.trim()) autoNotes.unshift(patch.note.trim().slice(0, 2000));
+    if (autoNotes.length) {
+      out.notes = [...autoNotes.reverse().map((text) => ({ by, at: new Date().toISOString(), text })), ...(lead.notes || [])];
     }
     out.updatedAt = new Date().toISOString();
     return out;

@@ -93,3 +93,46 @@ test('a lead can be deleted', async () => {
   assert.equal(await deleteLead('GBN-9'), null);
   assert.ok(!(await listLeads()).some((l) => l.ref === 'GBN-9'));
 });
+
+test('documents: all needed ones move the lead to Documents received', async () => {
+  const { saveDoc, getDoc, getLead, DEFAULT_DOC_TYPES } = await import('./store.js');
+  await addLead({ ref: 'DOC-1', createdAt: '2026-10-09T00:00:00Z', name: 'Rahul Kumar', plate: 'UP16AB1111', phone: '9876500000', status: 'Contacted', notes: [] });
+  const types = [{ id: 'rc', name: 'RC', required: true }, { id: 'dl', name: 'DL', required: true }, { id: 'x', name: 'Other', required: false }];
+  const add = (id, type) => updateLead('DOC-1', { addDoc: { id, type, typeName: type, name: `${type}.pdf`, mime: 'application/pdf', size: 10 }, docTypes: types }, 'Priya');
+  let l = await add('doc1aaaaaaaa', 'x');
+  assert.equal(l.status, 'Contacted');
+  l = await add('doc1bbbbbbbb', 'rc');
+  assert.equal(l.status, 'Contacted');
+  l = await add('doc1cccccccc', 'dl');
+  assert.equal(l.status, 'Documents received');
+  assert.match(l.notes[0].text, /All documents uploaded/);
+  assert.equal(l.docs.length, 3);
+  assert.equal(l.docs[2].by, 'Priya');
+
+  // Already further along: never moved back.
+  await updateLead('DOC-1', { status: 'Scheduled', removeDoc: 'doc1cccccccc' }, 'K');
+  l = await add('doc1dddddddd', 'dl');
+  assert.equal(l.status, 'Scheduled');
+
+  await saveDoc('doc1bbbbbbbb', 'DOC-1', 'application/pdf', Buffer.from('%PDF-1.4 test'));
+  assert.equal((await getDoc('doc1bbbbbbbb')).data.toString(), '%PDF-1.4 test');
+  assert.equal(await getDoc('../etc/passwd'), null);
+  assert.equal((await getLead('DOC-1')).ref, 'DOC-1');
+  assert.ok(DEFAULT_DOC_TYPES.length >= 1);
+  await deleteLead('DOC-1');
+  assert.equal(await getDoc('doc1bbbbbbbb'), null);
+});
+
+test('name on RC: set by hand, or filled in by a matching Parivahan name', async () => {
+  await addLead({ ref: 'RC-1', createdAt: '2026-10-09T00:00:00Z', name: 'Rahul Kumar', plate: 'UP16AB2222', phone: '9876500001', status: 'New', notes: [] });
+  let l = await updateLead('RC-1', { rcName: { same: false, name: '  Suresh   Verma ' } }, 'K');
+  assert.deepEqual([l.rcName.same, l.rcName.name], [false, 'Suresh Verma']);
+  // A Parivahan match does not overwrite what staff set.
+  l = await updateLead('RC-1', { rcOwner: { name: 'RA*** KUMAR', source: 'Parivahan' } }, 'K');
+  assert.equal(l.rcName.name, 'Suresh Verma');
+
+  await addLead({ ref: 'RC-2', createdAt: '2026-10-09T00:00:00Z', name: 'Rahul Kumar', plate: 'UP16AB3333', phone: '9876500002', status: 'New', notes: [] });
+  l = await updateLead('RC-2', { rcOwner: { name: 'RA*** KUMAR', source: 'Parivahan' } }, 'K');
+  assert.equal(l.rcName.same, true);
+  assert.equal(l.rcName.by, 'Parivahan check');
+});

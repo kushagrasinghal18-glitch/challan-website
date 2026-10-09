@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseChallans } from './parseChallans.js';
 
 const STATUS_COLORS = {
-  New: ['#E8EEF8', '#2F5AA8'], Contacted: ['#F0EAF8', '#6A42A0'], 'Documents received': ['#FFF1D9', '#8A5200'],
+  New: ['#E8EEF8', '#2F5AA8'], Contacted: ['#F0EAF8', '#6A42A0'], 'Documents received': ['#FFF1D9', '#8A5200'], 'Documents verified': ['#FDF3C4', '#6B5300'],
   Scheduled: ['#E1F2F4', '#0E6470'], Settled: ['#E3F2E9', '#1F6B45'], Lost: ['#ECEBE8', '#5E6472'],
 };
 const CITY = { noida: 'Noida / Gr. Noida', ghaziabad: 'Ghaziabad', delhi: 'Delhi', gurugram: 'Gurugram' };
@@ -231,7 +231,133 @@ function ChallanEditor({ lead, onSave, onCancel }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser }) {
+// Name on the vehicle's RC. Messages to the customer always use the lead's name.
+function RcName({ lead, onPatch }) {
+  const set = lead.rcName;
+  const [typing, setTyping] = useState(false);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setTyping(false); setName(set && !set.same ? set.name : ''); }, [lead.ref, set?.at]); // eslint-disable-line react-hooks/exhaustive-deps
+  const save = async (p) => { setBusy(true); try { await onPatch(lead.ref, { rcName: p }); setTyping(false); } finally { setBusy(false); } };
+  const showBox = typing || (set && !set.same);
+  return (
+    <div className="kv rc-name" style={{ gridColumn: '1 / -1' }}>
+      <div className="k">Name on RC</div>
+      <label className="rc-same">
+        <input type="checkbox" checked={!!set?.same} disabled={busy}
+          onChange={(e) => (e.target.checked ? save({ same: true }) : setTyping(true))} />
+        Same as the lead's name ({lead.name})
+      </label>
+      {showBox && (
+        <form className="rc-row" onSubmit={(e) => { e.preventDefault(); if (name.trim().length >= 2) save({ same: false, name }); }}>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name exactly as on the RC" aria-label="Name on RC" maxLength={120} />
+          <button className="btn" disabled={busy || name.trim().length < 2 || name.trim() === (set?.name || '')}>Save</button>
+        </form>
+      )}
+      {set && !set.same && set.name && !typing && <div className="hint">RC is in the name of <b>{set.name}</b>. WhatsApp messages still use {lead.name}.</div>}
+      {!set && !typing && <div className="hint">Tick if the RC is in the customer's name, otherwise untick and type the RC owner's name.{lead.rcOwner?.name ? ` Parivahan shows ${lead.rcOwner.name}.` : ''}</div>}
+      {set?.by && <div className="small">Set by {set.by} · {fullDate(set.at)}</div>}
+    </div>
+  );
+}
+
+// "2/3" needed documents uploaded, or the file count when nothing is marked needed.
+const docsHave = (l, types) => {
+  const need = types.filter((t) => t.required);
+  return need.length ? `${need.filter((t) => (l.docs || []).some((d) => d.type === t.id)).length}/${need.length}` : `${(l.docs || []).length} files`;
+};
+const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+// Phone photos are often 3–8 MB. Shrink big images to at most 2000px JPEG before uploading.
+function shrinkImage(file) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 1_200_000) return Promise.resolve(file);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 2000 / Math.max(img.width, img.height));
+      const c = Object.assign(document.createElement('canvas'), { width: Math.round(img.width * k), height: Math.round(img.height * k) });
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      c.toBlob((b) => resolve(b && b.size < file.size ? new File([b], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file), 'image/jpeg', 0.85);
+    };
+    img.onerror = () => resolve(file);
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+const DOC_ERR = { file_too_large: 'That file is bigger than 5 MB. Upload a smaller photo or PDF.', file_type_not_allowed: 'Only photos (JPG, PNG, WEBP) and PDF files can be uploaded.',
+  unknown_doc_type: 'This document type was removed in Settings. Reload the page.', too_many_docs: 'This lead already has the most files allowed. Remove some first.',
+  not_your_lead: 'This lead is no longer assigned to you.' };
+
+// One upload button per document type from Settings. Files open only for signed-in team members.
+function Docs({ lead, types, onUpload, onOpenDoc, onRemoveDoc, onPatch }) {
+  const [busyType, setBusyType] = useState('');
+  const [err, setErr] = useState('');
+  useEffect(() => setErr(''), [lead.ref]);
+  const docs = lead.docs || [];
+  const known = new Set(types.map((t) => t.id));
+  const others = docs.filter((d) => !known.has(d.type));
+  const needed = types.filter((t) => t.required);
+  const have = needed.filter((t) => docs.some((d) => d.type === t.id)).length;
+  const upload = async (type, files) => {
+    setErr(''); setBusyType(type.id);
+    try {
+      for (const f of files) {
+        const e = await onUpload(lead.ref, type.id, await shrinkImage(f));
+        if (e) { setErr(DOC_ERR[e] || 'The file was not uploaded. Try again.'); break; }
+      }
+    } finally { setBusyType(''); }
+  };
+  const remove = async (d) => {
+    if (!window.confirm(`Remove ${d.name} from this lead? The file is deleted.`)) return;
+    const e = await onRemoveDoc(lead.ref, d.id);
+    if (e) setErr(DOC_ERR[e] || 'The file was not removed. Try again.');
+  };
+  const row = (d) => (
+    <li key={d.id}>
+      <button className="linkish" onClick={() => onOpenDoc(lead.ref, d)}>{d.name}</button>
+      <span className="small"> · {fmtSize(d.size)} · {d.by} · {ago(d.at)}</span>
+      <button className="x" aria-label={`Remove ${d.name}`} title="Remove" onClick={() => remove(d)}>×</button>
+    </li>
+  );
+  return (
+    <div className="docs">
+      <div className="ch-head"><div className="sec-k">Documents{needed.length > 0 && <> · {have} of {needed.length} needed</>}</div></div>
+      {!types.length && <div className="hint">No document types yet. An admin can add them in Settings → Documents.</div>}
+      {types.map((t) => {
+        const mine = docs.filter((d) => d.type === t.id);
+        return (
+          <div key={t.id} className={`doc-type${mine.length ? ' done' : ''}`}>
+            <div className="doc-head">
+              <div><b>{mine.length ? '✓ ' : ''}{t.name}</b>{!t.required && <span className="small"> (optional)</span>}</div>
+              <label className={`btn${mine.length ? '' : ' primary'}${busyType ? ' disabled' : ''}`}>
+                {busyType === t.id ? 'Uploading…' : mine.length ? 'Add another' : 'Upload'}
+                <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple hidden disabled={!!busyType}
+                  onChange={(e) => { const f = [...e.target.files]; e.target.value = ''; if (f.length) upload(t, f); }} />
+              </label>
+            </div>
+            {mine.length > 0 && <ul className="doc-files">{mine.map(row)}</ul>}
+          </div>
+        );
+      })}
+      {others.length > 0 && (
+        <div className="doc-type done"><div className="doc-head"><b>Other files</b></div><ul className="doc-files">{others.map((d) => row({ ...d, name: `${d.typeName}: ${d.name}` }))}</ul></div>
+      )}
+      {err && <div className="err" role="alert">{err}</div>}
+      {lead.status === 'Documents received' && have < needed.length && (
+        <div className="small">Still needed: {needed.filter((t) => !docs.some((d) => d.type === t.id)).map((t) => t.name).join(', ')}</div>
+      )}
+      {lead.status === 'Documents received' && have === needed.length && (
+        <div className="ask docs-verify">
+          All documents are in. Check them, then
+          <button className="btn primary" onClick={() => onPatch(lead.ref, { status: 'Documents verified', note: 'Documents verified.' })}>Mark documents verified</button>
+        </div>
+      )}
+      {lead.status === 'Documents verified' && <div className="small ok-msg">✓ Documents verified</div>}
+    </div>
+  );
+}
+
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc }) {
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
@@ -492,6 +618,8 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
             </div>
           )}
 
+          <Docs lead={lead} types={docTypes} onUpload={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onPatch={onPatch} />
+
           <div>
             <div className="sec-k">Status</div>
             <div className="status-btns">
@@ -518,9 +646,10 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                         : lead.rcOwner.match === 'mismatch' ? "⚠ doesn't match the name given" : 'could not be compared'}
                   </span>
                 </div>
-                {lead.rcOwner.match === 'mismatch' && <div className="hint">The vehicle is registered to someone else. Ask the customer before going ahead.</div>}
+                {lead.rcOwner.match === 'mismatch' && <div className="hint">The vehicle may be registered to someone else. Confirm with the customer and fill in the name on the RC below.</div>}
               </div>
             )}
+            <RcName lead={lead} onPatch={onPatch} />
             {lead.promoCode && <div className="kv"><div className="k">Promo code</div><div className="v" style={{ fontFamily: 'var(--mono)' }}>{lead.promoCode}</div></div>}
             <div className="kv" style={{ gridColumn: '1 / -1' }}>
               <label className="k" htmlFor="agent">Assigned to</label>
@@ -573,6 +702,8 @@ const ERRORS = {
   invalid_whatsapp: 'The WhatsApp number must be a 10-digit Indian mobile number.',
   invalid_upi: 'Check the UPI ID. It looks like name@bank, for example niptao@okaxis.',
   invalid_qr: 'The QR image could not be used. Upload a PNG or JPG photo of the QR code.',
+  invalid_doc_type: 'Every document needs a name. Fill it in or remove the empty row.',
+  duplicate_doc_type: 'Two documents have the same name. Give each one a different name.',
   invalid_phone: 'The calling number must be a 10-digit Indian mobile number.',
   invalid_date: 'One of the dates is not filled in. Pick a date or remove that row.',
   invalid_code: 'A promo code is empty. Type a code or remove that row.',
@@ -588,6 +719,7 @@ const formFrom = (s) => ({
   promoCodes: Array.isArray(s.promoCodes) ? s.promoCodes : DEFAULT_CODES,
   offer: s.offer ? { ...s.offer, endsAt: toLocalInput(s.offer.endsAt) } : (Array.isArray(s.promoCodes) ? { on: false, code: '', endsAt: '' } : { on: true, code: 'FLAT50', endsAt: '' }),
   payment: { upiId: s.payment?.upiId || '', payeeName: s.payment?.payeeName || '', qr: s.payment?.qr || '' },
+  docTypes: Array.isArray(s.docTypes) ? s.docTypes : [],
 });
 
 // Shrinks an uploaded QR photo so it stays small enough to store with the settings.
@@ -750,6 +882,27 @@ function Settings({ auth, me, staff, reloadStaff, onSaved, signOut }) {
             <div className="hint">A screenshot or photo of your UPI QR code. Remember to press Save changes.</div>
           </div>
         </div>
+      </section>
+
+      <section className="panel pad">
+        <h2>Documents</h2>
+        <p className="hint" style={{ marginTop: 0 }}>The documents your team collects from each customer. Each one gets its own upload button on every lead. When every <b>needed</b> document is uploaded, the lead moves to <b>Documents received</b> by itself.</p>
+        <div className="doc-set">
+          {form.docTypes.map((t, i) => (
+            <div className="doc-set-row" key={t.id || i}>
+              <input value={t.name} placeholder="e.g. RC (registration certificate)" aria-label="Document name" maxLength={60}
+                onChange={(e) => setForm({ ...form, docTypes: form.docTypes.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} />
+              <label className="toggle-sm"><input type="checkbox" checked={t.required !== false}
+                onChange={(e) => setForm({ ...form, docTypes: form.docTypes.map((x, j) => (j === i ? { ...x, required: e.target.checked } : x)) })} /> Needed</label>
+              <button type="button" className="btn ghost" aria-label={`Remove ${t.name || 'document'}`}
+                onClick={() => setForm({ ...form, docTypes: form.docTypes.filter((_, j) => j !== i) })}>Remove</button>
+            </div>
+          ))}
+        </div>
+        {form.docTypes.length === 0 && <div className="empty small-empty">No documents yet. Add the ones you collect, like RC, driving licence and Aadhaar.</div>}
+        <button type="button" className="btn" disabled={form.docTypes.length >= 20}
+          onClick={() => setForm({ ...form, docTypes: [...form.docTypes, { id: '', name: '', required: true }] })}>+ Add document</button>
+        <div className="hint">Untick <b>Needed</b> for optional documents. Removing a document here keeps files already uploaded on leads. Remember to press Save changes.</div>
       </section>
 
       <section className="panel pad">
@@ -916,6 +1069,8 @@ function toCsv(leads) {
     ['WhatsApp approval', (l) => (!l.waApproval ? '' : waStale(l) ? 'Changed after sending' : l.waApproval.state === 'received' ? `Approved ${fullDate(l.waApproval.receivedAt)}` : `Sent ${fullDate(l.waApproval.sentAt)}`)],
     ['Payment details sent', (l) => (l.paymentSent ? fullDate(l.paymentSent.at) : '')],
     ['RC owner (Parivahan)', (l) => l.rcOwner?.name || ''],
+    ['Name on RC', (l) => (!l.rcName ? '' : l.rcName.same ? `Same as lead (${l.name})` : l.rcName.name)],
+    ['Documents uploaded', (l) => [...new Set((l.docs || []).map((d) => d.typeName))].join(', ')],
     ['RC owner name check', (l) => (!l.rcOwner ? '' : l.rcOwner.match === 'match' ? 'Matches' : l.rcOwner.match === 'partial' ? 'Partly matches' : l.rcOwner.match === 'mismatch' ? "Doesn't match" : 'Not compared')],
     ['Latest note', (l) => l.notes?.[0]?.text || '']];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -963,6 +1118,7 @@ export default function Admin() {
       }
       seen.current = new Set(refs);
       setLeads(r.leads); setStorage(r.storage); setErr('');
+      if (Array.isArray(r.docTypes)) setDocTypes(r.docTypes);
     } catch (e) {
       if (e.status === 401) signOut();
       else setErr('Could not load leads. The server may be waking up; this page keeps retrying.');
@@ -1021,6 +1177,39 @@ export default function Admin() {
       if (e.status === 401) signOut();
       return e.message;
     }
+  };
+  // Documents: returns '' when done, else the error code.
+  const [docTypes, setDocTypes] = useState([]);
+  const docUrl = (ref, id = '') => `/api/admin/leads/${encodeURIComponent(ref)}/docs${id ? `/${encodeURIComponent(id)}` : ''}`;
+  const onUploadDoc = async (ref, type, file) => {
+    try {
+      const res = await fetch(`${docUrl(ref)}?type=${encodeURIComponent(type)}&name=${encodeURIComponent(file.name || '')}`, {
+        method: 'POST', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream', Authorization: `Bearer ${auth.token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) { signOut(); return 'signed_out'; }
+      if (!res.ok) return data.error || (res.status === 413 ? 'file_too_large' : 'error');
+      setLeads((ls) => ls.map((l) => (l.ref === ref ? data.lead : l)));
+      return '';
+    } catch { return 'error'; }
+  };
+  const onRemoveDoc = async (ref, id) => {
+    try {
+      const { lead } = await call(docUrl(ref, id), auth, { method: 'DELETE' });
+      setLeads((ls) => ls.map((l) => (l.ref === ref ? lead : l)));
+      return '';
+    } catch (e) { if (e.status === 401) signOut(); return e.message; }
+  };
+  // Files need the sign-in, so they are fetched here and opened from memory in a new tab.
+  const onOpenDoc = async (ref, d) => {
+    const w = window.open('', '_blank');
+    try {
+      const res = await fetch(docUrl(ref, d.id), { headers: { Authorization: `Bearer ${auth.token}` } });
+      if (!res.ok) throw new Error(String(res.status));
+      const url = URL.createObjectURL(await res.blob());
+      if (w) w.location.href = url; else window.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch { w?.close(); setErr('That file could not be opened. Try again.'); }
   };
   const onPatch = async (ref, p) => {
     try {
@@ -1122,7 +1311,7 @@ export default function Admin() {
         {page === 'settings' ? (
           <>
             <div className="head"><div><h1>Settings</h1><div className="sub">Changes show on the website as soon as you save.</div></div></div>
-            <Settings auth={auth} me={me} staff={staff} reloadStaff={loadStaff} signOut={signOut} onSaved={(s) => setSite({ ...s, lokAdalatDates: s.lokAdalatDates.filter((d) => d.date >= todayIST()) })} />
+            <Settings auth={auth} me={me} staff={staff} reloadStaff={loadStaff} signOut={signOut} onSaved={(s) => { setSite({ ...s, lokAdalatDates: s.lokAdalatDates.filter((d) => d.date >= todayIST()) }); if (Array.isArray(s.docTypes)) setDocTypes(s.docTypes); }} />
           </>
         ) : (<>
         <div className="head">
@@ -1173,7 +1362,7 @@ export default function Admin() {
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.ref} className={(sel === l.ref ? 'sel' : '') + (fresh.includes(l.ref) ? ' fresh' : '')} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{l.waUnread > 0 && <span className="multi unread">💬 {l.waUnread} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}</div></td>
+                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{l.waUnread > 0 && <span className="multi unread">💬 {l.waUnread} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}{l.docs?.length ? ` · docs ${docsHave(l, docTypes)}` : ''}</div></td>
                     <td>{l.plate ? <span className="plate">{fmtPlate(l.plate)}</span> : <span className="small">Not given yet</span>}</td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>
@@ -1198,6 +1387,7 @@ export default function Admin() {
       </main>
       {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st} lokDates={site?.lokAdalatDates}
         siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend} getPayment={getPayment} isAdminUser={isAdmin}
+        docTypes={docTypes} onUploadDoc={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
     </>
   );

@@ -6,7 +6,9 @@ import { PLATE_RE, normalizePlate } from './plate.js';
 import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, checkAdminPassword, hashPassword, verifyPassword, issueTeamToken, readTeamToken } from './auth.js';
 import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
-import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee } from './store.js';
+import crypto from 'node:crypto';
+import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee,
+  getLead, saveDoc, getDoc, removeDoc, docTypesOf } from './store.js';
 
 try { process.loadEnvFile(); } catch { /* no .env file: use defaults */ }
 
@@ -189,7 +191,17 @@ function cleanSettings(b) {
   const qr = String(p.qr || '');
   if (qr && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(qr) || qr.length > 700_000)) return { error: 'invalid_qr' };
   const payment = { upiId, payeeName: String(p.payeeName || '').trim().slice(0, 60), qr };
-  return { value: { whatsapp, phone, autoAssign: b.autoAssign === true, lokAdalatDates: dates, promoCodes: codes, offer, payment } };
+  // Documents the team collects from each customer; each gets its own upload button on a lead.
+  const docTypes = [];
+  for (const t of (Array.isArray(b.docTypes) ? b.docTypes : []).slice(0, 20)) {
+    const name = String(t?.name || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (!name) return { error: 'invalid_doc_type' };
+    let id = String(t.id || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24);
+    if (!id || docTypes.some((x) => x.id === id)) id = crypto.randomBytes(4).toString('hex');
+    if (docTypes.some((x) => x.name.toLowerCase() === name.toLowerCase())) return { error: 'duplicate_doc_type' };
+    docTypes.push({ id, name, required: t.required !== false });
+  }
+  return { value: { whatsapp, phone, autoAssign: b.autoAssign === true, lokAdalatDates: dates, promoCodes: codes, offer, payment, docTypes } };
 }
 
 // Promo codes from Settings; FLAT50 until the admin saves their own list.
@@ -274,12 +286,12 @@ app.get('/api/admin/leads', requireUser, async (req, res) => {
   try {
     let leads = await listLeads();
     if (req.user.role !== 'admin') leads = leads.filter((l) => l.agentId === req.user.uid);
-    res.json({ leads, storage: store().name });
+    res.json({ leads, storage: store().name, docTypes: docTypesOf(await getSettings()) });
   } catch (err) { console.error('[admin] list failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
 });
 
 app.get('/api/admin/settings', requireAdmin, async (req, res) => {
-  try { res.json(await getSettings()); }
+  try { const s = await getSettings(); res.json({ ...s, docTypes: docTypesOf(s) }); }
   catch (err) { console.error('[admin] settings read failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
 });
 
@@ -367,6 +379,85 @@ app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
   }
 });
 
+// ── Customer documents ──────────────────────────────────
+// Upload: the file is the raw request body, ?type=<doc type id>&name=<file name>. Only signed-in team
+// members can upload or open them, and staff only on leads assigned to them. Never served publicly.
+const DOC_MAX = 5 * 1024 * 1024;
+const DOCS_PER_LEAD = 40;
+const DOC_KINDS = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+// Check the file really is what it says, from its first bytes.
+function sniff(buf) {
+  if (buf.length < 12) return '';
+  if (buf.subarray(0, 5).toString('latin1') === '%PDF-') return 'application/pdf';
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  return '';
+}
+const canSee = (lead, user) => user.role === 'admin' || lead.agentId === user.uid;
+const rawDoc = express.raw({ type: () => true, limit: DOC_MAX });
+
+app.post('/api/admin/leads/:ref/docs', requireUser, (req, res, next) => rawDoc(req, res, (err) => {
+  if (err) return res.status(err.type === 'entity.too.large' ? 413 : 400).json({ error: err.type === 'entity.too.large' ? 'file_too_large' : 'bad_upload' });
+  next();
+}), async (req, res) => {
+  const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  const mime = sniff(buf);
+  if (!mime) return res.status(400).json({ error: 'file_type_not_allowed' });
+  try {
+    const types = docTypesOf(await getSettings());
+    const type = types.find((t) => t.id === String(req.query.type || ''));
+    if (!type) return res.status(400).json({ error: 'unknown_doc_type' });
+    const lead = await getLead(req.params.ref);
+    if (!lead) return res.status(404).json({ error: 'not_found' });
+    if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
+    if ((lead.docs || []).length >= DOCS_PER_LEAD) return res.status(400).json({ error: 'too_many_docs' });
+    const base = String(req.query.name || '').replace(/[^\w .()-]/g, '').replace(/\.[^.]*$/, '').trim().slice(0, 60) || type.name;
+    const id = lead.ref.toLowerCase().replace(/[^a-z0-9]/g, '') + crypto.randomBytes(8).toString('hex');
+    await saveDoc(id, lead.ref, mime, buf);
+    let updated;
+    try {
+      updated = await updateLead(lead.ref, { addDoc: { id, type: type.id, typeName: type.name, name: `${base}.${DOC_KINDS[mime]}`, mime, size: buf.length }, docTypes: types },
+        req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+    } catch (err) { await removeDoc(id).catch(() => {}); throw err; }
+    if (!updated) { await removeDoc(id).catch(() => {}); return res.status(404).json({ error: 'not_found' }); }
+    console.log('[docs] uploaded', lead.ref, type.id, buf.length);
+    res.json({ lead: updated });
+  } catch (err) {
+    if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
+    console.error('[docs] upload failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
+  }
+});
+
+app.get('/api/admin/leads/:ref/docs/:id', requireUser, async (req, res) => {
+  try {
+    const lead = await getLead(req.params.ref);
+    const meta = lead?.docs?.find((d) => d.id === req.params.id);
+    if (!meta) return res.status(404).json({ error: 'not_found' });
+    if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
+    const doc = await getDoc(meta.id);
+    if (!doc) return res.status(404).json({ error: 'not_found' });
+    res.set({ 'Content-Type': meta.mime, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition': `inline; filename="${meta.name.replace(/"/g, '')}"` });
+    res.send(Buffer.from(doc.data));
+  } catch (err) { console.error('[docs] read failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
+});
+
+app.delete('/api/admin/leads/:ref/docs/:id', requireUser, async (req, res) => {
+  try {
+    const lead = await getLead(req.params.ref);
+    const meta = lead?.docs?.find((d) => d.id === req.params.id);
+    if (!meta) return res.status(404).json({ error: 'not_found' });
+    const updated = await updateLead(lead.ref, { removeDoc: meta.id, note: `Removed ${meta.typeName}: ${meta.name}` },
+      req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+    await removeDoc(meta.id);
+    res.json({ lead: updated });
+  } catch (err) {
+    if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
+    console.error('[docs] delete failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
+  }
+});
+
 // Permanently delete a lead. Only the super admin (username "admin") can do this.
 app.delete('/api/admin/leads/:ref', requireUser, async (req, res) => {
   if (req.user.uid !== 'super') return res.status(403).json({ error: 'super_admin_only' });
@@ -388,6 +479,11 @@ app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
     const p = normalizePlate(b.plate);
     if (!PLATE_RE.test(p)) return res.status(400).json({ error: 'invalid_plate' });
     patch.plate = p;
+  }
+  if (b.rcName !== undefined) {
+    const same = b.rcName?.same === true, name = String(b.rcName?.name || '').trim();
+    if (!same && name.length < 2) return res.status(400).json({ error: 'rc_name_required' });
+    patch.rcName = { same, name };
   }
   try {
     if (b.assignTo !== undefined) {
