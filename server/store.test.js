@@ -175,3 +175,23 @@ test('stage changes are logged with time and person', async () => {
   const l = await updateLead('SL-1', { status: 'Settled' }, 'Amit');
   assert.deepEqual(l.statusLog.map((x) => [x.status, x.by]), [['Contacted', 'Priya'], ['Settled', 'Amit']]);
 });
+
+test('tokens: uploading one moves an open lead to Scheduled', async () => {
+  await addLead({ ref: 'TOK-1', createdAt: '2026-10-09T00:00:00Z', name: 'Ravi Jain', plate: 'DL3CAB1234', phone: '9876500002', status: 'Documents verified', notes: [] });
+  const tok = (id, date) => ({ id, date, number: 'T-55', name: 'token.pdf', mime: 'application/pdf', size: 10 });
+  let l = await updateLead('TOK-1', { addToken: tok('tok1aaaaaaaa', '2026-10-25') }, 'Priya');
+  assert.equal(l.status, 'Scheduled');
+  assert.equal(l.tokens[0].date, '2026-10-25');
+  assert.equal(l.tokens[0].by, 'Priya');
+  assert.match(l.notes[1].text, /Token uploaded for 2026-10-25 \(T-55\)/);
+  assert.equal(l.statusLog.at(-1).status, 'Scheduled');
+
+  // A settled lead stays settled.
+  l = await updateLead('TOK-1', { status: 'Settled' }, 'Priya');
+  l = await updateLead('TOK-1', { addToken: tok('tok1bbbbbbbb', '2026-11-02') }, 'Priya');
+  assert.equal(l.status, 'Settled');
+  assert.equal(l.tokens.length, 2);
+
+  l = await updateLead('TOK-1', { removeToken: 'tok1aaaaaaaa' }, 'Priya');
+  assert.deepEqual(l.tokens.map((t) => t.id), ['tok1bbbbbbbb']);
+});

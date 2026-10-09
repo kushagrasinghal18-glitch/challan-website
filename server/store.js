@@ -291,6 +291,17 @@ export function updateLead(ref, patch, by, onlyFor) {
         autoNotes.push('All documents uploaded. Moved to Documents received.');
       }
     }
+    // Court tokens: { id, date (YYYY-MM-DD), number, name, mime, size }. The file is kept by saveDoc like documents.
+    if (patch.addToken) {
+      out.tokens = [...(lead.tokens || []), { ...patch.addToken, at: new Date().toISOString(), by }];
+      const status = out.status || lead.status;
+      autoNotes.push(`Token uploaded for ${patch.addToken.date}${patch.addToken.number ? ` (${patch.addToken.number})` : ''}.`);
+      if (!['Scheduled', 'Settled', 'Lost'].includes(status)) {
+        out.status = 'Scheduled';
+        autoNotes.push('Moved to Scheduled.');
+      }
+    }
+    if (patch.removeToken) out.tokens = (lead.tokens || []).filter((t) => t.id !== patch.removeToken);
     if (patch.docsSeen) out.docsNew = 0;
     // Private upload link for the customer: { token, expiresAt } or null to switch it off.
     if (patch.docLink !== undefined) out.docLink = patch.docLink ? { ...patch.docLink, at: new Date().toISOString(), by } : null;

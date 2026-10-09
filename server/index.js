@@ -520,6 +520,72 @@ app.delete('/api/admin/leads/:ref/docs/:id', requireUser, async (req, res) => {
   }
 });
 
+// ── Court tokens ────────────────────────────────────────
+// Upload: raw file body, ?date=YYYY-MM-DD&number=<token no.>&name=<file name>. Same file checks and
+// access rules as documents. Uploading a token moves an open lead to Scheduled.
+const TOKENS_PER_LEAD = 20;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const validDate = (d) => DATE_RE.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().startsWith(d);
+const tokenUrl = '/api/admin/leads/:ref/tokens';
+
+app.post(tokenUrl, requireUser, readDoc, async (req, res) => {
+  const date = String(req.query.date || '');
+  if (!validDate(date)) return res.status(400).json({ error: 'invalid_date' });
+  const number = String(req.query.number || '').replace(/[^\w ./-]/g, '').trim().slice(0, 40);
+  try {
+    const lead = await getLead(req.params.ref);
+    if (!lead) return res.status(404).json({ error: 'not_found' });
+    if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
+    const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    const mime = sniff(buf);
+    if (!mime) return res.status(400).json({ error: 'file_type_not_allowed' });
+    if ((lead.tokens || []).length >= TOKENS_PER_LEAD) return res.status(400).json({ error: 'too_many_tokens' });
+    const base = String(req.query.name || '').replace(/[^\w .()-]/g, '').replace(/\.[^.]*$/, '').trim().slice(0, 60) || `Token ${date}`;
+    const id = lead.ref.toLowerCase().replace(/[^a-z0-9]/g, '') + crypto.randomBytes(8).toString('hex');
+    await saveDoc(id, lead.ref, mime, buf);
+    let updated;
+    try {
+      updated = await updateLead(lead.ref, { addToken: { id, date, number, name: `${base}.${DOC_KINDS[mime]}`, mime, size: buf.length } },
+        req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+    } catch (err) { await removeDoc(id).catch(() => {}); throw err; }
+    if (!updated) { await removeDoc(id).catch(() => {}); return res.status(404).json({ error: 'not_found' }); }
+    console.log('[tokens] uploaded', lead.ref, date, buf.length);
+    res.json({ lead: updated });
+  } catch (err) {
+    if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
+    console.error('[tokens] upload failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
+  }
+});
+
+app.get(`${tokenUrl}/:id`, requireUser, async (req, res) => {
+  try {
+    const lead = await getLead(req.params.ref);
+    const meta = lead?.tokens?.find((t) => t.id === req.params.id);
+    if (!meta) return res.status(404).json({ error: 'not_found' });
+    if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
+    const doc = await getDoc(meta.id);
+    if (!doc) return res.status(404).json({ error: 'not_found' });
+    res.set({ 'Content-Type': meta.mime, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition': `inline; filename="${meta.name.replace(/"/g, '')}"` });
+    res.send(Buffer.from(doc.data));
+  } catch (err) { console.error('[tokens] read failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
+});
+
+app.delete(`${tokenUrl}/:id`, requireUser, async (req, res) => {
+  try {
+    const lead = await getLead(req.params.ref);
+    const meta = lead?.tokens?.find((t) => t.id === req.params.id);
+    if (!meta) return res.status(404).json({ error: 'not_found' });
+    const updated = await updateLead(lead.ref, { removeToken: meta.id, note: `Removed token for ${meta.date}: ${meta.name}` },
+      req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+    await removeDoc(meta.id);
+    res.json({ lead: updated });
+  } catch (err) {
+    if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
+    console.error('[tokens] delete failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
+  }
+});
+
 // Permanently delete a lead. Only the super admin (username "admin") can do this.
 app.delete('/api/admin/leads/:ref', requireUser, async (req, res) => {
   if (req.user.uid !== 'super') return res.status(403).json({ error: 'super_admin_only' });

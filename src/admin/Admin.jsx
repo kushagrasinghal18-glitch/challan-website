@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseChallans } from './parseChallans.js';
 import Analytics from './Analytics.jsx';
+import Calendar from './Calendar.jsx';
 
 const STATUS_COLORS = {
   New: ['#E8EEF8', '#2F5AA8'], Contacted: ['#F0EAF8', '#6A42A0'], 'Payment received': ['#FBE7EF', '#9A2F5E'], 'Documents received': ['#FFF1D9', '#8A5200'], 'Documents verified': ['#FDF3C4', '#6B5300'],
@@ -442,7 +443,60 @@ function Docs({ lead, types, onUpload, onOpenDoc, onRemoveDoc, onPatch, onDocLin
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink }) {
+// Court tokens on a lead: upload the generated token with its date; each opens in a new tab.
+export const tokenDay = (d) => new Date(`${d}T00:00:00+05:30`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+const TOKEN_ERR = { ...DOC_ERR, invalid_date: 'Choose the token date first.', too_many_tokens: 'This lead already has 20 tokens. Remove some first.' };
+function Tokens({ lead, onUpload, onOpen, onRemove }) {
+  const [date, setDate] = useState('');
+  const [number, setNumber] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => { setDate(''); setNumber(''); setErr(''); }, [lead.ref]);
+  const tokens = [...(lead.tokens || [])].sort((a, b) => a.date.localeCompare(b.date));
+  const upload = async (file) => {
+    if (!date) { setErr(TOKEN_ERR.invalid_date); return; }
+    setErr(''); setBusy(true);
+    try {
+      const e = await onUpload(lead.ref, await shrinkImage(file), date, number.trim());
+      if (e) setErr(TOKEN_ERR[e] || 'The token was not uploaded. Try again.'); else { setDate(''); setNumber(''); }
+    } finally { setBusy(false); }
+  };
+  const remove = async (t) => {
+    if (!window.confirm(`Remove the token for ${tokenDay(t.date)}? The file is deleted.`)) return;
+    const e = await onRemove(lead.ref, t.id);
+    if (e) setErr(TOKEN_ERR[e] || 'The token was not removed. Try again.');
+  };
+  const closed = ['Settled', 'Lost'].includes(lead.status);
+  return (
+    <div className="tokens">
+      {tokens.length > 0 && (
+        <ul className="token-list">
+          {tokens.map((t) => (
+            <li key={t.id}>
+              <div><b>{tokenDay(t.date)}</b>{t.number && <span className="small"> · Token {t.number}</span>}
+                <div className="small">{t.by} · {ago(t.at)}</div></div>
+              <button className="btn" onClick={() => onOpen(lead.ref, t)}>Open ↗</button>
+              <button className="x" aria-label={`Remove token for ${t.date}`} title="Remove" onClick={() => remove(t)}>×</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="token-add">
+        <label>Token date<input type="date" value={date} onChange={(e) => { setDate(e.target.value); setErr(''); }} /></label>
+        <label>Token no.<input value={number} maxLength={40} onChange={(e) => setNumber(e.target.value)} placeholder="Optional" /></label>
+        <label className={'btn primary' + (busy ? ' disabled' : '')}>
+          {busy ? 'Uploading…' : 'Upload token'}
+          <input type="file" accept="image/*,application/pdf" hidden disabled={busy}
+            onChange={(e) => { const f = e.target.files[0]; e.target.value = ''; if (f) upload(f); }} />
+        </label>
+      </div>
+      {err && <div className="err" role="alert">{err}</div>}
+      <p className="hint">{closed ? 'PDF or photo, up to 5 MB.' : 'PDF or photo, up to 5 MB. Uploading a token moves the lead to Scheduled.'}</p>
+    </div>
+  );
+}
+
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken }) {
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
@@ -578,6 +632,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                   <a className="btn primary" href={DELHI_COURT_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Delhi court token ↗</a>
                 </div>
                 <p className="hint">The vehicle number is filled in by the add-on (or copied, so you can paste it). Type the captcha and OTP yourself.</p>
+                <Tokens lead={lead} onUpload={onUploadToken} onOpen={onOpenToken} onRemove={onRemoveToken} />
               </div>
             </div>
 
@@ -1175,7 +1230,7 @@ export default function Admin() {
   const [st, setSt] = useState('');
   const [sel, setSel] = useState(null);
   const [err, setErr] = useState('');
-  const [view, setView] = useState(() => ({ '#settings': 'settings', '#analytics': 'analytics' })[location.hash] || 'leads');
+  const [view, setView] = useState(() => ({ '#settings': 'settings', '#analytics': 'analytics', '#calendar': 'calendar' })[location.hash] || 'leads');
   const [site, setSite] = useState(null);
   const [staff, setStaff] = useState([]);
   const [soundOn, setSoundOn] = useState(readSound);
@@ -1184,7 +1239,7 @@ export default function Admin() {
   const seen = useRef(null);
   const me = auth?.user;
   const isAdmin = me?.role === 'admin';
-  const page = isAdmin && ['settings', 'analytics'].includes(view) ? view : 'leads';
+  const page = view === 'calendar' || (isAdmin && ['settings', 'analytics'].includes(view)) ? view : 'leads';
   useEffect(() => { history.replaceState(null, '', page === 'leads' ? '#' : `#${page}`); }, [page]);
   useEffect(() => { call('/api/settings').then(setSite).catch(() => {}); }, []);
 
@@ -1294,17 +1349,39 @@ export default function Admin() {
       return '';
     } catch (e) { if (e.status === 401) signOut(); return e.message; }
   };
+  const tokenUrl = (ref, id = '') => `/api/admin/leads/${encodeURIComponent(ref)}/tokens${id ? `/${encodeURIComponent(id)}` : ''}`;
+  const onUploadToken = async (ref, file, date, number) => {
+    try {
+      const res = await fetch(`${tokenUrl(ref)}?date=${encodeURIComponent(date)}&number=${encodeURIComponent(number)}&name=${encodeURIComponent(file.name || '')}`, {
+        method: 'POST', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream', Authorization: `Bearer ${auth.token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) { signOut(); return 'signed_out'; }
+      if (!res.ok) return data.error || (res.status === 413 ? 'file_too_large' : 'error');
+      setLeads((ls) => ls.map((l) => (l.ref === ref ? data.lead : l)));
+      return '';
+    } catch { return 'error'; }
+  };
+  const onRemoveToken = async (ref, id) => {
+    try {
+      const { lead } = await call(tokenUrl(ref, id), auth, { method: 'DELETE' });
+      setLeads((ls) => ls.map((l) => (l.ref === ref ? lead : l)));
+      return '';
+    } catch (e) { if (e.status === 401) signOut(); return e.message; }
+  };
   // Files need the sign-in, so they are fetched here and opened from memory in a new tab.
-  const onOpenDoc = async (ref, d) => {
+  const openFile = async (src) => {
     const w = window.open('', '_blank');
     try {
-      const res = await fetch(docUrl(ref, d.id), { headers: { Authorization: `Bearer ${auth.token}` } });
+      const res = await fetch(src, { headers: { Authorization: `Bearer ${auth.token}` } });
       if (!res.ok) throw new Error(String(res.status));
       const url = URL.createObjectURL(await res.blob());
       if (w) w.location.href = url; else window.location.href = url;
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch { w?.close(); setErr('That file could not be opened. Try again.'); }
   };
+  const onOpenDoc = (ref, d) => openFile(docUrl(ref, d.id));
+  const onOpenToken = (ref, t) => openFile(tokenUrl(ref, t.id));
   const onPatch = async (ref, p) => {
     try {
       const { lead } = await call(`/api/admin/leads/${encodeURIComponent(ref)}`, auth, { method: 'PATCH', body: JSON.stringify(p) });
@@ -1389,6 +1466,7 @@ export default function Admin() {
             <div style={{ display: 'flex', alignItems: 'center' }}><Logo /><span className="tag">ADMIN</span></div>
             <nav className="nav">
               <button aria-pressed={page === 'leads'} onClick={() => setView('leads')}>Leads</button>
+              <button aria-pressed={page === 'calendar'} onClick={() => setView('calendar')}>Calendar</button>
               {isAdmin && <button aria-pressed={page === 'analytics'} onClick={() => setView('analytics')}>Analytics</button>}
               {isAdmin && <button aria-pressed={page === 'settings'} onClick={() => setView('settings')}>Settings</button>}
             </nav>
@@ -1403,7 +1481,12 @@ export default function Admin() {
         </div>
       </header>
       <main className="page">
-        {page === 'analytics' ? (
+        {page === 'calendar' ? (
+          <>
+            <div className="head"><div><h1>Token calendar</h1><div className="sub">{isAdmin ? 'Court tokens uploaded on every lead.' : 'Court tokens on the leads assigned to you.'} Click a date to see its tokens.</div></div></div>
+            <Calendar leads={leads} onOpenToken={onOpenToken} onOpenLead={(ref) => { setSel(ref); setAsk(null); }} />
+          </>
+        ) : page === 'analytics' ? (
           <>
             <div className="head"><div><h1>Analytics</h1><div className="sub">Leads, conversions and revenue. Updates every 15 seconds.</div></div></div>
             <Analytics leads={leads} staff={staff} payable={payable} inr={inr} />
@@ -1488,6 +1571,7 @@ export default function Admin() {
       {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st} lokDates={site?.lokAdalatDates}
         siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend} getPayment={getPayment} isAdminUser={isAdmin}
         docTypes={docTypes} onUploadDoc={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onDocLink={onDocLink}
+        onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
     </>
   );
