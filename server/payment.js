@@ -1,7 +1,8 @@
 // Payment request sent on WhatsApp once the customer has approved: approved challans, amount,
 // UPI ID / pay link and the refund promise. Used by the admin drawer and the WhatsApp Web add-on.
+import { lokPlan, lokLong, lokShort } from '../shared/lok.js';
+
 const FEE_RATES = [50, 40, 30];
-const CITY_COURT = { noida: 'District Court, Surajpur', ghaziabad: 'District Court, Ghaziabad', delhi: 'Delhi court complex', gurugram: 'District Court, Gurugram' };
 const inr = (n) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 const fmtPlate = (p) => String(p || '').replace(/^([A-Z]{2}\d{1,2})([A-Z]{0,3})(\d{4})$/, (m, a, b, c) => [a, b, c].filter(Boolean).join(' '));
 
@@ -14,8 +15,6 @@ export function paymentAmounts(lead) {
   return { ok, total, rate, payable: Math.round((total * rate) / 100) };
 }
 
-// Next Lok Adalat for the lead's city, else the soonest anywhere. dates: upcoming only, sorted.
-export const lokFor = (lead, dates = []) => dates.find((d) => d.city === lead.city) || dates[0] || null;
 
 export function upiLink(pay, amount, ref) {
   const q = new URLSearchParams({ pa: pay.upiId, pn: pay.payeeName || 'Niptao', am: String(amount), cu: 'INR', tn: `Niptao ${ref}` });
@@ -26,11 +25,9 @@ export function upiLink(pay, amount, ref) {
 // on a line by itself so it can be long-pressed and copied.
 export function paymentMessage(lead, pay, dates = []) {
   const { ok, total, rate, payable } = paymentAmounts(lead);
-  const lok = lokFor(lead, dates);
-  const lokAt = lok ? new Date(`${lok.date}T${lok.time || '10:00'}:00+05:30`) : null;
-  const day = (opts) => lokAt.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', ...opts });
-  const lokDate = lok ? day({ weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '';
-  const lokShort = lok ? day({ day: 'numeric', month: 'short' }) : '';
+  // Lok Adalat date for each state the approved challans were issued in. Courts are fixed later, at token time.
+  const plan = lokPlan(lead, ok, dates);
+  const lokText = plan.length === 1 ? lokLong(plan[0].lok) : plan.map((p) => `${p.label} – ${lokLong(p.lok)}`).join(' · ');
   const offence = (c) => { const o = String(c.offence || '').replace(/\s+/g, ' ').trim(); return o.length > 60 ? `${o.slice(0, 59)}…` : o; };
   const block = (c, i) => [
     `${i + 1}. ${c.challanNo || '-'}${c.date ? ` · ${c.date}` : ''}`,
@@ -56,10 +53,10 @@ export function paymentMessage(lead, pay, dates = []) {
     `Amount: ${inr(payable)}`,
     `Remark: ${lead.ref}`,
     '_Or scan the QR code sent below._',
-    ...(lok ? ['', `📅 *Lok Adalat:* ${lokDate}, ${CITY_COURT[lok.city] || lok.city}`] : []),
+    ...(plan.length ? ['', `📅 *Lok Adalat:* ${lokText}`] : []),
     '',
     '✅ *100% refund promise*',
-    `If your challan is not cleared, the full amount will be refunded after the Lok Adalat date${lok ? ` (${lokShort})` : ''}.`,
+    `If your challan is not cleared, the full amount will be refunded after the Lok Adalat date${plan.length > 1 ? 's' : ''}${plan.length ? ` (${plan.map((p) => lokShort(p.lok)).join(', ')})` : ''}.`,
     '',
     'Once paid, please send the payment screenshot here.',
     '',

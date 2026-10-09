@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseChallans } from './parseChallans.js';
 import Analytics from './Analytics.jsx';
 import Calendar from './Calendar.jsx';
+import { lokPlan, lokLong } from '../../shared/lok.js';
 
 const STATUS_COLORS = {
   New: ['#E8EEF8', '#2F5AA8'], Contacted: ['#F0EAF8', '#6A42A0'], 'Payment received': ['#FBE7EF', '#9A2F5E'], 'Documents received': ['#FFF1D9', '#8A5200'], 'Documents verified': ['#FDF3C4', '#6B5300'],
@@ -63,16 +64,15 @@ const leadStates = (l) => {
   return [...set];
 };
 // Pre-written message asking the customer to approve, in writing, the challans they agreed to on the call.
-// Next Lok Adalat for the customer's city, else the soonest one anywhere (dates arrive already filtered to upcoming).
-function lokFor(l, dates) {
-  const list = dates || [];
-  return list.find((d) => d.city === l.city) || list[0] || null;
-}
+// Next Lok Adalat for each state the approved challans were issued in (dates arrive already filtered to
+// upcoming). No court name: the court is only known once the token is generated.
 function approvalMessage(l, dates) {
-  const lok = lokFor(l, dates);
-  const lokLine = lok ? `Next Lok Adalat: *${new Date(`${lok.date}T${lok.time || '10:00'}:00+05:30`).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}* at ${CITY_COURT[lok.city] || CITY[lok.city] || lok.city}. We will settle the approved challans there, so please reply before then.` : '';
   const all = l.challans || [];
   const ok = all.filter((c) => c.approved), rest = all.filter((c) => !c.approved);
+  const plan = lokPlan(l, ok.length ? ok : all, dates || []);
+  const lokLine = plan.length
+    ? `Next Lok Adalat: ${plan.length === 1 ? `*${lokLong(plan[0].lok)}*` : plan.map((p) => `*${p.label} – ${lokLong(p.lok)}*`).join(' · ')}. We will settle the approved challans there, so please reply before then.`
+    : '';
   const line = (c, i) => `${i + 1}. Challan ${c.challanNo || '-'}${c.date ? ` (${c.date})` : ''}${c.offence ? ` - ${String(c.offence).slice(0, 70)}` : ''} - ${inr(c.amount || 0)}`;
   const restTotal = rest.reduce((n, c) => n + (c.amount || 0), 0);
   return [
