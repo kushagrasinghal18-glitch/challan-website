@@ -542,6 +542,11 @@ app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
     if (!PLATE_RE.test(p)) return res.status(400).json({ error: 'invalid_plate' });
     patch.plate = p;
   }
+  if (b.rcMobile !== undefined) {
+    const same = b.rcMobile?.same === true, phone = String(b.rcMobile?.phone || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+    if (!same && !PHONE_RE.test(phone)) return res.status(400).json({ error: 'invalid_rc_mobile' });
+    patch.rcMobile = { same, phone };
+  }
   if (b.rcName !== undefined) {
     const same = b.rcName?.same === true, name = String(b.rcName?.name || '').trim();
     if (!same && name.length < 2) return res.status(400).json({ error: 'rc_name_required' });

@@ -103,11 +103,6 @@ function Logo() {
   return <span className="logo" aria-label="Niptao"><span className="dev">निप</span><span className="lat">tao</span></span>;
 }
 
-function Pill({ status }) {
-  const [bg, fg] = STATUS_COLORS[status] || STATUS_COLORS.New;
-  return <span className="pill" style={{ background: bg, color: fg }}>{status}</span>;
-}
-
 // Alert sound for new leads, made with Web Audio so no sound file is needed.
 // Browsers only allow sound after a click on the page, hence unlock().
 let audioCtx;
@@ -231,32 +226,71 @@ function ChallanEditor({ lead, onSave, onCancel }) {
   );
 }
 
-// Name on the vehicle's RC. Messages to the customer always use the lead's name.
-function RcName({ lead, onPatch }) {
-  const set = lead.rcName;
-  const [typing, setTyping] = useState(false);
-  const [name, setName] = useState('');
+// One "same as the lead" tick with a box that is always there when it's not the same.
+function SameOr({ label, sameLabel, value, field, placeholder, inputMode, clean, valid, savedText, onSave }) {
+  const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setTyping(false); setName(set && !set.same ? set.name : ''); }, [lead.ref, set?.at]); // eslint-disable-line react-hooks/exhaustive-deps
-  const save = async (p) => { setBusy(true); try { await onPatch(lead.ref, { rcName: p }); setTyping(false); } finally { setBusy(false); } };
-  const showBox = typing || (set && !set.same);
+  const [err, setErr] = useState('');
+  const [untick, setUntick] = useState(false); // ticked before, unticked now: show the box until something is saved
+  useEffect(() => { setText(value && !value.same ? value[field] : ''); setErr(''); setUntick(false); }, [value?.at]); // eslint-disable-line react-hooks/exhaustive-deps
+  const save = async (p) => { setBusy(true); setErr(''); try { if (await onSave(p) === false) setErr('Not saved. Check it and try again.'); } finally { setBusy(false); } };
+  const same = !!value?.same && !untick;
+  const saved = value && !value.same ? value[field] : '';
   return (
-    <div className="kv rc-name" style={{ gridColumn: '1 / -1' }}>
-      <div className="k">Name on RC</div>
-      <label className="rc-same">
-        <input type="checkbox" checked={!!set?.same} disabled={busy}
-          onChange={(e) => (e.target.checked ? save({ same: true }) : setTyping(true))} />
-        Same as the lead's name ({lead.name})
-      </label>
-      {showBox && (
-        <form className="rc-row" onSubmit={(e) => { e.preventDefault(); if (name.trim().length >= 2) save({ same: false, name }); }}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name exactly as on the RC" aria-label="Name on RC" maxLength={120} />
-          <button className="btn" disabled={busy || name.trim().length < 2 || name.trim() === (set?.name || '')}>Save</button>
-        </form>
+    <div className="own-row">
+      <div className="own-k">{label}</div>
+      <div className="own-v">
+        <label className="own-same">
+          <input type="checkbox" checked={same} disabled={busy} onChange={(e) => (e.target.checked ? save({ same: true }) : setUntick(true))} />
+          {sameLabel}
+        </label>
+        {!same && (
+          <form className="own-form" onSubmit={(e) => { e.preventDefault(); if (valid(text)) save({ same: false, [field]: clean(text) }); }}>
+            <input value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} aria-label={label} inputMode={inputMode} maxLength={120} />
+            <button className="btn" disabled={busy || !valid(text) || clean(text) === saved}>Save</button>
+          </form>
+        )}
+        {saved && <div className="small">Saved: <b>{savedText(saved)}</b>{value.by ? ` · ${value.by}` : ''}</div>}
+        {err && <div className="err">{err}</div>}
+      </div>
+    </div>
+  );
+}
+
+// Name and mobile number on the vehicle's RC. Messages to the customer always use the lead's own name and number.
+function OwnerFields({ lead, onPatch }) {
+  const send = (key) => (p) => onPatch(lead.ref, { [key]: p });
+  return (
+    <div className="owner">
+      <SameOr label="Name on RC" sameLabel={`Same as lead name (${lead.name})`} value={lead.rcName} field="name"
+        placeholder="Name as on the RC" clean={(v) => v.replace(/\s+/g, ' ').trim()} valid={(v) => v.trim().length >= 2}
+        savedText={(v) => v} onSave={send('rcName')} />
+      {lead.rcOwner?.name && (
+        <div className={`own-hint ${lead.rcOwner.match || ''}`}>Parivahan shows <b>{lead.rcOwner.name}</b>{' '}
+          {lead.rcOwner.match === 'match' ? '✓ matches' : lead.rcOwner.match === 'partial' ? '⚠ partly matches' : lead.rcOwner.match === 'mismatch' ? "⚠ doesn't match the lead name" : ''}
+        </div>
       )}
-      {set && !set.same && set.name && !typing && <div className="hint">RC is in the name of <b>{set.name}</b>. WhatsApp messages still use {lead.name}.</div>}
-      {!set && !typing && <div className="hint">Tick if the RC is in the customer's name, otherwise untick and type the RC owner's name.{lead.rcOwner?.name ? ` Parivahan shows ${lead.rcOwner.name}.` : ''}</div>}
-      {set?.by && <div className="small">Set by {set.by} · {fullDate(set.at)}</div>}
+      <SameOr label="Registered mobile" sameLabel={`Same as lead mobile (${fmtPhone(lead.phone)})`} value={lead.rcMobile} field="phone"
+        placeholder="10-digit mobile" inputMode="numeric" clean={(v) => v.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '')}
+        valid={(v) => /^[6-9]\d{9}$/.test(v.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, ''))} savedText={(v) => `+91 ${fmtPhone(v)}`} onSave={send('rcMobile')} />
+    </div>
+  );
+}
+
+// Stage dots next to the lead's name: green for done and current, red for what is still to come.
+const FLOW = ['New', 'Contacted', 'Documents received', 'Documents verified', 'Scheduled', 'Settled'];
+function StageDots({ status }) {
+  const lost = status === 'Lost';
+  const at = FLOW.indexOf(status);
+  return (
+    <div className="stages" aria-label={`Stage: ${status}`}>
+      <div className="dots">
+        {FLOW.map((s, i) => {
+          const kind = lost ? 'todo' : i < at ? 'done' : i === at ? 'now' : 'todo';
+          return <span key={s} className={`dot ${kind}`} title={`${s}${kind === 'done' ? ' · done' : kind === 'now' ? ' · current stage' : ' · pending'}`} />;
+        })}
+      </div>
+      <span className={`stage-name${lost ? ' lost' : ''}`}>{status}{!lost && at >= 0 ? ` · step ${at + 1} of ${FLOW.length}` : ''}</span>
     </div>
   );
 }
@@ -408,6 +442,11 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
   const [plateIn, setPlateIn] = useState('');
   const [pay, setPay] = useState(null); // { text, upiLink, qr, amount } or { error }
   const [qrCopied, setQrCopied] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [chatBig, setChatBig] = useState(false);
+  const chatRef = useRef(null);
+  // Show the latest WhatsApp message first.
+  useEffect(() => { const el = chatRef.current; if (el) el.scrollTop = el.scrollHeight; }, [lead.ref, lead.waChat?.length, chatBig]);
   const approvedIn = lead.waApproval?.state === 'received';
   const payKey = `${lead.ref}|${approvedIn}|${feeRate(lead)}|${approvedTotal(lead)}`;
   useEffect(() => {
@@ -424,7 +463,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
       setQrCopied(true); setTimeout(() => setQrCopied(false), 2500);
     } catch { /* clipboard blocked: staff can use Download */ }
   };
-  useEffect(() => { setDraft(''); setCopied(false); setEditing(false); setChSt(listState || ''); setWaDraft(''); setWaErr(''); setPlateIn(''); }, [lead.ref, listState]);
+  useEffect(() => { setDraft(''); setCopied(false); setEditing(false); setChSt(listState || ''); setWaDraft(''); setWaErr(''); setPlateIn(''); setShowHelp(false); setChatBig(false); }, [lead.ref, listState]);
   // Opening a lead clears its "new WhatsApp reply" badge.
   useEffect(() => { if (lead.waUnread) onPatch(lead.ref, { waRead: true }); }, [lead.ref, lead.waUnread]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (lead.docsNew) onPatch(lead.ref, { docsSeen: true }); }, [lead.ref, lead.docsNew]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -464,13 +503,14 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
           <div style={{ minWidth: 0 }}>
             <div className="meta">{lead.ref} · {fullDate(lead.createdAt)}</div>
             <h2>{lead.name}</h2>
-            <Pill status={lead.status} />
+            <StageDots status={lead.status} />
           </div>
           <button className="x" onClick={onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0E1B36" strokeWidth="2.4"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
         </div>
         <div className="drawer-body">
+          <OwnerFields lead={lead} onPatch={onPatch} />
           <div className="actions">
             <a className="call" href={`tel:+91${lead.phone}`}>Call</a>
             <a className="wa" href={`https://wa.me/91${lead.phone}?text=${waText}`} target="_blank" rel="noopener noreferrer">WhatsApp</a>
@@ -500,29 +540,6 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
             </div>
           )}
 
-          {(waApi || lead.waChat?.length > 0) && (
-            <div className="wa-chat">
-              <div className="sec-k">WhatsApp chat{lead.source === 'WhatsApp' ? ' · lead came from WhatsApp' : ''}</div>
-              {lead.waChat?.length ? (
-                <div className="wa-msgs">
-                  {lead.waChat.slice(-50).map((m, i) => (
-                    <div key={m.id || i} className={'wa-bub ' + m.dir}>
-                      <div className="t">{m.text}</div>
-                      <div className="m">{m.dir === 'out' ? `${m.by} · ` : ''}{fullDate(m.at)}{m.dir === 'out' && m.status ? ` · ${m.status === 'read' ? '✓✓ read' : m.status === 'delivered' ? '✓✓ delivered' : m.status === 'failed' ? `failed${m.error ? `: ${m.error}` : ''}` : '✓ sent'}` : ''}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : <div className="small">No WhatsApp messages with this customer yet.</div>}
-              {waApi && (waOpen ? (
-                <form className="wa-reply" onSubmit={async (e) => { e.preventDefault(); if (waDraft.trim() && await waSend({ text: waDraft })) setWaDraft(''); }}>
-                  <textarea rows={2} value={waDraft} onChange={(e) => setWaDraft(e.target.value)} placeholder="Reply on WhatsApp" aria-label="WhatsApp reply" />
-                  <button className="btn wa-btn" disabled={busy || !waDraft.trim()}>Send</button>
-                </form>
-              ) : <div className="small">You can reply here for 24 hours after the customer's last message. Until they write again, use "Open in WhatsApp" or the approval request below.</div>)}
-              {waErr && <div className="stale">{waErr}</div>}
-            </div>
-          )}
-
           <div className="challan-check">
             <div className="sec-k">Check challans</div>
             <div className="cc-row">
@@ -530,8 +547,9 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
               <a className="btn" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Open Parivahan e-Challan ↗</a>
               <button className="btn" onClick={copyPlate}>{copied ? 'Copied ✓' : `Copy ${fmtPlate(lead.plate)}`}</button>
             </div>
-            <details className="guide" open={!lead.challans}>
-              <summary>How to add the challans to this lead (Park+)</summary>
+            <button type="button" className="btn ghost instr" aria-expanded={showHelp} onClick={() => setShowHelp((v) => !v)}>{showHelp ? '▾ Hide instructions' : '▸ Instructions'}</button>
+            {showHelp && (<div className="guide">
+              <div className="sec-k">Park+</div>
               <ol>
                 <li>Click <b>Open Park+</b>. The vehicle number is copied for you. Paste it into Park+'s vehicle number box and search.</li>
                 <li>When the challans show, select the whole list with your mouse, from the first challan number down to the last "View details", and copy it (Ctrl+C, or Cmd+C on a Mac).</li>
@@ -539,8 +557,8 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                 <li>Check each row (number, amount, offence, date, place, status), fix anything wrong, choose Source <b>Park+</b>, and press <b>Save</b>.</li>
                 <li>If the vehicle has no challans, press <b>No challans</b> instead.</li>
               </ol>
-            </details>
-            <p className="hint"><b>Parivahan:</b> the vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
+              <p className="hint"><b>Parivahan:</b> the vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
+            </div>)}
           </div>
 
           {askApproval && (
@@ -677,20 +695,6 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
             <div className="kv"><div className="k">Mobile</div><div className="v">+91 {fmtPhone(lead.phone)}</div></div>
             <div className="kv"><div className="k">City</div><div className="v">{CITY[lead.city] || lead.city}</div></div>
             <div className="kv"><div className="k">Language</div><div className="v">{lead.lang === 'hi' ? 'Hindi' : 'English'}</div></div>
-            {lead.rcOwner?.name && (
-              <div className="kv" style={{ gridColumn: '1 / -1' }}>
-                <div className="k">RC owner ({lead.rcOwner.source || 'Parivahan'})</div>
-                <div className="v">{lead.rcOwner.name}{' '}
-                  <span className={`namechk ${lead.rcOwner.match || 'unknown'}`}>
-                    {lead.rcOwner.match === 'match' ? '✓ matches the name given'
-                      : lead.rcOwner.match === 'partial' ? '⚠ partly matches the name given'
-                        : lead.rcOwner.match === 'mismatch' ? "⚠ doesn't match the name given" : 'could not be compared'}
-                  </span>
-                </div>
-                {lead.rcOwner.match === 'mismatch' && <div className="hint">The vehicle may be registered to someone else. Confirm with the customer and fill in the name on the RC below.</div>}
-              </div>
-            )}
-            <RcName lead={lead} onPatch={onPatch} />
             {lead.promoCode && <div className="kv"><div className="k">Promo code</div><div className="v" style={{ fontFamily: 'var(--mono)' }}>{lead.promoCode}</div></div>}
             <div className="kv" style={{ gridColumn: '1 / -1' }}>
               <label className="k" htmlFor="agent">Assigned to</label>
@@ -721,6 +725,30 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
               <div><div className="by"><b style={{ color: '#0E1B36' }}>Website</b> · {ago(lead.createdAt)}</div><div className="t">Lead submitted from the website.</div></div>
             </div>
           </div>
+
+          {(waApi || lead.waChat?.length > 0) && (
+            <div className="wa-chat">
+              <div className="ch-head"><div className="sec-k">WhatsApp chat{lead.source === 'WhatsApp' ? ' · lead came from WhatsApp' : ''}</div>
+                {lead.waChat?.length > 0 && <button type="button" className="btn ghost edit" onClick={() => setChatBig((v) => !v)}>{chatBig ? 'Collapse' : 'Expand'}</button>}</div>
+              {lead.waChat?.length ? (
+                <div className={'wa-msgs' + (chatBig ? ' big' : '')} ref={chatRef}>
+                  {lead.waChat.slice(-50).map((m, i) => (
+                    <div key={m.id || i} className={'wa-bub ' + m.dir}>
+                      <div className="t">{m.text}</div>
+                      <div className="m">{m.dir === 'out' ? `${m.by} · ` : ''}{fullDate(m.at)}{m.dir === 'out' && m.status ? ` · ${m.status === 'read' ? '✓✓ read' : m.status === 'delivered' ? '✓✓ delivered' : m.status === 'failed' ? `failed${m.error ? `: ${m.error}` : ''}` : '✓ sent'}` : ''}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="small">No WhatsApp messages with this customer yet.</div>}
+              {waApi && (waOpen ? (
+                <form className="wa-reply" onSubmit={async (e) => { e.preventDefault(); if (waDraft.trim() && await waSend({ text: waDraft })) setWaDraft(''); }}>
+                  <textarea rows={2} value={waDraft} onChange={(e) => setWaDraft(e.target.value)} placeholder="Reply on WhatsApp" aria-label="WhatsApp reply" />
+                  <button className="btn wa-btn" disabled={busy || !waDraft.trim()}>Send</button>
+                </form>
+              ) : <div className="small">You can reply here for 24 hours after the customer's last message. Until they write again, use "Open in WhatsApp" or the approval request below.</div>)}
+              {waErr && <div className="stale">{waErr}</div>}
+            </div>
+          )}
 
           {isSuper && (
             <div className="danger">
@@ -1111,6 +1139,7 @@ function toCsv(leads) {
     ['Payment details sent', (l) => (l.paymentSent ? fullDate(l.paymentSent.at) : '')],
     ['RC owner (Parivahan)', (l) => l.rcOwner?.name || ''],
     ['Name on RC', (l) => (!l.rcName ? '' : l.rcName.same ? `Same as lead (${l.name})` : l.rcName.name)],
+    ['Registered mobile', (l) => (!l.rcMobile ? '' : l.rcMobile.same ? l.phone : l.rcMobile.phone)],
     ['Documents uploaded', (l) => [...new Set((l.docs || []).map((d) => d.typeName))].join(', ')],
     ['RC owner name check', (l) => (!l.rcOwner ? '' : l.rcOwner.match === 'match' ? 'Matches' : l.rcOwner.match === 'partial' ? 'Partly matches' : l.rcOwner.match === 'mismatch' ? "Doesn't match" : 'Not compared')],
     ['Latest note', (l) => l.notes?.[0]?.text || '']];

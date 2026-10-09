@@ -153,3 +153,11 @@ test('customer upload link: found by token, counts new customer uploads', async 
   assert.equal(l.docLink, null);
   assert.equal(await leadByDocToken(token), null);
 });
+
+test('registered mobile on the RC', async () => {
+  await addLead({ ref: 'RM-1', createdAt: '2026-10-09T00:00:00Z', name: 'A', plate: 'UP16AB5555', phone: '9876500009', status: 'New', notes: [] });
+  let l = await updateLead('RM-1', { rcMobile: { same: false, phone: '9811122233' } }, 'K');
+  assert.deepEqual([l.rcMobile.same, l.rcMobile.phone, l.phone], [false, '9811122233', '9876500009']);
+  l = await updateLead('RM-1', { rcMobile: { same: true, phone: '9811122233' } }, 'K');
+  assert.deepEqual([l.rcMobile.same, l.rcMobile.phone], [true, '']);
+});

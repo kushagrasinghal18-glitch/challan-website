@@ -110,6 +110,7 @@ tbody tr.sel { background: var(--row-sel); }
 .drawer-head .meta { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .x { width: 36px; height: 36px; flex: none; border-radius: 50%; border: 0; background: #F2EFE8; display: flex; align-items: center; justify-content: center; }
 .drawer-body { flex: 1; overflow: auto; padding: 18px 20px 28px; display: flex; flex-direction: column; gap: 22px; }
+.drawer-body > * { flex-shrink: 0; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .actions a { height: 46px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 700; text-decoration: none; }
 .actions .call { background: var(--navy); color: #fff; }
@@ -299,3 +300,35 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 .doc-link-btns { display: flex; gap: 6px; flex-wrap: wrap; }
 .doc-link-btns .btn { display: inline-flex; align-items: center; text-decoration: none; }
 .name .multi.docs-new { background: #2F5AA8; }
+
+/* Lead header: stage dots */
+.stages { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.stages .dots { display: flex; gap: 5px; align-items: center; }
+.stages .dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+.stages .dot.done { background: #1F9D55; }
+.stages .dot.now { background: #1F9D55; box-shadow: 0 0 0 3px #C6EBD4; width: 13px; height: 13px; }
+.stages .dot.todo { background: #E25757; opacity: .85; }
+.stages .stage-name { font-size: 13px; font-weight: 600; color: #1F6B45; }
+.stages .stage-name.lost { color: #9B1C1C; }
+
+/* Name and mobile on the RC, right under the lead name */
+.owner { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 10px; background: #FBFAF7; }
+.own-row { display: grid; grid-template-columns: 130px 1fr; gap: 10px; align-items: start; }
+.own-k { font-size: 13px; color: var(--muted); padding-top: 2px; }
+.own-v { display: grid; gap: 6px; min-width: 0; }
+.own-same { display: flex; gap: 8px; align-items: center; font-weight: 600; font-size: 14px; cursor: pointer; }
+.own-same input { width: 18px; height: 18px; flex: none; margin: 0; }
+.own-form { display: flex; gap: 8px; }
+.own-form input { flex: 1; min-width: 0; height: 38px; padding: 0 10px; border: 1px solid #D6D3CC; border-radius: 8px; font: inherit; background: #fff; }
+.own-hint { font-size: 12.5px; color: var(--muted); margin: -4px 0 0 140px; }
+.own-hint.match { color: #1F6B45; }
+.own-hint.partial { color: #92400E; }
+.own-hint.mismatch { color: #9B1C1C; }
+@media (max-width: 520px) { .own-row { grid-template-columns: 1fr; gap: 4px; } .own-hint { margin-left: 0; } }
+
+/* Challan check instructions toggle */
+.challan-check .instr { padding: 0 4px; height: 32px; color: var(--navy); margin-top: 6px; }
+.challan-check .guide { margin-top: 6px; }
+
+/* WhatsApp chat: expand */
+.wa-msgs.big { max-height: 70vh; }

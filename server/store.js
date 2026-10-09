@@ -274,6 +274,11 @@ export function updateLead(ref, patch, by, onlyFor) {
       const same = patch.rcName.same === true;
       out.rcName = { same, name: same ? '' : String(patch.rcName.name || '').replace(/\s+/g, ' ').trim().slice(0, 120), at: new Date().toISOString(), by };
     }
+    // Mobile number registered on the RC (the one Parivahan/VAHAN OTPs go to). Messages still use lead.phone.
+    if (patch.rcMobile && typeof patch.rcMobile === 'object') {
+      const same = patch.rcMobile.same === true;
+      out.rcMobile = { same, phone: same ? '' : String(patch.rcMobile.phone || ''), at: new Date().toISOString(), by };
+    }
     // Uploaded documents (only the details here; the file itself is kept by saveDoc).
     const autoNotes = [];
     if (patch.addDoc) {
