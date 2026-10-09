@@ -3,7 +3,7 @@ import { parseChallans } from './parseChallans.js';
 import Analytics from './Analytics.jsx';
 
 const STATUS_COLORS = {
-  New: ['#E8EEF8', '#2F5AA8'], Contacted: ['#F0EAF8', '#6A42A0'], 'Documents received': ['#FFF1D9', '#8A5200'], 'Documents verified': ['#FDF3C4', '#6B5300'],
+  New: ['#E8EEF8', '#2F5AA8'], Contacted: ['#F0EAF8', '#6A42A0'], 'Payment received': ['#FBE7EF', '#9A2F5E'], 'Documents received': ['#FFF1D9', '#8A5200'], 'Documents verified': ['#FDF3C4', '#6B5300'],
   Scheduled: ['#E1F2F4', '#0E6470'], Settled: ['#E3F2E9', '#1F6B45'], Lost: ['#ECEBE8', '#5E6472'],
 };
 const CITY = { noida: 'Noida / Gr. Noida', ghaziabad: 'Ghaziabad', delhi: 'Delhi', gurugram: 'Gurugram' };
@@ -281,7 +281,7 @@ function OwnerFields({ lead, onPatch }) {
 }
 
 // Stage dots next to the lead's name: green for done and current, red for what is still to come.
-const FLOW = ['New', 'Contacted', 'Documents received', 'Documents verified', 'Scheduled', 'Settled'];
+const FLOW = ['New', 'Contacted', 'Payment received', 'Documents received', 'Documents verified', 'Scheduled', 'Settled'];
 function StageDots({ status }) {
   const lost = status === 'Lost';
   const at = FLOW.indexOf(status);

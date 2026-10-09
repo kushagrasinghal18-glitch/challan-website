@@ -109,6 +109,12 @@ test('documents: all needed ones move the lead to Documents received', async () 
   assert.equal(l.docs.length, 3);
   assert.equal(l.docs[2].by, 'Priya');
 
+  // Payment received comes before documents, so it moves on too.
+  await addLead({ ref: 'DOC-P', createdAt: '2026-10-09T00:00:00Z', name: 'Asha Rao', plate: 'UP16AB2222', phone: '9876500001', status: 'Payment received', notes: [] });
+  const one = [{ id: 'rc', name: 'RC', required: true }];
+  l = await updateLead('DOC-P', { addDoc: { id: 'docpaaaaaaaa', type: 'rc', typeName: 'RC', name: 'rc.pdf', mime: 'application/pdf', size: 10 }, docTypes: one }, 'Priya');
+  assert.equal(l.status, 'Documents received');
+
   // Already further along: never moved back.
   await updateLead('DOC-1', { status: 'Scheduled', removeDoc: 'doc1cccccccc' }, 'K');
   l = await add('doc1dddddddd', 'dl');

@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react';
 
 // Admin-only numbers worked out from the leads already loaded in the panel (nothing extra is fetched).
-// Leads received count by the day they came in; settled, lost and revenue count by the day the
+// Leads received count by the day they came in; settled, lost and payments count by the day the
 // lead reached that stage (statusLog, else its last update for leads from before the log existed).
 
 const DAY = 864e5;
 const IST = 5.5 * 36e5;
 const istDay = (t) => new Date(new Date(t).getTime() + IST).toISOString().slice(0, 10);
 const startOfIstDay = (d) => new Date(`${d}T00:00:00+05:30`).getTime();
-const FLOW = ['New', 'Contacted', 'Documents received', 'Documents verified', 'Scheduled', 'Settled'];
+const FLOW = ['New', 'Contacted', 'Payment received', 'Documents received', 'Documents verified', 'Scheduled', 'Settled'];
 const CITY = { noida: 'Noida / Gr. Noida', ghaziabad: 'Ghaziabad', delhi: 'Delhi', gurugram: 'Gurugram' };
 const RANGES = [['today', 'Today'], ['7', '7 days'], ['30', '30 days'], ['month', 'This month'], ['all', 'All time'], ['custom', 'Custom']];
 
@@ -34,6 +34,9 @@ function furthest(l) {
   const steps = [l.status, ...(l.statusLog || []).map((x) => x.status)].map((s) => FLOW.indexOf(s));
   return Math.max(0, ...steps);
 }
+const PAID = FLOW.indexOf('Payment received');
+// When the customer paid: the Payment received stage, else (older leads that skipped it) when it was settled.
+const paidAt = (l) => reachedAt(l, 'Payment received') || (l.status === 'Settled' ? reachedAt(l, 'Settled') : null);
 const approvedByCustomer = (l) => l.waApproval?.state === 'received' || (l.challans || []).some((c) => c.approved);
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
@@ -50,10 +53,11 @@ export default function Analytics({ leads, staff, payable, inr }) {
     const received = all.filter((l) => inRange(l.createdAt));
     const settled = all.filter((l) => inRange(reachedAt(l, 'Settled')) && l.status === 'Settled');
     const lost = all.filter((l) => inRange(reachedAt(l, 'Lost')) && l.status === 'Lost');
-    const revenue = settled.reduce((n, l) => n + payable(l), 0);
+    const paid = all.filter((l) => inRange(paidAt(l)));
+    const revenue = paid.reduce((n, l) => n + payable(l), 0);
     const paySent = all.filter((l) => inRange(l.paymentSent?.at));
     const open = all.filter((l) => !['Settled', 'Lost'].includes(l.status));
-    const pipeline = open.filter(approvedByCustomer).reduce((n, l) => n + payable(l), 0);
+    const pipeline = open.filter((l) => approvedByCustomer(l) && furthest(l) < PAID).reduce((n, l) => n + payable(l), 0);
     const days = settled.map((l) => (new Date(reachedAt(l, 'Settled')) - new Date(l.createdAt)) / DAY).filter((x) => x >= 0);
     const avgDays = days.length ? days.reduce((n, x) => n + x, 0) / days.length : null;
 
@@ -73,9 +77,7 @@ export default function Analytics({ leads, staff, payable, inr }) {
       ['Received', received.length],
       ['Contacted', received.filter((l) => furthest(l) >= 1).length],
       ['Approved challans', received.filter(approvedByCustomer).length],
-      ['Documents received', received.filter((l) => furthest(l) >= 2).length],
-      ['Documents verified', received.filter((l) => furthest(l) >= 3).length],
-      ['Scheduled', received.filter((l) => furthest(l) >= 4).length],
+      ...FLOW.slice(PAID, -1).map((s) => [s, received.filter((l) => furthest(l) >= FLOW.indexOf(s)).length]),
       ['Settled', received.filter((l) => l.status === 'Settled').length],
     ];
 
@@ -85,7 +87,8 @@ export default function Analytics({ leads, staff, payable, inr }) {
         const k = keyOf(l);
         const r = m.get(k) || { key: k, label: labelOf(k), n: 0, settled: 0, lost: 0, revenue: 0 };
         r.n++;
-        if (l.status === 'Settled') { r.settled++; r.revenue += payable(l); }
+        if (l.status === 'Settled') r.settled++;
+        if (paidAt(l)) r.revenue += payable(l);
         if (l.status === 'Lost') r.lost++;
         m.set(k, r);
       }
@@ -93,7 +96,7 @@ export default function Analytics({ leads, staff, payable, inr }) {
     };
     const staffName = Object.fromEntries((staff || []).map((u) => [u.id, u.name]));
     return {
-      received, settled, lost, revenue, paySent, pipeline, avgDays, buckets, step, funnel,
+      received, settled, lost, paid, revenue, paySent, pipeline, avgDays, buckets, step, funnel,
       conv: pct(received.filter((l) => l.status === 'Settled').length, received.length),
       byStatus: [...FLOW, 'Lost'].map((s) => ({ key: s, label: s, n: received.filter((l) => l.status === s).length })),
       bySource: group((l) => l.source || 'Website', (k) => k),
@@ -110,8 +113,8 @@ export default function Analytics({ leads, staff, payable, inr }) {
     ['Converted', d.settled.length, 'Moved to Settled in this period'],
     ['Lost', d.lost.length, 'Moved to Lost in this period'],
     ['Conversion rate', `${d.conv}%`, 'Of leads received in this period, settled so far'],
-    ['Revenue', inr(d.revenue), 'Amount payable on leads settled in this period'],
-    ['Open pipeline', inr(d.pipeline), 'Payable on approved leads not yet settled (right now)'],
+    ['Revenue', inr(d.revenue), `From ${d.paid.length} payment${d.paid.length === 1 ? '' : 's'} received in this period`],
+    ['Open pipeline', inr(d.pipeline), 'Payable on approved leads not yet paid (right now)'],
     ['Payment details sent', d.paySent.length, `${inr(d.paySent.reduce((n, l) => n + (l.paymentSent.amount || 0), 0))} requested in this period`],
     ['Avg. time to settle', d.avgDays == null ? '–' : `${d.avgDays < 1 ? '<1' : Math.round(d.avgDays)} day${Math.round(d.avgDays) === 1 ? '' : 's'}`, 'From lead received to Settled'],
   ];
@@ -196,7 +199,7 @@ export default function Analytics({ leads, staff, payable, inr }) {
         <Table title="By city" rows={d.byCity} />
         <Table title="By staff member" rows={d.byStaff} />
       </div>
-      <p className="small">Revenue is the amount payable by the customer (approved challans × their rate) on settled leads. Leads from before today's update count their last change as the day they were settled or lost.</p>
+      <p className="small">Revenue is the amount payable by the customer (approved challans × their rate) on leads marked Payment received. Older leads that went straight to Settled count as paid on the day they were settled, and leads from before the stage log count their last change as that day.</p>
     </div>
   );
 }

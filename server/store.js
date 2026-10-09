@@ -10,9 +10,9 @@ import { nameMatch } from './names.js';
 // Share of the approved challan total the customer pays. 50% is the advertised default.
 export const FEE_RATES = [50, 40, 30];
 
-export const STATUSES = ['New', 'Contacted', 'Documents received', 'Documents verified', 'Scheduled', 'Settled', 'Lost'];
+export const STATUSES = ['New', 'Contacted', 'Payment received', 'Documents received', 'Documents verified', 'Scheduled', 'Settled', 'Lost'];
 // Stages a lead can be in and still be moved on to "Documents received" by itself once every document is in.
-const BEFORE_DOCS = ['New', 'Contacted'];
+const BEFORE_DOCS = ['New', 'Contacted', 'Payment received'];
 
 // Document types the team collects, set in Settings. These are used until the admin saves their own list.
 export const DEFAULT_DOC_TYPES = [
