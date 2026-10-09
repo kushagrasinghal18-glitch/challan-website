@@ -334,6 +334,8 @@ function uploadLinkMessage(lead, url, types) {
 }
 
 function Docs({ lead, types, onUpload, onOpenDoc, onRemoveDoc, onPatch, onDocLink }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [lead.ref]);
   const [linkBusy, setLinkBusy] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const link = lead.docLink && new Date(lead.docLink.expiresAt) > new Date() ? lead.docLink : null;
@@ -377,8 +379,13 @@ function Docs({ lead, types, onUpload, onOpenDoc, onRemoveDoc, onPatch, onDocLin
     </li>
   );
   return (
-    <div className="docs">
-      <div className="ch-head"><div className="sec-k">Documents{needed.length > 0 && <> · {have} of {needed.length} needed</>}</div></div>
+    <div className={'docs' + (open ? ' open' : '')}>
+      <button type="button" className="docs-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span className="sec-k">{open ? '▾' : '▸'} Documents</span>
+        <span className="small">{needed.length > 0 ? `${have} of ${needed.length} needed` : `${docs.length} file${docs.length === 1 ? '' : 's'}`}
+          {lead.docsNew > 0 ? ` · ${lead.docsNew} new from customer` : ''}{link ? ' · upload link active' : ''}{lead.status === 'Documents verified' ? ' · ✓ verified' : ''}</span>
+      </button>
+      {open && (<>
       {!types.length && <div className="hint">No document types yet. An admin can add them in Settings → Documents.</div>}
       {types.length > 0 && (
         <div className="doc-link">
@@ -427,6 +434,7 @@ function Docs({ lead, types, onUpload, onOpenDoc, onRemoveDoc, onPatch, onDocLin
         </div>
       )}
       {lead.status === 'Documents verified' && <div className="small ok-msg">✓ Documents verified</div>}
+      </>)}
     </div>
   );
 }
@@ -502,8 +510,15 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
         <div className="drawer-head">
           <div style={{ minWidth: 0 }}>
             <div className="meta">{lead.ref} · {fullDate(lead.createdAt)}</div>
-            <h2>{lead.name}</h2>
+            <h2>{lead.name}{lead.plate && <span className="plate head-plate">{fmtPlate(lead.plate)}</span>}</h2>
             <StageDots status={lead.status} />
+            <div className="status-btns head-status" role="group" aria-label="Stage">
+              {statuses.map((s) => {
+                const on = lead.status === s, [, fg] = STATUS_COLORS[s] || STATUS_COLORS.New;
+                return <button key={s} disabled={busy} onClick={() => { if (on) return; patch({ status: s }); if (s === 'Contacted') onAsked(true); }}
+                  style={on ? { background: fg, borderColor: fg, color: '#fff' } : undefined} aria-pressed={on}>{s}</button>;
+              })}
+            </div>
           </div>
           <button className="x" onClick={onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0E1B36" strokeWidth="2.4"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -679,19 +694,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
 
           <Docs lead={lead} types={docTypes} onUpload={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onPatch={onPatch} onDocLink={onDocLink} />
 
-          <div>
-            <div className="sec-k">Status</div>
-            <div className="status-btns">
-              {statuses.map((s) => {
-                const on = lead.status === s, [, fg] = STATUS_COLORS[s];
-                return <button key={s} disabled={busy} onClick={() => { if (on) return; patch({ status: s }); if (s === 'Contacted') onAsked(true); }}
-                  style={on ? { background: fg, borderColor: fg, color: '#fff' } : undefined} aria-pressed={on}>{s}</button>;
-              })}
-            </div>
-          </div>
-
           <div className="details">
-            <div className="kv"><div className="k">Vehicle</div><div className="v"><span className="plate">{fmtPlate(lead.plate)}</span></div></div>
             <div className="kv"><div className="k">Mobile</div><div className="v">+91 {fmtPhone(lead.phone)}</div></div>
             <div className="kv"><div className="k">City</div><div className="v">{CITY[lead.city] || lead.city}</div></div>
             <div className="kv"><div className="k">Language</div><div className="v">{lead.lang === 'hi' ? 'Hindi' : 'English'}</div></div>

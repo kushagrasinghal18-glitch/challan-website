@@ -332,3 +332,14 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 
 /* WhatsApp chat: expand */
 .wa-msgs.big { max-height: 70vh; }
+
+/* Lead header: car number and stage buttons */
+.drawer-head h2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.head-plate { font-size: 14px; }
+.head-status { margin-top: 10px; }
+.head-status button { height: 30px; padding: 0 10px; font-size: 12.5px; }
+
+/* Documents, folded */
+.docs-toggle { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; font: inherit; text-align: left; color: inherit; flex-wrap: wrap; }
+.docs-toggle .sec-k { margin: 0; }
+.docs.open .docs-toggle { background: #FBFAF7; }
