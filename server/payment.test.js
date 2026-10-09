@@ -8,11 +8,16 @@ const pay = { upiId: 'niptao@okaxis', payeeName: 'Niptao' };
 
 test('payment message lists approved challans, amount, UPI and the refund note', () => {
   const t = paymentMessage(lead, pay, [{ city: 'noida', date: '2026-11-08', time: '10:00' }]);
-  assert.match(t, /Challan UP1/);
-  assert.doesNotMatch(t, /Challan UP2/);
-  assert.match(t, /Amount to pay \(50%\): ₹1,000/);
-  assert.match(t, /niptao@okaxis/);
-  assert.match(t, /100% of the amount will be refunded after the Lok Adalat date \(Sun, 8 Nov, 2026\)/);
+  assert.match(t, /^1\. UP1\n   Overspeeding\n   ₹2,000$/m);
+  assert.doesNotMatch(t, /UP2/);
+  assert.match(t, /Challans to settle \(1\)/);
+  assert.match(t, /\*You pay \(50%\): ₹1,000\*/);
+  assert.match(t, /^UPI ID:\nniptao@okaxis\nName: Niptao\nAmount: ₹1,000\nRemark: GBN-2612345$/m);
+  assert.match(t, /Lok Adalat:\* Sun, 8 Nov, 2026, District Court, Surajpur/);
+  assert.match(t, /refunded after the Lok Adalat date \(8 Nov\)\./);
+  // Without a date or payee name those lines are left out.
+  const u = paymentMessage(lead, { upiId: 'x@ybl' });
+  assert.doesNotMatch(u, /Lok Adalat:|Name:|\(8 Nov\)/);
 });
 
 test('UPI link carries the amount and reference', () => {

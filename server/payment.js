@@ -22,29 +22,48 @@ export function upiLink(pay, amount, ref) {
   return `upi://pay?${q.toString().replace(/\+/g, '%20')}`;
 }
 
+// WhatsApp formatting: *bold*, _italic_. Each challan is its own short block and the UPI ID sits
+// on a line by itself so it can be long-pressed and copied.
 export function paymentMessage(lead, pay, dates = []) {
   const { ok, total, rate, payable } = paymentAmounts(lead);
   const lok = lokFor(lead, dates);
-  const lokDate = lok ? new Date(`${lok.date}T${lok.time || '10:00'}:00+05:30`).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '';
-  const line = (c, i) => `${i + 1}. Challan ${c.challanNo || '-'}${c.date ? ` (${c.date})` : ''}${c.offence ? ` - ${String(c.offence).slice(0, 70)}` : ''} - ${inr(c.amount || 0)}`;
+  const lokAt = lok ? new Date(`${lok.date}T${lok.time || '10:00'}:00+05:30`) : null;
+  const day = (opts) => lokAt.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', ...opts });
+  const lokDate = lok ? day({ weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const lokShort = lok ? day({ day: 'numeric', month: 'short' }) : '';
+  const offence = (c) => { const o = String(c.offence || '').replace(/\s+/g, ' ').trim(); return o.length > 60 ? `${o.slice(0, 59)}…` : o; };
+  const block = (c, i) => [
+    `${i + 1}. ${c.challanNo || '-'}${c.date ? ` · ${c.date}` : ''}`,
+    ...(offence(c) ? [`   ${offence(c)}`] : []),
+    `   ${inr(c.amount || 0)}`,
+  ].join('\n');
   return [
-    `Hi ${lead.name},`,
+    `Hi ${lead.name} 👋`,
     '',
-    `Thank you for your approval. Here are the payment details for settling the challans on your vehicle ${fmtPlate(lead.plate)}:`,
+    'Thank you for approving. Here are your payment details.',
     '',
-    ...ok.map(line),
-    `Challan amount: ${inr(total)}`,
-    `*Amount to pay (${rate}%): ${inr(payable)}*`,
+    `🚗 *Vehicle:* ${fmtPlate(lead.plate)}`,
+    `📋 *Challans to settle (${ok.length})*`,
+    ok.map(block).join('\n\n'),
     '',
-    `*Pay by UPI:* ${pay.upiId}${pay.payeeName ? ` (${pay.payeeName})` : ''}`,
-    `Amount: ${inr(payable)} · Note/remark: ${lead.ref}`,
-    'Or scan the QR code we are sending with this message.',
-    ...(lok ? ['', `Your challans will be settled at the Lok Adalat on *${lokDate}* at ${CITY_COURT[lok.city] || lok.city}.`] : []),
+    `Challan total: ${inr(total)}`,
+    `*You pay (${rate}%): ${inr(payable)}*`,
     '',
-    `*Note:* In case the challan is not cleared, the full 100% of the amount will be refunded after the Lok Adalat date${lok ? ` (${lokDate})` : ''}.`,
+    '💳 *Pay by UPI*',
+    'UPI ID:',
+    pay.upiId,
+    ...(pay.payeeName ? [`Name: ${pay.payeeName}`] : []),
+    `Amount: ${inr(payable)}`,
+    `Remark: ${lead.ref}`,
+    '_Or scan the QR code sent below._',
+    ...(lok ? ['', `📅 *Lok Adalat:* ${lokDate}, ${CITY_COURT[lok.city] || lok.city}`] : []),
     '',
-    'Please share the payment screenshot here once done.',
-    `Reference: ${lead.ref}`,
-    'Team Niptao',
+    '✅ *100% refund promise*',
+    `If your challan is not cleared, the full amount will be refunded after the Lok Adalat date${lok ? ` (${lokShort})` : ''}.`,
+    '',
+    'Once paid, please send the payment screenshot here.',
+    '',
+    `Ref: ${lead.ref}`,
+    '— Team Niptao',
   ].join('\n');
 }
