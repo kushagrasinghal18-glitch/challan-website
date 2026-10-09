@@ -192,6 +192,12 @@ test('tokens: uploading one moves an open lead to Scheduled', async () => {
   assert.equal(l.status, 'Settled');
   assert.equal(l.tokens.length, 2);
 
+  // A challan moves to the token it was last given to.
+  l = await updateLead('TOK-1', { tokenChallans: { id: 'tok1aaaaaaaa', challans: ['C1', 'C2'] } }, 'Priya');
+  l = await updateLead('TOK-1', { addToken: { ...tok('tok1cccccccc', '2026-11-03'), challans: ['C2', 'C3'] } }, 'Priya');
+  assert.deepEqual(l.tokens.map((t) => t.challans || []), [['C1'], [], ['C2', 'C3']]);
+  assert.match(l.notes[0].text, /challans C2, C3/);
+
   l = await updateLead('TOK-1', { removeToken: 'tok1aaaaaaaa' }, 'Priya');
-  assert.deepEqual(l.tokens.map((t) => t.id), ['tok1bbbbbbbb']);
+  assert.deepEqual(l.tokens.map((t) => t.id), ['tok1bbbbbbbb', 'tok1cccccccc']);
 });

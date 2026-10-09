@@ -291,15 +291,20 @@ export function updateLead(ref, patch, by, onlyFor) {
         autoNotes.push('All documents uploaded. Moved to Documents received.');
       }
     }
-    // Court tokens: { id, date (YYYY-MM-DD), number, name, mime, size }. The file is kept by saveDoc like documents.
+    // Court tokens: { id, date (YYYY-MM-DD), number, challans: [challan numbers], name, mime, size }. The file is kept by saveDoc like documents.
+    // A challan belongs to one token at most, so giving it to a token takes it off any other.
+    const claim = (tokens, id, nos) => tokens.map((t) => (t.id === id ? { ...t, challans: nos } : { ...t, challans: (t.challans || []).filter((n) => !nos.includes(n)) }));
     if (patch.addToken) {
-      out.tokens = [...(lead.tokens || []), { ...patch.addToken, at: new Date().toISOString(), by }];
+      out.tokens = claim([...(lead.tokens || []), { ...patch.addToken, at: new Date().toISOString(), by }], patch.addToken.id, patch.addToken.challans || []);
       const status = out.status || lead.status;
-      autoNotes.push(`Token uploaded for ${patch.addToken.date}${patch.addToken.number ? ` (${patch.addToken.number})` : ''}.`);
+      autoNotes.push(`Token uploaded for ${patch.addToken.date}${patch.addToken.number ? ` (${patch.addToken.number})` : ''}${patch.addToken.challans?.length ? `, challans ${patch.addToken.challans.join(', ')}` : ''}.`);
       if (!['Scheduled', 'Settled', 'Lost'].includes(status)) {
         out.status = 'Scheduled';
         autoNotes.push('Moved to Scheduled.');
       }
+    }
+    if (patch.tokenChallans && (lead.tokens || []).some((t) => t.id === patch.tokenChallans.id)) {
+      out.tokens = claim(lead.tokens, patch.tokenChallans.id, patch.tokenChallans.challans || []);
     }
     if (patch.removeToken) out.tokens = (lead.tokens || []).filter((t) => t.id !== patch.removeToken);
     if (patch.docsSeen) out.docsNew = 0;

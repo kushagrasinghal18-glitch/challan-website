@@ -527,6 +527,11 @@ const TOKENS_PER_LEAD = 20;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const validDate = (d) => DATE_RE.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().startsWith(d);
 const tokenUrl = '/api/admin/leads/:ref/tokens';
+// Challan numbers the token covers, kept only if they are on the lead.
+const tokenChallans = (lead, list) => {
+  const have = new Set((lead.challans || []).map((c) => c.challanNo).filter(Boolean));
+  return [...new Set((Array.isArray(list) ? list : String(list || '').split(',')).map((n) => String(n).trim()))].filter((n) => have.has(n)).slice(0, 300);
+};
 
 app.post(tokenUrl, requireUser, readDoc, async (req, res) => {
   const date = String(req.query.date || '');
@@ -545,7 +550,7 @@ app.post(tokenUrl, requireUser, readDoc, async (req, res) => {
     await saveDoc(id, lead.ref, mime, buf);
     let updated;
     try {
-      updated = await updateLead(lead.ref, { addToken: { id, date, number, name: `${base}.${DOC_KINDS[mime]}`, mime, size: buf.length } },
+      updated = await updateLead(lead.ref, { addToken: { id, date, number, challans: tokenChallans(lead, req.query.challans), name: `${base}.${DOC_KINDS[mime]}`, mime, size: buf.length } },
         req.user.name, req.user.role === 'admin' ? null : req.user.uid);
     } catch (err) { await removeDoc(id).catch(() => {}); throw err; }
     if (!updated) { await removeDoc(id).catch(() => {}); return res.status(404).json({ error: 'not_found' }); }
@@ -569,6 +574,23 @@ app.get(`${tokenUrl}/:id`, requireUser, async (req, res) => {
       'Content-Disposition': `inline; filename="${meta.name.replace(/"/g, '')}"` });
     res.send(Buffer.from(doc.data));
   } catch (err) { console.error('[tokens] read failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
+});
+
+// Change which challans a token covers: { challans: [challan numbers] }.
+app.patch(`${tokenUrl}/:id`, requireUser, async (req, res) => {
+  try {
+    const lead = await getLead(req.params.ref);
+    const meta = lead?.tokens?.find((t) => t.id === req.params.id);
+    if (!meta) return res.status(404).json({ error: 'not_found' });
+    const challans = tokenChallans(lead, req.body?.challans);
+    const updated = await updateLead(lead.ref, { tokenChallans: { id: meta.id, challans },
+      note: `Token ${meta.number || meta.date} now covers ${challans.length ? `challans ${challans.join(', ')}` : 'no challans'}.` },
+      req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+    res.json({ lead: updated });
+  } catch (err) {
+    if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
+    console.error('[tokens] update failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
+  }
 });
 
 app.delete(`${tokenUrl}/:id`, requireUser, async (req, res) => {

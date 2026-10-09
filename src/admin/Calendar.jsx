@@ -78,6 +78,7 @@ export default function Calendar({ leads, onOpenToken, onOpenLead }) {
                 <div className="cal-who">
                   <b>{l.name}</b> <span className="plate">{fmtPlate(l.plate)}</span>
                   <div className="small">{l.ref}{t.number ? ` · Token ${t.number}` : ''} · {l.agent || 'Unassigned'} · {l.status}</div>
+                  <div className="small">Challans: {(t.challans || []).length ? <span className="cal-nos">{t.challans.join(', ')}</span> : 'none linked'}</div>
                 </div>
                 <div className="cal-btns">
                   <button className="btn primary" onClick={() => onOpenToken(l.ref, t)}>Open token ↗</button>

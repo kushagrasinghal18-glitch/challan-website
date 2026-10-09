@@ -446,19 +446,53 @@ function Docs({ lead, types, onUpload, onOpenDoc, onRemoveDoc, onPatch, onDocLin
 // Court tokens on a lead: upload the generated token with its date; each opens in a new tab.
 export const tokenDay = (d) => new Date(`${d}T00:00:00+05:30`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
 const TOKEN_ERR = { ...DOC_ERR, invalid_date: 'Choose the token date first.', too_many_tokens: 'This lead already has 20 tokens. Remove some first.' };
-function Tokens({ lead, onUpload, onOpen, onRemove }) {
+// Ticks for the lead's challans (by challan number), with the token each one is already on.
+function ChallanPicks({ lead, picked, onChange, tokenId }) {
+  const nos = (lead.challans || []).filter((c) => c.challanNo);
+  if (!nos.length) return <div className="small">Add the challans to this lead to link them to a token.</div>;
+  const owner = (no) => (lead.tokens || []).find((t) => t.id !== tokenId && (t.challans || []).includes(no));
+  return (
+    <div className="token-picks">
+      {nos.map((c) => {
+        const o = owner(c.challanNo);
+        return (
+          <label key={c.challanNo}>
+            <input type="checkbox" checked={picked.includes(c.challanNo)}
+              onChange={(e) => onChange(e.target.checked ? [...picked, c.challanNo] : picked.filter((n) => n !== c.challanNo))} />
+            <span className="no">{c.challanNo}</span>{c.amount ? <span className="small"> ₹{c.amount.toLocaleString('en-IN')}</span> : null}
+            {c.approved && <span className="small"> · approved</span>}
+            {o && <span className="small taken"> · on token {o.number || o.date}</span>}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function Tokens({ lead, onUpload, onOpen, onRemove, onSetChallans }) {
   const [date, setDate] = useState('');
   const [number, setNumber] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  useEffect(() => { setDate(''); setNumber(''); setErr(''); }, [lead.ref]);
+  const [picked, setPicked] = useState(null); // null = approved challans not yet on a token
+  const [editing, setEditing] = useState(null); // { id, picked }
+  useEffect(() => { setDate(''); setNumber(''); setErr(''); setPicked(null); setEditing(null); }, [lead.ref]);
   const tokens = [...(lead.tokens || [])].sort((a, b) => a.date.localeCompare(b.date));
+  const taken = new Set(tokens.flatMap((t) => t.challans || []));
+  const pick = picked ?? (lead.challans || []).filter((c) => c.approved && c.challanNo && !taken.has(c.challanNo)).map((c) => c.challanNo);
   const upload = async (file) => {
     if (!date) { setErr(TOKEN_ERR.invalid_date); return; }
     setErr(''); setBusy(true);
     try {
-      const e = await onUpload(lead.ref, await shrinkImage(file), date, number.trim());
-      if (e) setErr(TOKEN_ERR[e] || 'The token was not uploaded. Try again.'); else { setDate(''); setNumber(''); }
+      const e = await onUpload(lead.ref, await shrinkImage(file), date, number.trim(), pick);
+      if (e) setErr(TOKEN_ERR[e] || 'The token was not uploaded. Try again.'); else { setDate(''); setNumber(''); setPicked(null); }
+    } finally { setBusy(false); }
+  };
+  const saveChallans = async () => {
+    setBusy(true);
+    try {
+      const e = await onSetChallans(lead.ref, editing.id, editing.picked);
+      if (e) setErr(TOKEN_ERR[e] || 'The challans were not saved. Try again.'); else setEditing(null);
     } finally { setBusy(false); }
   };
   const remove = async (t) => {
@@ -473,10 +507,20 @@ function Tokens({ lead, onUpload, onOpen, onRemove }) {
         <ul className="token-list">
           {tokens.map((t) => (
             <li key={t.id}>
-              <div><b>{tokenDay(t.date)}</b>{t.number && <span className="small"> · Token {t.number}</span>}
-                <div className="small">{t.by} · {ago(t.at)}</div></div>
-              <button className="btn" onClick={() => onOpen(lead.ref, t)}>Open ↗</button>
-              <button className="x" aria-label={`Remove token for ${t.date}`} title="Remove" onClick={() => remove(t)}>×</button>
+              <div className="token-main">
+                <div><b>{tokenDay(t.date)}</b>{t.number && <span className="small"> · Token {t.number}</span>}
+                  <div className="small">Challans: {(t.challans || []).length ? t.challans.map((n) => <div key={n} className="no">{n}</div>) : 'none linked '}
+                    <button className="linkish" onClick={() => setEditing(editing?.id === t.id ? null : { id: t.id, picked: t.challans || [] })}>{editing?.id === t.id ? 'Cancel' : 'Change'}</button></div>
+                  <div className="small">{t.by} · {ago(t.at)}</div></div>
+                <button className="btn" onClick={() => onOpen(lead.ref, t)}>Open ↗</button>
+                <button className="x" aria-label={`Remove token for ${t.date}`} title="Remove" onClick={() => remove(t)}>×</button>
+              </div>
+              {editing?.id === t.id && (
+                <div className="token-edit">
+                  <ChallanPicks lead={lead} picked={editing.picked} tokenId={t.id} onChange={(p) => setEditing({ id: t.id, picked: p })} />
+                  <button className="btn primary" disabled={busy} onClick={saveChallans}>Save challans</button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -484,6 +528,7 @@ function Tokens({ lead, onUpload, onOpen, onRemove }) {
       <div className="token-add">
         <label>Token date<input type="date" value={date} onChange={(e) => { setDate(e.target.value); setErr(''); }} /></label>
         <label>Token no.<input value={number} maxLength={40} onChange={(e) => setNumber(e.target.value)} placeholder="Optional" /></label>
+        <div className="token-for"><div className="k">Challans on this token</div><ChallanPicks lead={lead} picked={pick} onChange={setPicked} /></div>
         <label className={'btn primary' + (busy ? ' disabled' : '')}>
           {busy ? 'Uploading…' : 'Upload token'}
           <input type="file" accept="image/*,application/pdf" hidden disabled={busy}
@@ -496,7 +541,7 @@ function Tokens({ lead, onUpload, onOpen, onRemove }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken }) {
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans }) {
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
@@ -632,7 +677,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                   <a className="btn primary" href={DELHI_COURT_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Delhi court token ↗</a>
                 </div>
                 <p className="hint">The vehicle number is filled in by the add-on (or copied, so you can paste it). Type the captcha and OTP yourself.</p>
-                <Tokens lead={lead} onUpload={onUploadToken} onOpen={onOpenToken} onRemove={onRemoveToken} />
+                <Tokens lead={lead} onUpload={onUploadToken} onOpen={onOpenToken} onRemove={onRemoveToken} onSetChallans={onTokenChallans} />
               </div>
             </div>
 
@@ -674,7 +719,8 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                   <div className="ch-list">
                     {lead.challans.map((c, i) => (chSt && (challanState(c) || '?') !== chSt ? null :
                       <div className={'ch' + (c.approved ? ' ok' : '')} key={c.challanNo || i}>
-                        <div className="ch-top"><span className="no">{c.challanNo || '—'}</span><b>{c.amount ? `₹${c.amount.toLocaleString('en-IN')}` : ''}</b></div>
+                        <div className="ch-top"><span className="no">{c.challanNo || '—'}{(() => { const t = c.challanNo && (lead.tokens || []).find((x) => (x.challans || []).includes(c.challanNo));
+                          return t ? <span className="ch-token">Token {t.number || ''}{t.number ? ' · ' : ''}{tokenDay(t.date).replace(/, \d{4}$/, '')}</span> : null; })()}</span><b>{c.amount ? `₹${c.amount.toLocaleString('en-IN')}` : ''}</b></div>
                         {c.offence && <div>{c.offence}</div>}
                         <div className="small">{[STATES[challanState(c)], c.date, c.location, c.status].filter(Boolean).join(' · ')}</div>
                         <label className="appr-box"><input type="checkbox" checked={!!c.approved} disabled={busy} onChange={() => toggleApproved(i)} /> Customer approved</label>
@@ -1350,9 +1396,16 @@ export default function Admin() {
     } catch (e) { if (e.status === 401) signOut(); return e.message; }
   };
   const tokenUrl = (ref, id = '') => `/api/admin/leads/${encodeURIComponent(ref)}/tokens${id ? `/${encodeURIComponent(id)}` : ''}`;
-  const onUploadToken = async (ref, file, date, number) => {
+  const onTokenChallans = async (ref, id, challans) => {
     try {
-      const res = await fetch(`${tokenUrl(ref)}?date=${encodeURIComponent(date)}&number=${encodeURIComponent(number)}&name=${encodeURIComponent(file.name || '')}`, {
+      const { lead } = await call(tokenUrl(ref, id), auth, { method: 'PATCH', body: JSON.stringify({ challans }) });
+      setLeads((ls) => ls.map((l) => (l.ref === ref ? lead : l)));
+      return '';
+    } catch (e) { if (e.status === 401) signOut(); return e.message; }
+  };
+  const onUploadToken = async (ref, file, date, number, challans = []) => {
+    try {
+      const res = await fetch(`${tokenUrl(ref)}?date=${encodeURIComponent(date)}&number=${encodeURIComponent(number)}&challans=${encodeURIComponent(challans.join(','))}&name=${encodeURIComponent(file.name || '')}`, {
         method: 'POST', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream', Authorization: `Bearer ${auth.token}` },
       });
       const data = await res.json().catch(() => ({}));
@@ -1571,7 +1624,7 @@ export default function Admin() {
       {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st} lokDates={site?.lokAdalatDates}
         siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend} getPayment={getPayment} isAdminUser={isAdmin}
         docTypes={docTypes} onUploadDoc={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onDocLink={onDocLink}
-        onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken}
+        onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken} onTokenChallans={onTokenChallans}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
     </>
   );
