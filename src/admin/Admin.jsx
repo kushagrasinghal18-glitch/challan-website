@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseChallans } from './parseChallans.js';
+import Analytics from './Analytics.jsx';
 
 const STATUS_COLORS = {
   New: ['#E8EEF8', '#2F5AA8'], Contacted: ['#F0EAF8', '#6A42A0'], 'Documents received': ['#FFF1D9', '#8A5200'], 'Documents verified': ['#FDF3C4', '#6B5300'],
@@ -1174,7 +1175,7 @@ export default function Admin() {
   const [st, setSt] = useState('');
   const [sel, setSel] = useState(null);
   const [err, setErr] = useState('');
-  const [view, setView] = useState(() => (location.hash === '#settings' ? 'settings' : 'leads'));
+  const [view, setView] = useState(() => ({ '#settings': 'settings', '#analytics': 'analytics' })[location.hash] || 'leads');
   const [site, setSite] = useState(null);
   const [staff, setStaff] = useState([]);
   const [soundOn, setSoundOn] = useState(readSound);
@@ -1183,8 +1184,8 @@ export default function Admin() {
   const seen = useRef(null);
   const me = auth?.user;
   const isAdmin = me?.role === 'admin';
-  const page = isAdmin && view === 'settings' ? 'settings' : 'leads';
-  useEffect(() => { history.replaceState(null, '', page === 'settings' ? '#settings' : '#'); }, [page]);
+  const page = isAdmin && ['settings', 'analytics'].includes(view) ? view : 'leads';
+  useEffect(() => { history.replaceState(null, '', page === 'leads' ? '#' : `#${page}`); }, [page]);
   useEffect(() => { call('/api/settings').then(setSite).catch(() => {}); }, []);
 
   const signOut = useCallback(() => { save(null); setAuth(null); setLeads(null); setStaff([]); seen.current = null; setFresh([]); }, []);
@@ -1388,6 +1389,7 @@ export default function Admin() {
             <div style={{ display: 'flex', alignItems: 'center' }}><Logo /><span className="tag">ADMIN</span></div>
             <nav className="nav">
               <button aria-pressed={page === 'leads'} onClick={() => setView('leads')}>Leads</button>
+              {isAdmin && <button aria-pressed={page === 'analytics'} onClick={() => setView('analytics')}>Analytics</button>}
               {isAdmin && <button aria-pressed={page === 'settings'} onClick={() => setView('settings')}>Settings</button>}
             </nav>
           </div>
@@ -1401,7 +1403,12 @@ export default function Admin() {
         </div>
       </header>
       <main className="page">
-        {page === 'settings' ? (
+        {page === 'analytics' ? (
+          <>
+            <div className="head"><div><h1>Analytics</h1><div className="sub">Leads, conversions and revenue. Updates every 15 seconds.</div></div></div>
+            <Analytics leads={leads} staff={staff} payable={payable} inr={inr} />
+          </>
+        ) : page === 'settings' ? (
           <>
             <div className="head"><div><h1>Settings</h1><div className="sub">Changes show on the website as soon as you save.</div></div></div>
             <Settings auth={auth} me={me} staff={staff} reloadStaff={loadStaff} signOut={signOut} onSaved={(s) => { setSite({ ...s, lokAdalatDates: s.lokAdalatDates.filter((d) => d.date >= todayIST()) }); if (Array.isArray(s.docTypes)) setDocTypes(s.docTypes); }} />

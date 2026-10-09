@@ -305,6 +305,10 @@ export function updateLead(ref, patch, by, onlyFor) {
     if (autoNotes.length) {
       out.notes = [...autoNotes.reverse().map((text) => ({ by, at: new Date().toISOString(), text })), ...(lead.notes || [])];
     }
+    // When each stage was reached, for analytics (time to settle, settled this month).
+    if (out.status && out.status !== lead.status) {
+      out.statusLog = [...(lead.statusLog || []), { status: out.status, at: new Date().toISOString(), by }].slice(-50);
+    }
     out.updatedAt = new Date().toISOString();
     return out;
   });

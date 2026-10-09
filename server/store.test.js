@@ -161,3 +161,11 @@ test('registered mobile on the RC', async () => {
   l = await updateLead('RM-1', { rcMobile: { same: true, phone: '9811122233' } }, 'K');
   assert.deepEqual([l.rcMobile.same, l.rcMobile.phone], [true, '']);
 });
+
+test('stage changes are logged with time and person', async () => {
+  await addLead({ ref: 'SL-1', createdAt: '2026-10-09T00:00:00Z', name: 'A', plate: 'UP16AB6666', phone: '9876500010', status: 'New', notes: [] });
+  await updateLead('SL-1', { status: 'Contacted' }, 'Priya');
+  await updateLead('SL-1', { status: 'Contacted', note: 'again' }, 'Priya');
+  const l = await updateLead('SL-1', { status: 'Settled' }, 'Amit');
+  assert.deepEqual(l.statusLog.map((x) => [x.status, x.by]), [['Contacted', 'Priya'], ['Settled', 'Amit']]);
+});
