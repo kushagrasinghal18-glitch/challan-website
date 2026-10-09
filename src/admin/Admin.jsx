@@ -445,7 +445,6 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [waDraft, setWaDraft] = useState('');
   const [waErr, setWaErr] = useState('');
@@ -473,7 +472,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
       setQrCopied(true); setTimeout(() => setQrCopied(false), 2500);
     } catch { /* clipboard blocked: staff can use Download */ }
   };
-  useEffect(() => { setDraft(''); setCopied(false); setEditing(false); setChSt(listState || ''); setWaDraft(''); setWaErr(''); setPlateIn(''); setShowHelp(false); setChatBig(false); }, [lead.ref, listState]);
+  useEffect(() => { setDraft(''); setEditing(false); setChSt(listState || ''); setWaDraft(''); setWaErr(''); setPlateIn(''); setShowHelp(false); setChatBig(false); }, [lead.ref, listState]);
   // Opening a lead clears its "new WhatsApp reply" badge.
   useEffect(() => { if (lead.waUnread) onPatch(lead.ref, { waRead: true }); }, [lead.ref, lead.waUnread]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (lead.docsNew) onPatch(lead.ref, { docsSeen: true }); }, [lead.ref, lead.docsNew]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -499,7 +498,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
 
   const patch = async (p) => { setBusy(true); try { await onPatch(lead.ref, p); } finally { setBusy(false); } };
   const copyPlate = async () => {
-    try { await navigator.clipboard.writeText(lead.plate); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* clipboard blocked */ }
+    try { await navigator.clipboard.writeText(lead.plate); } catch { /* clipboard blocked */ }
   };
   // Keep a reassigned person who has since been deactivated visible in the list.
   const choices = staff.filter((u) => u.active || u.id === lead.agentId);
@@ -552,27 +551,33 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
               </div>
             )}
 
-            <div className="challan-check">
-              <div className="sec-k">Check challans</div>
-              <div className="cc-row">
-                <a className="btn primary" href={PARKPLUS_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate}>Open Park+ ↗</a>
-                <a className="btn" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Open Parivahan e-Challan ↗</a>
-                <a className="btn" href={DELHI_COURT_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Delhi court token ↗</a>
-                <button className="btn" onClick={copyPlate}>{copied ? 'Copied ✓' : `Copy ${fmtPlate(lead.plate)}`}</button>
+            <div className="check-boxes">
+              <div className="challan-check">
+                <div className="sec-k">Check challans</div>
+                <div className="cc-row">
+                  <a className="btn primary" href={PARKPLUS_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate}>Open Park+ ↗</a>
+                  <a className="btn" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Open Parivahan e-Challan ↗</a>
+                </div>
+                <button type="button" className="btn ghost instr" aria-expanded={showHelp} onClick={() => setShowHelp((v) => !v)}>{showHelp ? '▾ Hide instructions' : '▸ Instructions'}</button>
+                {showHelp && (<div className="guide">
+                  <div className="sec-k">Park+</div>
+                  <ol>
+                    <li>Click <b>Open Park+</b>. The vehicle number is copied for you. Paste it into Park+'s vehicle number box and search.</li>
+                    <li>When the challans show, select the whole list with your mouse, from the first challan number down to the last "View details", and copy it (Ctrl+C, or Cmd+C on a Mac).</li>
+                    <li>Come back here, click <b>+ Add challan details</b>, paste into the box (Ctrl+V) and press <b>Read challans</b>.</li>
+                    <li>Check each row (number, amount, offence, date, place, status), fix anything wrong, choose Source <b>Park+</b>, and press <b>Save</b>.</li>
+                    <li>If the vehicle has no challans, press <b>No challans</b> instead.</li>
+                  </ol>
+                  <p className="hint"><b>Parivahan:</b> the vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
+                </div>)}
               </div>
-              <button type="button" className="btn ghost instr" aria-expanded={showHelp} onClick={() => setShowHelp((v) => !v)}>{showHelp ? '▾ Hide instructions' : '▸ Instructions'}</button>
-              {showHelp && (<div className="guide">
-                <div className="sec-k">Park+</div>
-                <ol>
-                  <li>Click <b>Open Park+</b>. The vehicle number is copied for you. Paste it into Park+'s vehicle number box and search.</li>
-                  <li>When the challans show, select the whole list with your mouse, from the first challan number down to the last "View details", and copy it (Ctrl+C, or Cmd+C on a Mac).</li>
-                  <li>Come back here, click <b>+ Add challan details</b>, paste into the box (Ctrl+V) and press <b>Read challans</b>.</li>
-                  <li>Check each row (number, amount, offence, date, place, status), fix anything wrong, choose Source <b>Park+</b>, and press <b>Save</b>.</li>
-                  <li>If the vehicle has no challans, press <b>No challans</b> instead.</li>
-                </ol>
-                <p className="hint"><b>Parivahan:</b> the vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
-              <p className="hint"><b>Delhi court token:</b> for Delhi challans. The vehicle number is copied when you open the site; with the add-on (version 1.7.0 or later) it is filled in for you.</p>
-              </div>)}
+              <div className="challan-check token-box">
+                <div className="sec-k">Token generation</div>
+                <div className="cc-row">
+                  <a className="btn primary" href={DELHI_COURT_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Delhi court token ↗</a>
+                </div>
+                <p className="hint">The vehicle number is filled in by the add-on (or copied, so you can paste it). Type the captcha and OTP yourself.</p>
+              </div>
             </div>
 
             {askApproval && (

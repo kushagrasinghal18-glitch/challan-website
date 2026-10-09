@@ -366,3 +366,10 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 .col-side .details .kv select { max-width: 60%; height: 34px; }
 .col-side .details .kv .hint { display: none; }
 .col-side .notes .btn { height: 36px; }
+
+/* Check challans and token generation, side by side */
+.check-boxes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.check-boxes .challan-check { min-width: 0; }
+.token-box { border-color: #C9D6F0; background: #F3F6FD; }
+@media (max-width: 1100px) { .drawer-body .check-boxes { grid-template-columns: 1fr; } }
+@media (max-width: 900px) and (min-width: 600px) { .drawer-body .check-boxes { grid-template-columns: 1fr 1fr; } }
