@@ -104,7 +104,7 @@ tbody tr.sel { background: var(--row-sel); }
 
 /* Drawer */
 .scrim { position: fixed; inset: 0; z-index: 40; background: rgba(10, 20, 40, .4); display: flex; justify-content: flex-end; }
-.drawer { width: min(520px, 100%); height: 100%; background: #fff; display: flex; flex-direction: column; box-shadow: -20px 0 40px -20px rgba(10, 20, 40, .4); }
+.drawer { width: min(1080px, 100%); height: 100%; background: #fff; display: flex; flex-direction: column; box-shadow: -20px 0 40px -20px rgba(10, 20, 40, .4); }
 .drawer-head { padding: 18px 20px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .drawer-head h2 { margin: 4px 0 8px; font-size: 22px; }
 .drawer-head .meta { font-family: var(--mono); font-size: 12px; color: var(--muted); }
@@ -343,3 +343,26 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 .docs-toggle { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; font: inherit; text-align: left; color: inherit; flex-wrap: wrap; }
 .docs-toggle .sec-k { margin: 0; }
 .docs.open .docs-toggle { background: #FBFAF7; }
+
+/* Wide lead window: work on the left, customer details, notes and chat on the right */
+.drawer-body { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 22px 26px; align-content: start; }
+.drawer-body .col-main, .drawer-body .col-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.drawer-body .col-main > *, .drawer-body .col-side > * { flex-shrink: 0; }
+.drawer-body .col-side { border-left: 1px solid var(--line); padding-left: 24px; }
+.drawer-body .danger { grid-column: 1 / -1; }
+.drawer-head { padding: 18px 26px; }
+.drawer-body { padding: 20px 26px 28px; }
+.col-side .owner .own-row { grid-template-columns: 1fr; gap: 4px; }
+.col-side .owner .own-hint { margin-left: 0; }
+@media (max-width: 900px) {
+  .drawer-body { grid-template-columns: 1fr; }
+  .drawer-body .col-side { border-left: 0; padding-left: 0; }
+}
+/* Right column: customer details as one compact card */
+.col-side .details { grid-template-columns: 1fr; gap: 0; border: 1px solid var(--line); border-radius: 12px; background: #FBFAF7; padding: 4px 12px; }
+.col-side .details .kv { border: 0; border-radius: 0; background: none; padding: 8px 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; grid-column: auto !important; }
+.col-side .details .kv + .kv { border-top: 1px solid var(--line); }
+.col-side .details .kv .v { margin: 0; text-align: right; }
+.col-side .details .kv select { max-width: 60%; height: 34px; }
+.col-side .details .kv .hint { display: none; }
+.col-side .notes .btn { height: 36px; }

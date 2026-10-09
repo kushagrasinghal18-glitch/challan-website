@@ -525,234 +525,237 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
           </button>
         </div>
         <div className="drawer-body">
-          <OwnerFields lead={lead} onPatch={onPatch} />
-          <div className="actions">
-            <a className="call" href={`tel:+91${lead.phone}`}>Call</a>
-            <a className="wa" href={`https://wa.me/91${lead.phone}?text=${waText}`} target="_blank" rel="noopener noreferrer">WhatsApp</a>
-          </div>
-
-          {lead.groupRef && (
-            <div className="siblings">
-              <div className="sec-k">Same customer · {siblings.length + 1} vehicles</div>
-              <div className="cc-row">
-                <span className="plate cur">{fmtPlate(lead.plate)}</span>
-                {siblings.map((x) => (
-                  <button key={x.ref} className="btn" onClick={() => onOpen(x.ref)} title={`${x.ref} · ${x.status}`}>{fmtPlate(x.plate)} <span className="small">· {x.status}</span></button>
-                ))}
+          <div className="col-main">
+            {lead.groupRef && (
+              <div className="siblings">
+                <div className="sec-k">Same customer · {siblings.length + 1} vehicles</div>
+                <div className="cc-row">
+                  <span className="plate cur">{fmtPlate(lead.plate)}</span>
+                  {siblings.map((x) => (
+                    <button key={x.ref} className="btn" onClick={() => onOpen(x.ref)} title={`${x.ref} · ${x.status}`}>{fmtPlate(x.plate)} <span className="small">· {x.status}</span></button>
+                  ))}
+                </div>
+                {siblings.length + 1 < (lead.vehicles || 0) && <div className="small">{lead.vehicles - siblings.length - 1} more vehicle(s) from this request are assigned to someone else or were deleted.</div>}
               </div>
-              {siblings.length + 1 < (lead.vehicles || 0) && <div className="small">{lead.vehicles - siblings.length - 1} more vehicle(s) from this request are assigned to someone else or were deleted.</div>}
-            </div>
-          )}
+            )}
 
-          {!lead.plate && (
-            <div className="add-plate">
-              <div className="sec-k">Vehicle number</div>
-              <div className="small">This lead came from WhatsApp without a vehicle number. Ask the customer and add it here.</div>
-              <form className="cc-row" onSubmit={(e) => { e.preventDefault(); if (plateIn.trim()) patch({ plate: plateIn, note: `Vehicle number ${plateIn.toUpperCase()} added.` }); }}>
-                <input className="plate-input" value={plateIn} onChange={(e) => setPlateIn(e.target.value.toUpperCase())} placeholder="UP16AB1234" aria-label="Vehicle number" />
-                <button className="btn primary" disabled={busy || !plateIn.trim()}>Save</button>
-              </form>
-            </div>
-          )}
+            {!lead.plate && (
+              <div className="add-plate">
+                <div className="sec-k">Vehicle number</div>
+                <div className="small">This lead came from WhatsApp without a vehicle number. Ask the customer and add it here.</div>
+                <form className="cc-row" onSubmit={(e) => { e.preventDefault(); if (plateIn.trim()) patch({ plate: plateIn, note: `Vehicle number ${plateIn.toUpperCase()} added.` }); }}>
+                  <input className="plate-input" value={plateIn} onChange={(e) => setPlateIn(e.target.value.toUpperCase())} placeholder="UP16AB1234" aria-label="Vehicle number" />
+                  <button className="btn primary" disabled={busy || !plateIn.trim()}>Save</button>
+                </form>
+              </div>
+            )}
 
-          <div className="challan-check">
-            <div className="sec-k">Check challans</div>
-            <div className="cc-row">
-              <a className="btn primary" href={PARKPLUS_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate}>Open Park+ ↗</a>
-              <a className="btn" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Open Parivahan e-Challan ↗</a>
-              <button className="btn" onClick={copyPlate}>{copied ? 'Copied ✓' : `Copy ${fmtPlate(lead.plate)}`}</button>
+            <div className="challan-check">
+              <div className="sec-k">Check challans</div>
+              <div className="cc-row">
+                <a className="btn primary" href={PARKPLUS_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate}>Open Park+ ↗</a>
+                <a className="btn" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Open Parivahan e-Challan ↗</a>
+                <button className="btn" onClick={copyPlate}>{copied ? 'Copied ✓' : `Copy ${fmtPlate(lead.plate)}`}</button>
+              </div>
+              <button type="button" className="btn ghost instr" aria-expanded={showHelp} onClick={() => setShowHelp((v) => !v)}>{showHelp ? '▾ Hide instructions' : '▸ Instructions'}</button>
+              {showHelp && (<div className="guide">
+                <div className="sec-k">Park+</div>
+                <ol>
+                  <li>Click <b>Open Park+</b>. The vehicle number is copied for you. Paste it into Park+'s vehicle number box and search.</li>
+                  <li>When the challans show, select the whole list with your mouse, from the first challan number down to the last "View details", and copy it (Ctrl+C, or Cmd+C on a Mac).</li>
+                  <li>Come back here, click <b>+ Add challan details</b>, paste into the box (Ctrl+V) and press <b>Read challans</b>.</li>
+                  <li>Check each row (number, amount, offence, date, place, status), fix anything wrong, choose Source <b>Park+</b>, and press <b>Save</b>.</li>
+                  <li>If the vehicle has no challans, press <b>No challans</b> instead.</li>
+                </ol>
+                <p className="hint"><b>Parivahan:</b> the vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
+              </div>)}
             </div>
-            <button type="button" className="btn ghost instr" aria-expanded={showHelp} onClick={() => setShowHelp((v) => !v)}>{showHelp ? '▾ Hide instructions' : '▸ Instructions'}</button>
-            {showHelp && (<div className="guide">
-              <div className="sec-k">Park+</div>
-              <ol>
-                <li>Click <b>Open Park+</b>. The vehicle number is copied for you. Paste it into Park+'s vehicle number box and search.</li>
-                <li>When the challans show, select the whole list with your mouse, from the first challan number down to the last "View details", and copy it (Ctrl+C, or Cmd+C on a Mac).</li>
-                <li>Come back here, click <b>+ Add challan details</b>, paste into the box (Ctrl+V) and press <b>Read challans</b>.</li>
-                <li>Check each row (number, amount, offence, date, place, status), fix anything wrong, choose Source <b>Park+</b>, and press <b>Save</b>.</li>
-                <li>If the vehicle has no challans, press <b>No challans</b> instead.</li>
-              </ol>
-              <p className="hint"><b>Parivahan:</b> the vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
-            </div>)}
+
+            {askApproval && (
+              <div className="ask" ref={approvalRef} role="status">
+                <b>Customer contacted.</b> {lead.challans?.length
+                  ? 'Tick the challans the customer approved for settlement below.'
+                  : 'First add the challans (Open Park+, then + Add challan details), then tick the ones the customer approved.'}
+                <button className="btn" onClick={() => onAsked(false)}>Done</button>
+              </div>
+            )}
+            {editing ? (
+              <ChallanEditor lead={lead} onCancel={() => setEditing(false)}
+                onSave={async (list, source) => { if (await onSaveChallans(lead.ref, list, source)) setEditing(false); }} />
+            ) : !lead.challans ? (
+              <button className="btn" onClick={() => setEditing(true)}>+ Add challan details</button>
+            ) : (
+              <div className="challans">
+                <div className="ch-head"><div className="sec-k">Challans · {lead.challans.length} · ₹{challanTotal(lead).toLocaleString('en-IN')}
+                  {approvedOf(lead).length > 0 && <span className="appr"> · Approved {approvedOf(lead).length} · ₹{approvedTotal(lead).toLocaleString('en-IN')}</span>}</div>
+                  <button className="btn ghost edit" onClick={() => setEditing(true)}>Edit</button></div>
+                <div className="small">From {lead.challansSource || 'Parivahan'} · {fullDate(lead.challansAt)}{lead.challansBy ? ` · ${lead.challansBy}` : ''}</div>
+                {lead.challans.length > 0 && (() => {
+                  const n = {};
+                  lead.challans.forEach((c) => { const x = challanState(c) || '?'; n[x] = (n[x] || 0) + 1; });
+                  const keys = Object.keys(n);
+                  if (chSt && !n[chSt]) keys.push(chSt);
+                  return (
+                    <div className="ch-states" role="group" aria-label="Filter challans by state">
+                      {[['', lead.challans.length], ...keys.map((k) => [k, n[k] || 0])].map(([k, c]) => (
+                        <button key={k || 'all'} type="button" aria-pressed={chSt === k} onClick={() => setChSt(k)}>
+                          {k === '' ? 'All states' : k === '?' ? 'Other' : STATES[k]} <span className="n">{c}</span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+                {lead.challans.length ? (
+                  <div className="ch-list">
+                    {lead.challans.map((c, i) => (chSt && (challanState(c) || '?') !== chSt ? null :
+                      <div className={'ch' + (c.approved ? ' ok' : '')} key={c.challanNo || i}>
+                        <div className="ch-top"><span className="no">{c.challanNo || '—'}</span><b>{c.amount ? `₹${c.amount.toLocaleString('en-IN')}` : ''}</b></div>
+                        {c.offence && <div>{c.offence}</div>}
+                        <div className="small">{[STATES[challanState(c)], c.date, c.location, c.status].filter(Boolean).join(' · ')}</div>
+                        <label className="appr-box"><input type="checkbox" checked={!!c.approved} disabled={busy} onChange={() => toggleApproved(i)} /> Customer approved</label>
+                      </div>
+                    ))}
+                    {chSt && !lead.challans.some((c) => (challanState(c) || '?') === chSt) && <div className="small">No challans from {STATES[chSt] || 'this state'} on this lead.</div>}
+                  </div>
+                ) : <div className="small">No challans found for this vehicle.</div>}
+                {approvedOf(lead).length > 0 && (
+                  <div className="payable">
+                    <div><div className="k">Approved challans</div><div className="v">{inr(approvedTotal(lead))}</div></div>
+                    <label><span className="k">Customer pays</span>
+                      <select aria-label="Share of the challan amount the customer pays" value={feeRate(lead)} disabled={busy} onChange={(e) => patch({ feeRate: Number(e.target.value) })}>
+                        {FEE_RATES.map((r) => <option key={r} value={r}>{r}%</option>)}
+                      </select>
+                    </label>
+                    <div className="total"><div className="k">Amount payable</div><div className="v">{inr(payable(lead))}</div></div>
+                  </div>
+                )}
+                {approvedOf(lead).length > 0 && (() => {
+                  const w = lead.waApproval, stale = waStale(lead), msg = approvalMessage(lead, lokDates);
+                  const link = `https://wa.me/91${lead.phone}?text=${encodeURIComponent(msg)}`;
+                  const send = () => patch({ waApproval: 'sent', note: `Sent approval request on WhatsApp: ${approvedOf(lead).length} challan${approvedOf(lead).length === 1 ? '' : 's'}, ${inr(payable(lead))} payable (${feeRate(lead)}%).` });
+                  return (
+                    <div className={'wa-appr' + (w?.state === 'received' && !stale ? ' done' : '')}>
+                      <div className="sec-k">Written approval on WhatsApp</div>
+                      {!w ? <div className="small">Send the customer the approved challans and amount, and ask them to reply "I APPROVE".</div>
+                        : w.state === 'received' ? <div className="ok-line">✓ Customer approved in writing{stale ? ' (the earlier list)' : ''} · marked by {w.receivedBy} · {fullDate(w.receivedAt)}</div>
+                        : <div className="small">Sent by {w.sentBy} · {fullDate(w.sentAt)}. Waiting for the customer to reply "I APPROVE".</div>}
+                      {waErr && !lead.waChat?.length && <div className="stale">{waErr}</div>}
+                      {waApi && w?.state === 'sent' && !stale && <div className="small">When the customer replies "I APPROVE" on WhatsApp, this is marked automatically.</div>}
+                      {stale && <div className="stale">The approved challans or amount changed after the message was sent. Send it again.</div>}
+                      <div className="cc-row">
+                        {waApi && (
+                          <button className={'btn ' + (!w || stale ? 'wa-btn' : '')} disabled={busy} onClick={() => waSend({ text: msg, approval: true })}>
+                            {!w ? 'Send on WhatsApp' : 'Send again on WhatsApp'}
+                          </button>
+                        )}
+                        <a className={'btn ' + (!waApi && (!w || stale) ? 'wa-btn' : '')} href={link} target="_blank" rel="noopener noreferrer"
+                          onClick={(e) => { if (busy) { e.preventDefault(); return; } send(); }}>
+                          {waApi ? 'Open in WhatsApp' : !w ? 'Send on WhatsApp' : 'Send again on WhatsApp'}
+                        </a>
+                        {w?.state === 'sent' && !stale && (
+                          <button className="btn primary" disabled={busy} onClick={() => patch({ waApproval: 'received', note: 'Customer gave written approval on WhatsApp.' })}>Customer replied "I APPROVE"</button>
+                        )}
+                      </div>
+                      <details className="guide"><summary>See the message</summary><pre className="wa-msg">{msg}</pre></details>
+                    </div>
+                  );
+                })()}
+                {approvedIn && (
+                  <div className={'wa-appr pay-box' + (lead.paymentSent ? ' done' : '')}>
+                    <div className="sec-k">Payment details on WhatsApp</div>
+                    {!pay ? <div className="small">Loading…</div>
+                      : pay.error === 'payment_not_set' ? <div className="stale">{isAdminUser ? 'Add your UPI ID and QR in Settings → Payment details first.' : 'Ask an admin to add the UPI ID and QR in Settings → Payment details.'}</div>
+                      : pay.error ? <div className="stale">Could not load the payment details. Close and reopen this lead.</div>
+                      : (<>
+                        {lead.paymentSent
+                          ? <div className="ok-line">✓ Sent by {lead.paymentSent.by} · {fullDate(lead.paymentSent.at)} · {inr(lead.paymentSent.amount)}</div>
+                          : <div className="small">Send the UPI ID and QR for {inr(pay.amount)}, with the 100% refund note.</div>}
+                        {lead.paymentSent && lead.paymentSent.amount !== pay.amount && <div className="stale">The amount changed to {inr(pay.amount)} after it was sent. Send it again.</div>}
+                        <div className="cc-row">
+                          <a className={'btn ' + (!lead.paymentSent ? 'wa-btn' : '')} href={`https://wa.me/91${lead.phone}?text=${encodeURIComponent(pay.text)}`} target="_blank" rel="noopener noreferrer"
+                            onClick={(e) => { if (busy) { e.preventDefault(); return; } patch({ paymentSent: true, note: `Sent payment details on WhatsApp: ${inr(pay.amount)} to ${pay.upiId}.` }); }}>
+                            {lead.paymentSent ? 'Send again on WhatsApp' : 'Send payment details'}
+                          </a>
+                          {pay.qr && <button type="button" className="btn" onClick={copyQr}>{qrCopied ? 'QR copied ✓' : 'Copy QR'}</button>}
+                          {pay.qr && <a className="btn" href={pay.qr} download={`niptao-upi-qr-${lead.ref}.png`}>Download QR</a>}
+                        </div>
+                        {pay.qr && <div className="small">After sending the message, paste the QR in the same WhatsApp chat (Ctrl+V) and press Enter.</div>}
+                        <details className="guide"><summary>See the message</summary><pre className="wa-msg">{pay.text}</pre></details>
+                      </>)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Docs lead={lead} types={docTypes} onUpload={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onPatch={onPatch} onDocLink={onDocLink} />
           </div>
-
-          {askApproval && (
-            <div className="ask" ref={approvalRef} role="status">
-              <b>Customer contacted.</b> {lead.challans?.length
-                ? 'Tick the challans the customer approved for settlement below.'
-                : 'First add the challans (Open Park+, then + Add challan details), then tick the ones the customer approved.'}
-              <button className="btn" onClick={() => onAsked(false)}>Done</button>
+          <div className="col-side">
+            <div className="actions">
+              <a className="call" href={`tel:+91${lead.phone}`}>Call</a>
+              <a className="wa" href={`https://wa.me/91${lead.phone}?text=${waText}`} target="_blank" rel="noopener noreferrer">WhatsApp</a>
             </div>
-          )}
-          {editing ? (
-            <ChallanEditor lead={lead} onCancel={() => setEditing(false)}
-              onSave={async (list, source) => { if (await onSaveChallans(lead.ref, list, source)) setEditing(false); }} />
-          ) : !lead.challans ? (
-            <button className="btn" onClick={() => setEditing(true)}>+ Add challan details</button>
-          ) : (
-            <div className="challans">
-              <div className="ch-head"><div className="sec-k">Challans · {lead.challans.length} · ₹{challanTotal(lead).toLocaleString('en-IN')}
-                {approvedOf(lead).length > 0 && <span className="appr"> · Approved {approvedOf(lead).length} · ₹{approvedTotal(lead).toLocaleString('en-IN')}</span>}</div>
-                <button className="btn ghost edit" onClick={() => setEditing(true)}>Edit</button></div>
-              <div className="small">From {lead.challansSource || 'Parivahan'} · {fullDate(lead.challansAt)}{lead.challansBy ? ` · ${lead.challansBy}` : ''}</div>
-              {lead.challans.length > 0 && (() => {
-                const n = {};
-                lead.challans.forEach((c) => { const x = challanState(c) || '?'; n[x] = (n[x] || 0) + 1; });
-                const keys = Object.keys(n);
-                if (chSt && !n[chSt]) keys.push(chSt);
-                return (
-                  <div className="ch-states" role="group" aria-label="Filter challans by state">
-                    {[['', lead.challans.length], ...keys.map((k) => [k, n[k] || 0])].map(([k, c]) => (
-                      <button key={k || 'all'} type="button" aria-pressed={chSt === k} onClick={() => setChSt(k)}>
-                        {k === '' ? 'All states' : k === '?' ? 'Other' : STATES[k]} <span className="n">{c}</span>
-                      </button>
+
+            <OwnerFields lead={lead} onPatch={onPatch} />
+            <div className="details">
+              <div className="kv"><div className="k">Mobile</div><div className="v">+91 {fmtPhone(lead.phone)}</div></div>
+              <div className="kv"><div className="k">City</div><div className="v">{CITY[lead.city] || lead.city}</div></div>
+              <div className="kv"><div className="k">Language</div><div className="v">{lead.lang === 'hi' ? 'Hindi' : 'English'}</div></div>
+              {lead.promoCode && <div className="kv"><div className="k">Promo code</div><div className="v" style={{ fontFamily: 'var(--mono)' }}>{lead.promoCode}</div></div>}
+              <div className="kv" style={{ gridColumn: '1 / -1' }}>
+                <label className="k" htmlFor="agent">Assigned to</label>
+                {isAdmin ? (
+                  <select id="agent" value={lead.agentId || ''} disabled={busy} onChange={(e) => patch({ assignTo: e.target.value })}>
+                    <option value="">Unassigned</option>
+                    {choices.map((u) => <option key={u.id} value={u.id}>{u.name}{u.role === 'admin' ? ' (admin)' : ''}</option>)}
+                  </select>
+                ) : <div className="v">{lead.agent || 'Unassigned'}</div>}
+                {isAdmin && !staff.length && <div className="hint">Add staff in Settings to assign leads.</div>}
+              </div>
+            </div>
+
+            <div className="notes">
+              <div className="sec-k">Notes</div>
+              <textarea id="note" rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Call outcome, documents pending, challan amounts…" />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                <button className="btn primary" disabled={busy || !draft.trim()} onClick={async () => { await patch({ note: draft }); setDraft(''); }}>Add note</button>
+              </div>
+              {(lead.notes || []).map((n, i) => (
+                <div className="note-row" key={i}>
+                  <span className="av">{n.by.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}</span>
+                  <div><div className="by"><b style={{ color: '#0E1B36' }}>{n.by}</b> · {ago(n.at)}</div><div className="t">{n.text}</div></div>
+                </div>
+              ))}
+              <div className="note-row">
+                <span className="av">·</span>
+                <div><div className="by"><b style={{ color: '#0E1B36' }}>Website</b> · {ago(lead.createdAt)}</div><div className="t">Lead submitted from the website.</div></div>
+              </div>
+            </div>
+
+            {(waApi || lead.waChat?.length > 0) && (
+              <div className="wa-chat">
+                <div className="ch-head"><div className="sec-k">WhatsApp chat{lead.source === 'WhatsApp' ? ' · lead came from WhatsApp' : ''}</div>
+                  {lead.waChat?.length > 0 && <button type="button" className="btn ghost edit" onClick={() => setChatBig((v) => !v)}>{chatBig ? 'Collapse' : 'Expand'}</button>}</div>
+                {lead.waChat?.length ? (
+                  <div className={'wa-msgs' + (chatBig ? ' big' : '')} ref={chatRef}>
+                    {lead.waChat.slice(-50).map((m, i) => (
+                      <div key={m.id || i} className={'wa-bub ' + m.dir}>
+                        <div className="t">{m.text}</div>
+                        <div className="m">{m.dir === 'out' ? `${m.by} · ` : ''}{fullDate(m.at)}{m.dir === 'out' && m.status ? ` · ${m.status === 'read' ? '✓✓ read' : m.status === 'delivered' ? '✓✓ delivered' : m.status === 'failed' ? `failed${m.error ? `: ${m.error}` : ''}` : '✓ sent'}` : ''}</div>
+                      </div>
                     ))}
                   </div>
-                );
-              })()}
-              {lead.challans.length ? (
-                <div className="ch-list">
-                  {lead.challans.map((c, i) => (chSt && (challanState(c) || '?') !== chSt ? null :
-                    <div className={'ch' + (c.approved ? ' ok' : '')} key={c.challanNo || i}>
-                      <div className="ch-top"><span className="no">{c.challanNo || '—'}</span><b>{c.amount ? `₹${c.amount.toLocaleString('en-IN')}` : ''}</b></div>
-                      {c.offence && <div>{c.offence}</div>}
-                      <div className="small">{[STATES[challanState(c)], c.date, c.location, c.status].filter(Boolean).join(' · ')}</div>
-                      <label className="appr-box"><input type="checkbox" checked={!!c.approved} disabled={busy} onChange={() => toggleApproved(i)} /> Customer approved</label>
-                    </div>
-                  ))}
-                  {chSt && !lead.challans.some((c) => (challanState(c) || '?') === chSt) && <div className="small">No challans from {STATES[chSt] || 'this state'} on this lead.</div>}
-                </div>
-              ) : <div className="small">No challans found for this vehicle.</div>}
-              {approvedOf(lead).length > 0 && (
-                <div className="payable">
-                  <div><div className="k">Approved challans</div><div className="v">{inr(approvedTotal(lead))}</div></div>
-                  <label><span className="k">Customer pays</span>
-                    <select aria-label="Share of the challan amount the customer pays" value={feeRate(lead)} disabled={busy} onChange={(e) => patch({ feeRate: Number(e.target.value) })}>
-                      {FEE_RATES.map((r) => <option key={r} value={r}>{r}%</option>)}
-                    </select>
-                  </label>
-                  <div className="total"><div className="k">Amount payable</div><div className="v">{inr(payable(lead))}</div></div>
-                </div>
-              )}
-              {approvedOf(lead).length > 0 && (() => {
-                const w = lead.waApproval, stale = waStale(lead), msg = approvalMessage(lead, lokDates);
-                const link = `https://wa.me/91${lead.phone}?text=${encodeURIComponent(msg)}`;
-                const send = () => patch({ waApproval: 'sent', note: `Sent approval request on WhatsApp: ${approvedOf(lead).length} challan${approvedOf(lead).length === 1 ? '' : 's'}, ${inr(payable(lead))} payable (${feeRate(lead)}%).` });
-                return (
-                  <div className={'wa-appr' + (w?.state === 'received' && !stale ? ' done' : '')}>
-                    <div className="sec-k">Written approval on WhatsApp</div>
-                    {!w ? <div className="small">Send the customer the approved challans and amount, and ask them to reply "I APPROVE".</div>
-                      : w.state === 'received' ? <div className="ok-line">✓ Customer approved in writing{stale ? ' (the earlier list)' : ''} · marked by {w.receivedBy} · {fullDate(w.receivedAt)}</div>
-                      : <div className="small">Sent by {w.sentBy} · {fullDate(w.sentAt)}. Waiting for the customer to reply "I APPROVE".</div>}
-                    {waErr && !lead.waChat?.length && <div className="stale">{waErr}</div>}
-                    {waApi && w?.state === 'sent' && !stale && <div className="small">When the customer replies "I APPROVE" on WhatsApp, this is marked automatically.</div>}
-                    {stale && <div className="stale">The approved challans or amount changed after the message was sent. Send it again.</div>}
-                    <div className="cc-row">
-                      {waApi && (
-                        <button className={'btn ' + (!w || stale ? 'wa-btn' : '')} disabled={busy} onClick={() => waSend({ text: msg, approval: true })}>
-                          {!w ? 'Send on WhatsApp' : 'Send again on WhatsApp'}
-                        </button>
-                      )}
-                      <a className={'btn ' + (!waApi && (!w || stale) ? 'wa-btn' : '')} href={link} target="_blank" rel="noopener noreferrer"
-                        onClick={(e) => { if (busy) { e.preventDefault(); return; } send(); }}>
-                        {waApi ? 'Open in WhatsApp' : !w ? 'Send on WhatsApp' : 'Send again on WhatsApp'}
-                      </a>
-                      {w?.state === 'sent' && !stale && (
-                        <button className="btn primary" disabled={busy} onClick={() => patch({ waApproval: 'received', note: 'Customer gave written approval on WhatsApp.' })}>Customer replied "I APPROVE"</button>
-                      )}
-                    </div>
-                    <details className="guide"><summary>See the message</summary><pre className="wa-msg">{msg}</pre></details>
-                  </div>
-                );
-              })()}
-              {approvedIn && (
-                <div className={'wa-appr pay-box' + (lead.paymentSent ? ' done' : '')}>
-                  <div className="sec-k">Payment details on WhatsApp</div>
-                  {!pay ? <div className="small">Loading…</div>
-                    : pay.error === 'payment_not_set' ? <div className="stale">{isAdminUser ? 'Add your UPI ID and QR in Settings → Payment details first.' : 'Ask an admin to add the UPI ID and QR in Settings → Payment details.'}</div>
-                    : pay.error ? <div className="stale">Could not load the payment details. Close and reopen this lead.</div>
-                    : (<>
-                      {lead.paymentSent
-                        ? <div className="ok-line">✓ Sent by {lead.paymentSent.by} · {fullDate(lead.paymentSent.at)} · {inr(lead.paymentSent.amount)}</div>
-                        : <div className="small">Send the UPI ID and QR for {inr(pay.amount)}, with the 100% refund note.</div>}
-                      {lead.paymentSent && lead.paymentSent.amount !== pay.amount && <div className="stale">The amount changed to {inr(pay.amount)} after it was sent. Send it again.</div>}
-                      <div className="cc-row">
-                        <a className={'btn ' + (!lead.paymentSent ? 'wa-btn' : '')} href={`https://wa.me/91${lead.phone}?text=${encodeURIComponent(pay.text)}`} target="_blank" rel="noopener noreferrer"
-                          onClick={(e) => { if (busy) { e.preventDefault(); return; } patch({ paymentSent: true, note: `Sent payment details on WhatsApp: ${inr(pay.amount)} to ${pay.upiId}.` }); }}>
-                          {lead.paymentSent ? 'Send again on WhatsApp' : 'Send payment details'}
-                        </a>
-                        {pay.qr && <button type="button" className="btn" onClick={copyQr}>{qrCopied ? 'QR copied ✓' : 'Copy QR'}</button>}
-                        {pay.qr && <a className="btn" href={pay.qr} download={`niptao-upi-qr-${lead.ref}.png`}>Download QR</a>}
-                      </div>
-                      {pay.qr && <div className="small">After sending the message, paste the QR in the same WhatsApp chat (Ctrl+V) and press Enter.</div>}
-                      <details className="guide"><summary>See the message</summary><pre className="wa-msg">{pay.text}</pre></details>
-                    </>)}
-                </div>
-              )}
-            </div>
-          )}
-
-          <Docs lead={lead} types={docTypes} onUpload={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onPatch={onPatch} onDocLink={onDocLink} />
-
-          <div className="details">
-            <div className="kv"><div className="k">Mobile</div><div className="v">+91 {fmtPhone(lead.phone)}</div></div>
-            <div className="kv"><div className="k">City</div><div className="v">{CITY[lead.city] || lead.city}</div></div>
-            <div className="kv"><div className="k">Language</div><div className="v">{lead.lang === 'hi' ? 'Hindi' : 'English'}</div></div>
-            {lead.promoCode && <div className="kv"><div className="k">Promo code</div><div className="v" style={{ fontFamily: 'var(--mono)' }}>{lead.promoCode}</div></div>}
-            <div className="kv" style={{ gridColumn: '1 / -1' }}>
-              <label className="k" htmlFor="agent">Assigned to</label>
-              {isAdmin ? (
-                <select id="agent" value={lead.agentId || ''} disabled={busy} onChange={(e) => patch({ assignTo: e.target.value })}>
-                  <option value="">Unassigned</option>
-                  {choices.map((u) => <option key={u.id} value={u.id}>{u.name}{u.role === 'admin' ? ' (admin)' : ''}</option>)}
-                </select>
-              ) : <div className="v">{lead.agent || 'Unassigned'}</div>}
-              {isAdmin && !staff.length && <div className="hint">Add staff in Settings to assign leads.</div>}
-            </div>
-          </div>
-
-          <div className="notes">
-            <div className="sec-k">Notes</div>
-            <textarea id="note" rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Call outcome, documents pending, challan amounts…" />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-              <button className="btn primary" disabled={busy || !draft.trim()} onClick={async () => { await patch({ note: draft }); setDraft(''); }}>Add note</button>
-            </div>
-            {(lead.notes || []).map((n, i) => (
-              <div className="note-row" key={i}>
-                <span className="av">{n.by.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}</span>
-                <div><div className="by"><b style={{ color: '#0E1B36' }}>{n.by}</b> · {ago(n.at)}</div><div className="t">{n.text}</div></div>
+                ) : <div className="small">No WhatsApp messages with this customer yet.</div>}
+                {waApi && (waOpen ? (
+                  <form className="wa-reply" onSubmit={async (e) => { e.preventDefault(); if (waDraft.trim() && await waSend({ text: waDraft })) setWaDraft(''); }}>
+                    <textarea rows={2} value={waDraft} onChange={(e) => setWaDraft(e.target.value)} placeholder="Reply on WhatsApp" aria-label="WhatsApp reply" />
+                    <button className="btn wa-btn" disabled={busy || !waDraft.trim()}>Send</button>
+                  </form>
+                ) : <div className="small">You can reply here for 24 hours after the customer's last message. Until they write again, use "Open in WhatsApp" or the approval request below.</div>)}
+                {waErr && <div className="stale">{waErr}</div>}
               </div>
-            ))}
-            <div className="note-row">
-              <span className="av">·</span>
-              <div><div className="by"><b style={{ color: '#0E1B36' }}>Website</b> · {ago(lead.createdAt)}</div><div className="t">Lead submitted from the website.</div></div>
-            </div>
+            )}
+
           </div>
-
-          {(waApi || lead.waChat?.length > 0) && (
-            <div className="wa-chat">
-              <div className="ch-head"><div className="sec-k">WhatsApp chat{lead.source === 'WhatsApp' ? ' · lead came from WhatsApp' : ''}</div>
-                {lead.waChat?.length > 0 && <button type="button" className="btn ghost edit" onClick={() => setChatBig((v) => !v)}>{chatBig ? 'Collapse' : 'Expand'}</button>}</div>
-              {lead.waChat?.length ? (
-                <div className={'wa-msgs' + (chatBig ? ' big' : '')} ref={chatRef}>
-                  {lead.waChat.slice(-50).map((m, i) => (
-                    <div key={m.id || i} className={'wa-bub ' + m.dir}>
-                      <div className="t">{m.text}</div>
-                      <div className="m">{m.dir === 'out' ? `${m.by} · ` : ''}{fullDate(m.at)}{m.dir === 'out' && m.status ? ` · ${m.status === 'read' ? '✓✓ read' : m.status === 'delivered' ? '✓✓ delivered' : m.status === 'failed' ? `failed${m.error ? `: ${m.error}` : ''}` : '✓ sent'}` : ''}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : <div className="small">No WhatsApp messages with this customer yet.</div>}
-              {waApi && (waOpen ? (
-                <form className="wa-reply" onSubmit={async (e) => { e.preventDefault(); if (waDraft.trim() && await waSend({ text: waDraft })) setWaDraft(''); }}>
-                  <textarea rows={2} value={waDraft} onChange={(e) => setWaDraft(e.target.value)} placeholder="Reply on WhatsApp" aria-label="WhatsApp reply" />
-                  <button className="btn wa-btn" disabled={busy || !waDraft.trim()}>Send</button>
-                </form>
-              ) : <div className="small">You can reply here for 24 hours after the customer's last message. Until they write again, use "Open in WhatsApp" or the approval request below.</div>)}
-              {waErr && <div className="stale">{waErr}</div>}
-            </div>
-          )}
-
           {isSuper && (
             <div className="danger">
               <button className="btn ghost" disabled={busy} onClick={() => {
