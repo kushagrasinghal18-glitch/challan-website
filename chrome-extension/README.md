@@ -27,7 +27,8 @@ page opens and the vehicle number is filled as soon as its box appears, even if 
 asks for a mobile number and OTP first. The number stays ready for 30 minutes. Type the
 captcha (and the OTP when it comes) yourself and continue.
 
-If the number doesn't go in, click inside the vehicle number box, then press **Fill vehicle
+If the number doesn't go in by itself, click inside the vehicle number box: an empty box
+that isn't the mobile, name, captcha or OTP box gets the number as soon as you click it. Or press **Fill vehicle
 number** in the green Niptao box at the bottom right. It types the number key by key, which
 works on pages that block pasting. If even that fails, press "Not working? Copy page details
 for support" and paste the result to support.

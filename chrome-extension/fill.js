@@ -10,20 +10,28 @@ export async function fillPage(lead) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const visible = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
 
-  // Everything a person could read about a box: its label, placeholder, nearby text.
-  const describe = (el) => {
+  // What the box says about itself: its attributes and its own label.
+  const ownText = (el) => {
     const bits = [el.id, el.name, el.placeholder, el.title, el.getAttribute('aria-label'), el.getAttribute('formcontrolname')];
     if (el.id) document.querySelectorAll(`label[for="${CSS.escape(el.id)}"]`).forEach((l) => bits.push(l.textContent));
     const wrap = el.closest('label');
     if (wrap) bits.push(wrap.textContent);
-    // Text just before the box, e.g. "<td>Vehicle No.</td><td><input></td>".
+    return bits.filter(Boolean).join(' ').replace(/\s+/g, ' ');
+  };
+  // Text just before the box, e.g. "<td>Vehicle No.</td><td><input></td>". Only plain text
+  // counts, not another field, so a box doesn't borrow the label of the box before it.
+  const nearText = (el) => {
     let node = el.parentElement;
     for (let i = 0; i < 3 && node; i++, node = node.parentElement) {
       const prev = node.previousElementSibling;
-      if (prev && prev.textContent.trim().length < 60) { bits.push(prev.textContent); break; }
+      if (!prev) continue;
+      if (prev.querySelector('input, select, textarea') || prev.matches('input, select, textarea')) return '';
+      if (prev.textContent.trim().length < 60) return prev.textContent.replace(/\s+/g, ' ');
+      return '';
     }
-    return bits.filter(Boolean).join(' ').replace(/\s+/g, ' ');
+    return '';
   };
+  const describe = (el) => `${ownText(el)} ${nearText(el)}`;
 
   const setValue = (el, value) => {
     // Use the browser's own setter so React / Angular pages notice the change.
@@ -76,9 +84,13 @@ export async function fillPage(lead) {
   let captcha = null;
   const used = new Set();
   for (const el of boxes) {
-    const d = describe(el);
+    const own = ownText(el), d = describe(el);
     if (SKIP.test(d)) { if (!captcha && /captcha|security.?code/i.test(d)) captcha = el; continue; }
-    const rule = RULES.find((r) => r.value && !filled.includes(r.field) && r.test(d));
+    // A box that names itself (even as something we have no value for) is never judged by nearby text.
+    const known = RULES.find((r) => r.test(own));
+    const rule = known ? (known.value && !filled.includes(known.field) ? known : null)
+      : /e-?mail|challan|notice|date|address|amount|age\b/i.test(own) ? null
+      : RULES.find((r) => r.value && !filled.includes(r.field) && r.test(nearText(el)));
     if (!rule || used.has(el)) continue;
     setValue(el, rule.value);
     used.add(el);

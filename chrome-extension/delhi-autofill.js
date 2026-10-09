@@ -66,13 +66,64 @@
   }
 
   let done = false;
+  const finished = (how) => {
+    done = true;
+    say(how + ' Type the captcha (and OTP when it comes) yourself, then continue. If it looks wrong, click the box and press the button.');
+  };
+
+  // This page's labels don't always read like Parivahan's, so look wider around each box:
+  // its form field, the label after it (Angular Material), and aria-labelledby.
+  const VEHICLE = /vehicle|veh\.?\s*no|regn|registration|reg\.?\s*no|\brc\b|number\s*plate|gaadi|vahan/i;
+  const NOT_PLATE = /captcha|otp|one.?time|security|verification|password|\bpin\b|mobile|phone|contact|e-?mail|name|challan|notice|date|address|amount|age\b|search/i;
+  const shown = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  const textBoxes = () => [...document.querySelectorAll('input, textarea')].filter((el) =>
+    shown(el) && !el.disabled && !el.readOnly && /^(text|tel|search|)$/i.test(el.getAttribute('type') || 'text'));
+  const around = (el) => {
+    const bits = [el.id, el.name, el.placeholder, el.title, el.getAttribute('aria-label'), el.getAttribute('formcontrolname'), el.getAttribute('ng-model')];
+    for (const id of (el.getAttribute('aria-labelledby') || '').split(/\s+/)) if (id) bits.push(document.getElementById(id)?.textContent);
+    if (el.labels) for (const l of el.labels) bits.push(l.textContent);
+    // The field around the box (only when it holds just this one box), then plain text before it.
+    const field = el.closest('mat-form-field, .mat-form-field, .form-group, .form-field, .input-group, .field, td, li');
+    if (field && field.textContent.length < 120 && field.querySelectorAll('input, select, textarea').length === 1) bits.push(field.textContent);
+    let node = el;
+    for (let i = 0; i < 4 && node; i++, node = node.parentElement) {
+      const prev = node.previousElementSibling;
+      if (!prev) continue;
+      if (prev.matches('input, select, textarea') || prev.querySelector('input, select, textarea')) break;
+      if (prev.textContent.trim() && prev.textContent.length < 80) bits.push(prev.textContent);
+      break;
+    }
+    return bits.filter(Boolean).join(' ').replace(/\s+/g, ' ');
+  };
+  const typeInto = (el) => {
+    el.focus();
+    fillFocused(lead.plate);
+    const cap = textBoxes().find((b) => b !== el && /captcha|security/i.test(around(b)));
+    if (cap) cap.focus();
+  };
+
   const tryFill = async () => {
     if (done) return;
-    const { filled } = await fillPage({ plate: lead.plate });
-    if (!filled.length) return;
-    done = true;
-    say('Vehicle number filled. Type the captcha (and OTP when it comes) yourself, then continue. If it looks wrong, click the box and press the button.');
+    if ((await fillPage({ plate: lead.plate })).filled.length) return finished('Vehicle number filled.');
+    const empty = textBoxes().filter((el) => !el.value);
+    // A box that names itself as something else (mobile, email…) never counts, whatever text is near it.
+    const own = (el) => [el.id, el.name, el.placeholder, el.title, el.getAttribute('aria-label'), el.getAttribute('formcontrolname'), ...[...(el.labels || [])].map((l) => l.textContent)].filter(Boolean).join(' ');
+    const hit = empty.find((el) => {
+      const d = around(el), o = own(el);
+      return VEHICLE.test(d) && !/captcha|otp|security/i.test(d) && (VEHICLE.test(o) || !NOT_PLATE.test(o));
+    });
+    if (hit) { typeInto(hit); return finished('Vehicle number filled.'); }
+    // Only one box on the page that isn't a captcha, OTP, mobile, name or similar: that's the one.
+    const left = empty.filter((el) => !NOT_PLATE.test(around(el)));
+    if (left.length === 1 && VEHICLE.test(document.body.innerText)) { typeInto(left[0]); finished('Vehicle number filled.'); }
   };
+  // Clicking into an empty box that isn't a captcha, OTP, mobile or name box fills it too.
+  document.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (done || !/^(INPUT|TEXTAREA)$/.test(el.tagName) || el.value || NOT_PLATE.test(around(el))) return;
+    if (!/^(text|tel|search|)$/i.test(el.getAttribute('type') || 'text')) return;
+    setTimeout(() => { if (!done && !el.value) { fillFocused(lead.plate); finished('Vehicle number filled.'); } }, 50);
+  }, true);
   await tryFill();
   const watch = new MutationObserver(() => { clearTimeout(watch.t); watch.t = setTimeout(tryFill, 400); });
   watch.observe(document.documentElement, { childList: true, subtree: true });
