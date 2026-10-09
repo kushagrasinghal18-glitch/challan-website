@@ -23,8 +23,14 @@ are no challans, the lead shows "No challans found". The owner's name shown by P
 ## Delhi court token in one click
 
 In the admin panel, open a lead and click **Delhi court token**. The Delhi Traffic Police
-page opens with the vehicle number already filled. Type the captcha (and the OTP when it
-comes) yourself and continue.
+page opens and the vehicle number is filled as soon as its box appears, even if the page
+asks for a mobile number and OTP first. The number stays ready for 30 minutes. Type the
+captcha (and the OTP when it comes) yourself and continue.
+
+If the number doesn't go in, click inside the vehicle number box, then press **Fill vehicle
+number** in the green Niptao box at the bottom right. It types the number key by key, which
+works on pages that block pasting. If even that fails, press "Not working? Copy page details
+for support" and paste the result to support.
 
 ## WhatsApp Web
 

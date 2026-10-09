@@ -28,8 +28,24 @@ export async function fillPage(lead) {
   const setValue = (el, value) => {
     // Use the browser's own setter so React / Angular pages notice the change.
     const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
-    for (const type of ['input', 'change', 'keyup', 'blur']) el.dispatchEvent(new Event(type, { bubbles: true }));
+    const set = (v) => Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+    el.focus();
+    set(value);
+    for (const type of ['input', 'change', 'keyup']) el.dispatchEvent(new Event(type, { bubbles: true }));
+    // Some pages only accept typed keys (they clear or reject anything else): type it one key at a time.
+    if (el.value !== value) {
+      set('');
+      for (const ch of value) {
+        const key = { key: ch, code: /\d/.test(ch) ? 'Digit' + ch : 'Key' + ch.toUpperCase(), bubbles: true, cancelable: true };
+        el.dispatchEvent(new KeyboardEvent('keydown', key));
+        el.dispatchEvent(new KeyboardEvent('keypress', { ...key, charCode: ch.charCodeAt(0) }));
+        set(el.value + ch);
+        el.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: ch, bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keyup', key));
+      }
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
     el.style.outline = '3px solid #16a34a';
   };
 
@@ -77,8 +93,17 @@ export function fillFocused(value) {
   const el = document.activeElement;
   if (!el || !/^(INPUT|TEXTAREA)$/.test(el.tagName)) return false;
   const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
-  for (const type of ['input', 'change', 'keyup', 'blur']) el.dispatchEvent(new Event(type, { bubbles: true }));
+  const set = (v) => Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+  set('');
+  for (const ch of value) {
+    const key = { key: ch, bubbles: true, cancelable: true };
+    el.dispatchEvent(new KeyboardEvent('keydown', key));
+    el.dispatchEvent(new KeyboardEvent('keypress', { ...key, charCode: ch.charCodeAt(0) }));
+    set(el.value + ch);
+    el.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: ch, bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup', key));
+  }
+  for (const type of ['change', 'blur']) el.dispatchEvent(new Event(type, { bubbles: true }));
   el.style.outline = '3px solid #16a34a';
   return true;
 }
