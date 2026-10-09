@@ -20,6 +20,12 @@ When Parivahan shows the challans, the add-on saves them to that lead in the adm
 (a small green-bordered box in the corner says "Saved N challans"). If Parivahan says there
 are no challans, the lead shows "No challans found". The owner's name shown by Parivahan is saved too, so the admin panel can flag a lead whose name doesn't match.
 
+## Delhi court token in one click
+
+In the admin panel, open a lead and click **Delhi court token**. The Delhi Traffic Police
+page opens with the vehicle number already filled. Type the captcha (and the OTP when it
+comes) yourself and continue.
+
 ## WhatsApp Web
 
 Open the Niptao admin panel once in Chrome and log in, so the add-on knows who you are.
