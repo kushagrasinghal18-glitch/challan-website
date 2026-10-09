@@ -16,6 +16,8 @@ const ADDON_VERSION = '1.6.0';
 // Park+ challan check (search by vehicle number). Used until a paid challan API is switched on.
 const PARKPLUS_URL = 'https://parkplus.io/e-challan';
 const PARIVAHAN_URL = 'https://echallan.parivahan.gov.in/index/accused-challan';
+// Delhi Traffic Police virtual court: token for Delhi challans (Lead Filler add-on 1.7.0+ fills the number).
+const DELHI_COURT_URL = 'https://traffic.delhipolice.gov.in/evecourtddc/#/';
 
 // Saved sign-in is { token, user: { uid, name, role } }; anything older is dropped.
 const readSaved = () => { try { const v = JSON.parse(localStorage.getItem(TOKEN_KEY)); return v?.user ? v : null; } catch { return null; } };
@@ -555,6 +557,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
               <div className="cc-row">
                 <a className="btn primary" href={PARKPLUS_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate}>Open Park+ ↗</a>
                 <a className="btn" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Open Parivahan e-Challan ↗</a>
+                <a className="btn" href={DELHI_COURT_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Delhi court token ↗</a>
                 <button className="btn" onClick={copyPlate}>{copied ? 'Copied ✓' : `Copy ${fmtPlate(lead.plate)}`}</button>
               </div>
               <button type="button" className="btn ghost instr" aria-expanded={showHelp} onClick={() => setShowHelp((v) => !v)}>{showHelp ? '▾ Hide instructions' : '▸ Instructions'}</button>
@@ -568,6 +571,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                   <li>If the vehicle has no challans, press <b>No challans</b> instead.</li>
                 </ol>
                 <p className="hint"><b>Parivahan:</b> the vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
+              <p className="hint"><b>Delhi court token:</b> for Delhi challans. The vehicle number is copied when you open the site; with the add-on (version 1.7.0 or later) it is filled in for you.</p>
               </div>)}
             </div>
 
