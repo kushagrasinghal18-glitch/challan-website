@@ -164,6 +164,16 @@ export async function getLead(ref) {
   return (await readFile()).find((l) => l.ref === ref) || null;
 }
 
+// The lead a customer upload link belongs to (the token is long and random).
+export async function leadByDocToken(token) {
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(token || '')) return null;
+  if (process.env.DATABASE_URL) {
+    const { rows } = await (await db()).query("SELECT data FROM leads WHERE data->'docLink'->>'token' = $1 LIMIT 1", [token]);
+    return rows[0]?.data || null;
+  }
+  return (await readFile()).find((l) => l.docLink?.token === token) || null;
+}
+
 export async function deleteLead(ref) {
   const lead = await store().remove(ref);
   if (lead) await removeDocsFor(ref).catch((err) => console.error('[docs] cleanup failed', ref, err.message));
@@ -268,6 +278,7 @@ export function updateLead(ref, patch, by, onlyFor) {
     const autoNotes = [];
     if (patch.addDoc) {
       out.docs = [...(lead.docs || []), { ...patch.addDoc, at: new Date().toISOString(), by }];
+      if (patch.fromCustomer) out.docsNew = (lead.docsNew || 0) + 1;
       const types = patch.docTypes || [];
       const status = out.status || lead.status;
       if (types.some((t) => t.required) && !docsMissing({ docs: out.docs }, types).length && BEFORE_DOCS.includes(status)) {
@@ -275,6 +286,9 @@ export function updateLead(ref, patch, by, onlyFor) {
         autoNotes.push('All documents uploaded. Moved to Documents received.');
       }
     }
+    if (patch.docsSeen) out.docsNew = 0;
+    // Private upload link for the customer: { token, expiresAt } or null to switch it off.
+    if (patch.docLink !== undefined) out.docLink = patch.docLink ? { ...patch.docLink, at: new Date().toISOString(), by } : null;
     if (patch.removeDoc) out.docs = (lead.docs || []).filter((d) => d.id !== patch.removeDoc);
     if (Array.isArray(patch.challans)) {
       out.challans = patch.challans;

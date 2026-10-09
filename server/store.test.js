@@ -136,3 +136,20 @@ test('name on RC: set by hand, or filled in by a matching Parivahan name', async
   assert.equal(l.rcName.same, true);
   assert.equal(l.rcName.by, 'Parivahan check');
 });
+
+test('customer upload link: found by token, counts new customer uploads', async () => {
+  const { leadByDocToken } = await import('./store.js');
+  await addLead({ ref: 'LNK-1', createdAt: '2026-10-09T00:00:00Z', name: 'Rahul', plate: 'UP16AB4444', phone: '9876500003', status: 'New', notes: [] });
+  const token = 'abcdefghijklmnopqrstuvwx';
+  let l = await updateLead('LNK-1', { docLink: { token, expiresAt: '2099-01-01T00:00:00Z' } }, 'Priya');
+  assert.equal(l.docLink.by, 'Priya');
+  assert.equal((await leadByDocToken(token)).ref, 'LNK-1');
+  assert.equal(await leadByDocToken('short'), null);
+  assert.equal(await leadByDocToken('zzzzzzzzzzzzzzzzzzzzzzzzzz'), null);
+  l = await updateLead('LNK-1', { addDoc: { id: 'lnk1aaaaaaaa', type: 'rc', typeName: 'RC', name: 'rc.jpg', mime: 'image/jpeg', size: 5 }, docTypes: [], fromCustomer: true }, 'Customer');
+  assert.equal(l.docsNew, 1);
+  assert.equal((await updateLead('LNK-1', { docsSeen: true }, 'Priya')).docsNew, 0);
+  l = await updateLead('LNK-1', { docLink: null }, 'Priya');
+  assert.equal(l.docLink, null);
+  assert.equal(await leadByDocToken(token), null);
+});

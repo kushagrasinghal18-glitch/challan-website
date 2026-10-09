@@ -8,7 +8,7 @@ import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, se
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
 import crypto from 'node:crypto';
 import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee,
-  getLead, saveDoc, getDoc, removeDoc, docTypesOf } from './store.js';
+  getLead, saveDoc, getDoc, removeDoc, docTypesOf, leadByDocToken } from './store.js';
 
 try { process.loadEnvFile(); } catch { /* no .env file: use defaults */ }
 
@@ -230,7 +230,7 @@ app.get('/api/promo/:code', limit(30, 10 * 60_000), async (req, res) => {
 // Search engines: allow the site, keep the admin panel and API out.
 const siteUrl = (req) => (process.env.SITE_URL || (process.env.NODE_ENV === 'production' ? 'https://www.niptao.co.in' : `${req.protocol}://${req.get('host')}`)).replace(/\/$/, '');
 app.get('/robots.txt', (req, res) => {
-  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n\nSitemap: ${siteUrl(req)}/sitemap.xml\n`);
+  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /upload/\n\nSitemap: ${siteUrl(req)}/sitemap.xml\n`);
 });
 app.get('/sitemap.xml', (req, res) => {
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
@@ -397,36 +397,98 @@ function sniff(buf) {
 const canSee = (lead, user) => user.role === 'admin' || lead.agentId === user.uid;
 const rawDoc = express.raw({ type: () => true, limit: DOC_MAX });
 
-app.post('/api/admin/leads/:ref/docs', requireUser, (req, res, next) => rawDoc(req, res, (err) => {
+// Checks and stores one uploaded file on a lead. Returns { lead } or { status, error }.
+async function acceptDoc(lead, typeId, buf, fileName, by, { onlyFor = null, fromCustomer = false } = {}) {
+  const mime = sniff(buf);
+  if (!mime) return { status: 400, error: 'file_type_not_allowed' };
+  const types = docTypesOf(await getSettings());
+  const type = types.find((t) => t.id === String(typeId || ''));
+  if (!type) return { status: 400, error: 'unknown_doc_type' };
+  if ((lead.docs || []).length >= DOCS_PER_LEAD) return { status: 400, error: 'too_many_docs' };
+  const base = String(fileName || '').replace(/[^\w .()-]/g, '').replace(/\.[^.]*$/, '').trim().slice(0, 60) || type.name;
+  const id = lead.ref.toLowerCase().replace(/[^a-z0-9]/g, '') + crypto.randomBytes(8).toString('hex');
+  await saveDoc(id, lead.ref, mime, buf);
+  let updated;
+  try {
+    updated = await updateLead(lead.ref, { addDoc: { id, type: type.id, typeName: type.name, name: `${base}.${DOC_KINDS[mime]}`, mime, size: buf.length },
+      docTypes: types, fromCustomer, ...(fromCustomer ? { note: `Customer uploaded ${type.name} using the upload link.` } : {}) }, by, onlyFor);
+  } catch (err) { await removeDoc(id).catch(() => {}); throw err; }
+  if (!updated) { await removeDoc(id).catch(() => {}); return { status: 404, error: 'not_found' }; }
+  console.log('[docs] uploaded', lead.ref, type.id, buf.length, fromCustomer ? '(customer)' : '');
+  return { lead: updated };
+}
+const readDoc = (req, res, next) => rawDoc(req, res, (err) => {
   if (err) return res.status(err.type === 'entity.too.large' ? 413 : 400).json({ error: err.type === 'entity.too.large' ? 'file_too_large' : 'bad_upload' });
   next();
-}), async (req, res) => {
-  const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-  const mime = sniff(buf);
-  if (!mime) return res.status(400).json({ error: 'file_type_not_allowed' });
+});
+
+app.post('/api/admin/leads/:ref/docs', requireUser, readDoc, async (req, res) => {
   try {
-    const types = docTypesOf(await getSettings());
-    const type = types.find((t) => t.id === String(req.query.type || ''));
-    if (!type) return res.status(400).json({ error: 'unknown_doc_type' });
     const lead = await getLead(req.params.ref);
     if (!lead) return res.status(404).json({ error: 'not_found' });
     if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
-    if ((lead.docs || []).length >= DOCS_PER_LEAD) return res.status(400).json({ error: 'too_many_docs' });
-    const base = String(req.query.name || '').replace(/[^\w .()-]/g, '').replace(/\.[^.]*$/, '').trim().slice(0, 60) || type.name;
-    const id = lead.ref.toLowerCase().replace(/[^a-z0-9]/g, '') + crypto.randomBytes(8).toString('hex');
-    await saveDoc(id, lead.ref, mime, buf);
-    let updated;
-    try {
-      updated = await updateLead(lead.ref, { addDoc: { id, type: type.id, typeName: type.name, name: `${base}.${DOC_KINDS[mime]}`, mime, size: buf.length }, docTypes: types },
-        req.user.name, req.user.role === 'admin' ? null : req.user.uid);
-    } catch (err) { await removeDoc(id).catch(() => {}); throw err; }
-    if (!updated) { await removeDoc(id).catch(() => {}); return res.status(404).json({ error: 'not_found' }); }
-    console.log('[docs] uploaded', lead.ref, type.id, buf.length);
-    res.json({ lead: updated });
+    const r = await acceptDoc(lead, req.query.type, Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), req.query.name, req.user.name,
+      { onlyFor: req.user.role === 'admin' ? null : req.user.uid });
+    if (r.error) return res.status(r.status).json({ error: r.error });
+    res.json({ lead: r.lead });
   } catch (err) {
     if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
     console.error('[docs] upload failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
   }
+});
+
+// Upload link for the customer: create (or replace) it, or switch it off.
+const LINK_DAYS = 14;
+app.post('/api/admin/leads/:ref/doclink', requireUser, async (req, res) => {
+  const off = req.body?.off === true;
+  try {
+    const link = off ? null : { token: crypto.randomBytes(18).toString('base64url'), expiresAt: new Date(Date.now() + LINK_DAYS * 864e5).toISOString() };
+    const lead = await updateLead(req.params.ref, { docLink: link, note: off ? 'Customer upload link switched off.' : `Customer upload link created (works for ${LINK_DAYS} days).` },
+      req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+    if (!lead) return res.status(404).json({ error: 'not_found' });
+    res.json({ lead });
+  } catch (err) {
+    if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
+    console.error('[docs] link failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
+  }
+});
+
+// ── Customer upload page (public, but only with the lead's secret link) ──
+// The customer sees which documents are still needed and can add files. They can never see,
+// download or delete files, so a forwarded link can't expose anything.
+const CLOSED = ['Settled', 'Lost'];
+async function linkLead(token) {
+  const lead = await leadByDocToken(token);
+  if (!lead?.docLink || lead.docLink.token !== token) return { error: 'link_not_found' };
+  if (new Date(lead.docLink.expiresAt) < new Date() || CLOSED.includes(lead.status)) return { error: 'link_expired' };
+  return { lead };
+}
+const maskPlate = (p) => (p ? fmtPlateServer(p).replace(/\d(?=\d{2})/g, '•') : '');
+const fmtPlateServer = (p) => String(p || '').replace(/^([A-Z]{2})(\d{1,2})([A-Z]{0,3})(\d{1,4})$/, (m, a, b, c, d) => [a, b, c, d].filter(Boolean).join(' '));
+
+app.get('/api/upload/:token', limit(60, 10 * 60_000), async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const { lead, error } = await linkLead(req.params.token);
+    if (error) return res.status(error === 'link_expired' ? 410 : 404).json({ error });
+    const types = docTypesOf(await getSettings());
+    const have = (id) => (lead.docs || []).filter((d) => d.type === id).length;
+    res.json({
+      name: String(lead.name || '').split(' ')[0], plate: maskPlate(lead.plate), lang: lead.lang === 'hi' ? 'hi' : 'en',
+      expiresAt: lead.docLink.expiresAt,
+      docs: types.map((t) => ({ id: t.id, name: t.name, required: t.required, uploaded: have(t.id) })),
+    });
+  } catch (err) { console.error('[upload] read failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
+});
+
+app.post('/api/upload/:token', limit(40, 10 * 60_000), readDoc, async (req, res) => {
+  try {
+    const { lead, error } = await linkLead(req.params.token);
+    if (error) return res.status(error === 'link_expired' ? 410 : 404).json({ error });
+    const r = await acceptDoc(lead, req.query.type, Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), req.query.name, 'Customer', { fromCustomer: true });
+    if (r.error) return res.status(r.status).json({ error: r.error });
+    res.json({ ok: true, uploaded: (r.lead.docs || []).filter((d) => d.type === req.query.type).length });
+  } catch (err) { console.error('[upload] failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
 });
 
 app.get('/api/admin/leads/:ref/docs/:id', requireUser, async (req, res) => {
@@ -473,7 +535,7 @@ app.delete('/api/admin/leads/:ref', requireUser, async (req, res) => {
 app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
   const b = req.body || {};
   const patch = { status: b.status, note: b.note, approved: Array.isArray(b.approved) ? b.approved.slice(0, 300) : undefined, feeRate: Number(b.feeRate) || undefined,
-    waApproval: ['sent', 'received', 'clear'].includes(b.waApproval) ? b.waApproval : undefined, waRead: b.waRead === true,
+    waApproval: ['sent', 'received', 'clear'].includes(b.waApproval) ? b.waApproval : undefined, waRead: b.waRead === true, docsSeen: b.docsSeen === true,
     paymentSent: b.paymentSent === true };
   if (b.plate !== undefined) {
     const p = normalizePlate(b.plate);
@@ -652,6 +714,7 @@ if (process.env.NODE_ENV === 'production') {
   const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
   app.use(express.static(dist, { index: false }));
   app.get('/admin', (req, res) => res.sendFile(path.join(dist, 'admin.html')));
+  app.get('/upload/:token', (req, res) => { res.set({ 'X-Robots-Tag': 'noindex', 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store' }); res.sendFile(path.join(dist, 'upload.html')); });
   app.get('*', (req, res) => res.sendFile(path.join(dist, 'index.html')));
 }
 

@@ -292,3 +292,10 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 .doc-set-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .doc-set-row input[aria-label="Document name"] { flex: 1; min-width: 200px; padding: 8px 10px; border: 1px solid #D6D3CC; border-radius: 8px; font: inherit; }
 .toggle-sm { display: flex; gap: 6px; align-items: center; font-size: 14px; cursor: pointer; }
+
+/* Customer upload link */
+.doc-link { border: 1px dashed #C9C4B8; border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+.doc-link-url { font-family: var(--mono); font-size: 12px; word-break: break-all; color: #2B3A67; }
+.doc-link-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.doc-link-btns .btn { display: inline-flex; align-items: center; text-decoration: none; }
+.name .multi.docs-new { background: #2F5AA8; }

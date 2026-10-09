@@ -269,7 +269,8 @@ const docsHave = (l, types) => {
 const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 // Phone photos are often 3–8 MB. Shrink big images to at most 2000px JPEG before uploading.
 function shrinkImage(file) {
-  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 1_200_000) return Promise.resolve(file);
+  const plain = /^image\/(jpeg|png|webp)$/.test(file.type); // other images (iPhone HEIC) become JPEG when the browser can read them
+  if (!/^image\//.test(file.type) || (plain && file.size < 1_200_000)) return Promise.resolve(file);
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
@@ -277,7 +278,7 @@ function shrinkImage(file) {
       const c = Object.assign(document.createElement('canvas'), { width: Math.round(img.width * k), height: Math.round(img.height * k) });
       const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
       URL.revokeObjectURL(img.src);
-      c.toBlob((b) => resolve(b && b.size < file.size ? new File([b], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file), 'image/jpeg', 0.85);
+      c.toBlob((b) => resolve(b && (!plain || b.size < file.size) ? new File([b], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file), 'image/jpeg', 0.85);
     };
     img.onerror = () => resolve(file);
     img.src = URL.createObjectURL(file);
@@ -289,7 +290,29 @@ const DOC_ERR = { file_too_large: 'That file is bigger than 5 MB. Upload a small
   not_your_lead: 'This lead is no longer assigned to you.' };
 
 // One upload button per document type from Settings. Files open only for signed-in team members.
-function Docs({ lead, types, onUpload, onOpenDoc, onRemoveDoc, onPatch }) {
+// Message sent with the customer's upload link, in the language they chose on the website.
+function uploadLinkMessage(lead, url, types) {
+  const need = types.filter((t) => t.required).map((t) => t.name).join(', ');
+  const till = new Date(lead.docLink.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
+  return lead.lang === 'hi'
+    ? `नमस्ते ${lead.name}, वाहन ${fmtPlate(lead.plate)} के चालान के लिए कृपया इस लिंक पर अपने दस्तावेज़ अपलोड करें:\n${url}\n\n${need ? `ज़रूरी दस्तावेज़: ${need}\n` : ''}यह लिंक ${till} तक चलेगा। - Niptao`
+    : `Hi ${lead.name}, please upload your documents for the challans on ${fmtPlate(lead.plate)} using this link:\n${url}\n\n${need ? `Documents needed: ${need}\n` : ''}The link works till ${till}. - Niptao`;
+}
+
+function Docs({ lead, types, onUpload, onOpenDoc, onRemoveDoc, onPatch, onDocLink }) {
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const link = lead.docLink && new Date(lead.docLink.expiresAt) > new Date() ? lead.docLink : null;
+  const linkUrl = link ? `${window.location.origin}/upload/${link.token}` : '';
+  const makeLink = async (off) => {
+    if (off && !window.confirm('Switch off this link? The customer will not be able to upload with it any more.')) return;
+    if (!off && link && !window.confirm('Make a new link? The old link will stop working.')) return;
+    setLinkBusy(true);
+    try { const e = await onDocLink(lead.ref, off); if (e) setErr(DOC_ERR[e] || 'The link was not changed. Try again.'); } finally { setLinkBusy(false); }
+  };
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(linkUrl); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); } catch { /* clipboard blocked */ }
+  };
   const [busyType, setBusyType] = useState('');
   const [err, setErr] = useState('');
   useEffect(() => setErr(''), [lead.ref]);
@@ -323,6 +346,23 @@ function Docs({ lead, types, onUpload, onOpenDoc, onRemoveDoc, onPatch }) {
     <div className="docs">
       <div className="ch-head"><div className="sec-k">Documents{needed.length > 0 && <> · {have} of {needed.length} needed</>}</div></div>
       {!types.length && <div className="hint">No document types yet. An admin can add them in Settings → Documents.</div>}
+      {types.length > 0 && (
+        <div className="doc-link">
+          {link ? (<>
+            <div className="small"><b>Customer upload link</b> · works till {fullDate(link.expiresAt)}</div>
+            <div className="doc-link-url">{linkUrl}</div>
+            <div className="doc-link-btns">
+              <a className="btn wa-btn" href={`https://wa.me/91${lead.phone}?text=${encodeURIComponent(uploadLinkMessage(lead, linkUrl, types))}`} target="_blank" rel="noopener noreferrer">Send on WhatsApp</a>
+              <button className="btn" onClick={copyLink}>{linkCopied ? 'Copied ✓' : 'Copy link'}</button>
+              <button className="btn ghost" disabled={linkBusy} onClick={() => makeLink(true)}>Switch off</button>
+              <button className="btn ghost" disabled={linkBusy} onClick={() => makeLink(false)}>New link</button>
+            </div>
+          </>) : (<>
+            <button className="btn" disabled={linkBusy} onClick={() => makeLink(false)}>🔗 Make upload link for customer</button>
+            <div className="hint">The customer opens it on their phone and uploads each document. They can't see or delete files.{lead.docLink ? ' The last link has expired.' : ''}</div>
+          </>)}
+        </div>
+      )}
       {types.map((t) => {
         const mine = docs.filter((d) => d.type === t.id);
         return (
@@ -331,7 +371,7 @@ function Docs({ lead, types, onUpload, onOpenDoc, onRemoveDoc, onPatch }) {
               <div><b>{mine.length ? '✓ ' : ''}{t.name}</b>{!t.required && <span className="small"> (optional)</span>}</div>
               <label className={`btn${mine.length ? '' : ' primary'}${busyType ? ' disabled' : ''}`}>
                 {busyType === t.id ? 'Uploading…' : mine.length ? 'Add another' : 'Upload'}
-                <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple hidden disabled={!!busyType}
+                <input type="file" accept="image/*,application/pdf" multiple hidden disabled={!!busyType}
                   onChange={(e) => { const f = [...e.target.files]; e.target.value = ''; if (f.length) upload(t, f); }} />
               </label>
             </div>
@@ -357,7 +397,7 @@ function Docs({ lead, types, onUpload, onOpenDoc, onRemoveDoc, onPatch }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc }) {
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink }) {
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
@@ -387,6 +427,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
   useEffect(() => { setDraft(''); setCopied(false); setEditing(false); setChSt(listState || ''); setWaDraft(''); setWaErr(''); setPlateIn(''); }, [lead.ref, listState]);
   // Opening a lead clears its "new WhatsApp reply" badge.
   useEffect(() => { if (lead.waUnread) onPatch(lead.ref, { waRead: true }); }, [lead.ref, lead.waUnread]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (lead.docsNew) onPatch(lead.ref, { docsSeen: true }); }, [lead.ref, lead.docsNew]); // eslint-disable-line react-hooks/exhaustive-deps
   const waOpen = !!lead.waLastIn && Date.now() - new Date(lead.waLastIn) < 24 * 3600e3;
   const WA_ERR = { window_closed: 'The customer has not messaged in the last 24 hours, so WhatsApp only allows the approval template. Use "Open in WhatsApp" instead, or ask an admin to add the template.',
     whatsapp_not_set_up: 'WhatsApp is not connected yet.', not_your_lead: 'This lead is no longer assigned to you.' };
@@ -618,7 +659,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
             </div>
           )}
 
-          <Docs lead={lead} types={docTypes} onUpload={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onPatch={onPatch} />
+          <Docs lead={lead} types={docTypes} onUpload={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onPatch={onPatch} onDocLink={onDocLink} />
 
           <div>
             <div className="sec-k">Status</div>
@@ -1193,6 +1234,13 @@ export default function Admin() {
       return '';
     } catch { return 'error'; }
   };
+  const onDocLink = async (ref, off) => {
+    try {
+      const { lead } = await call(`/api/admin/leads/${encodeURIComponent(ref)}/doclink`, auth, { method: 'POST', body: JSON.stringify({ off }) });
+      setLeads((ls) => ls.map((l) => (l.ref === ref ? lead : l)));
+      return '';
+    } catch (e) { if (e.status === 401) signOut(); return e.message; }
+  };
   const onRemoveDoc = async (ref, id) => {
     try {
       const { lead } = await call(docUrl(ref, id), auth, { method: 'DELETE' });
@@ -1362,7 +1410,7 @@ export default function Admin() {
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.ref} className={(sel === l.ref ? 'sel' : '') + (fresh.includes(l.ref) ? ' fresh' : '')} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{l.waUnread > 0 && <span className="multi unread">💬 {l.waUnread} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}{l.docs?.length ? ` · docs ${docsHave(l, docTypes)}` : ''}</div></td>
+                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{l.waUnread > 0 && <span className="multi unread">💬 {l.waUnread} new</span>}{l.docsNew > 0 && <span className="multi unread docs-new" title="The customer uploaded documents">📄 {l.docsNew} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}{l.docs?.length ? ` · docs ${docsHave(l, docTypes)}` : ''}</div></td>
                     <td>{l.plate ? <span className="plate">{fmtPlate(l.plate)}</span> : <span className="small">Not given yet</span>}</td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>
@@ -1387,7 +1435,7 @@ export default function Admin() {
       </main>
       {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st} lokDates={site?.lokAdalatDates}
         siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend} getPayment={getPayment} isAdminUser={isAdmin}
-        docTypes={docTypes} onUploadDoc={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc}
+        docTypes={docTypes} onUploadDoc={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onDocLink={onDocLink}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
     </>
   );
