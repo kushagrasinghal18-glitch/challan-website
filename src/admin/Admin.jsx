@@ -12,7 +12,7 @@ const POLL_MS = 15_000;
 // Official e-challan site: search by vehicle number + captcha, no OTP.
 // Niptao Lead Filler Chrome add-on, served from public/. Replace the zip and bump this on each release.
 const ADDON_ZIP = '/niptao-lead-filler.zip';
-const ADDON_VERSION = '1.7.1';
+const ADDON_VERSION = '1.7.2';
 // Park+ challan check (search by vehicle number). Used until a paid challan API is switched on.
 const PARKPLUS_URL = 'https://parkplus.io/e-challan';
 const PARIVAHAN_URL = 'https://echallan.parivahan.gov.in/index/accused-challan';
