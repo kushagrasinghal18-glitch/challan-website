@@ -62,7 +62,7 @@ const fileStore = {
 // ── Postgres backend ────────────────────────────────────
 let pool, ready;
 // Tables are created on first use. If that fails (database asleep or unreachable), the next call tries again.
-async function db() {
+export async function db() {
   if (!ready) ready = (async () => {
     const { default: pg } = await import('pg');
     if (!pool) {
@@ -245,6 +245,12 @@ export function updateLead(ref, patch, by, onlyFor) {
       out.waApproval = null;
     }
     if (typeof patch.plate === 'string' && patch.plate) out.plate = patch.plate;
+    // Name the customer gave on WhatsApp, replacing a placeholder name only.
+    if (typeof patch.name === 'string' && patch.name.trim()) out.name = patch.name.replace(/\s+/g, ' ').trim().slice(0, 120);
+    // Automatic WhatsApp: botPaused stops AI replies on this chat ({ at, by, reason } or null).
+    if (patch.botPaused !== undefined) out.botPaused = patch.botPaused ? { ...patch.botPaused, at: new Date().toISOString() } : null;
+    // Customer says they paid (text and/or a screenshot kept by saveDoc): { text, proofId, mime }.
+    if (patch.paymentClaim) out.paymentClaim = { ...patch.paymentClaim, at: new Date().toISOString() };
     // Vehicles from the same customer are separate leads linked by groupRef; vehicles = how many in the group.
     if (patch.group) { out.groupRef = patch.group.groupRef; out.vehicles = patch.group.vehicles; }
     // WhatsApp chat kept on the lead (latest 200 messages).
