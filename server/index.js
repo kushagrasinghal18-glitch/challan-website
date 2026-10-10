@@ -678,6 +678,8 @@ app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
     if (!(amount > 0 && amount <= 10_000_000) || b.paymentReceived?.confirmed !== true) return res.status(400).json({ error: 'payment_amount_required' });
     patch.paymentReceived = { amount };
   } else if (b.status === 'Payment received') return res.status(400).json({ error: 'payment_amount_required' });
+  // Undo a payment entered by mistake (for example the same money recorded on two cars).
+  if (b.paymentRemoved === true && b.paymentReceived === undefined) patch.paymentRemoved = true;
   if (b.plate !== undefined) {
     const p = normalizePlate(b.plate);
     if (!PLATE_RE.test(p)) return res.status(400).json({ error: 'invalid_plate' });

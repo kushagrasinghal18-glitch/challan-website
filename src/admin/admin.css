@@ -519,3 +519,4 @@ tbody tr.paid:hover { background: #D8F0DE; }
 tbody tr.paid.sel { background: #CDEBD5; }
 /* Several cars of one customer in a single row */
 td.plates .plate { display: inline-block; margin: 2px 4px 2px 0; }
+.btn.rm-pay { color: #B42318; }

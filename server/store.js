@@ -264,6 +264,9 @@ export function updateLead(ref, patch, by, onlyFor) {
       out.payment = { amount: patch.paymentReceived.amount, at: new Date().toISOString(), by };
       if (['New', 'Contacted'].includes(out.status || lead.status)) out.status = 'Payment received';
     }
+    if (patch.paymentRemoved && lead.payment) {
+      out.payment = null;
+    }
     if (patch.paymentSent) {
       const ok = (lead.challans || []).filter((c) => c.approved);
       const rate = FEE_RATES.includes(lead.feeRate) ? lead.feeRate : 50;
@@ -314,6 +317,7 @@ export function updateLead(ref, patch, by, onlyFor) {
       out.tokens = claim(lead.tokens, patch.tokenChallans.id, patch.tokenChallans.challans || []);
     }
     if (patch.removeToken) out.tokens = (lead.tokens || []).filter((t) => t.id !== patch.removeToken);
+    if (patch.paymentRemoved && lead.payment) autoNotes.push(`Payment of ₹${lead.payment.amount.toLocaleString('en-IN')} removed (by ${by}).`);
     if (patch.paymentReceived) autoNotes.push(`Payment received: ₹${patch.paymentReceived.amount.toLocaleString('en-IN')} (confirmed by ${by}).`);
     if (patch.docsSeen) out.docsNew = 0;
     // Private upload link for the customer: { token, expiresAt } or null to switch it off.

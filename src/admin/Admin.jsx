@@ -648,7 +648,7 @@ function AddVehicles({ lead, onAdd }) {
 }
 
 // "Are you sure the payment is received?" Needs the amount received and a tick before it saves.
-function PaymentDialog({ lead, onCancel, onSave }) {
+function PaymentDialog({ lead, others = [], onCancel, onSave }) {
   const due = payable(lead);
   const [amount, setAmount] = useState(lead.payment ? String(lead.payment.amount) : '');
   const [sure, setSure] = useState(false);
@@ -676,6 +676,7 @@ function PaymentDialog({ lead, onCancel, onSave }) {
         <label className="field">Amount received (₹)
           <input inputMode="numeric" autoFocus value={amount} placeholder="e.g. 2500" onChange={(e) => { setAmount(e.target.value.replace(/[^\d]/g, '')); setSure(false); }} />
         </label>
+        {others.filter((o) => o.payment && o.status !== 'Lost').map((o) => <div key={o.ref} className="stale">Already recorded on {o.plate ? fmtPlate(o.plate) : o.ref}: {inr(o.payment.amount)}. Don't enter the same money twice.</div>)}
         {n > 0 && due > 0 && n !== due && <div className="stale">This is {n < due ? 'less' : 'more'} than the amount due ({inr(due)}). Check it before confirming.</div>}
         <label className="check-line pay-sure"><input type="checkbox" checked={sure} disabled={!(n > 0)} onChange={(e) => setSure(e.target.checked)} />
           I confirm {n > 0 ? inr(n) : 'the payment'} has been received in our account.</label>
@@ -938,6 +939,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                       : <div className="small">When the money reaches your account, record it here. Amount due: {inr(payable(lead))}.</div>}
                     <div className="cc-row">
                       <button className={'btn ' + (lead.payment ? 'ghost' : 'primary')} disabled={busy} onClick={() => onAskPayment(lead.ref)}>{lead.payment ? 'Change amount' : '✓ Mark payment received'}</button>
+                      {lead.payment && <button className="btn ghost rm-pay" disabled={busy} onClick={() => { if (window.confirm(`Remove the payment of ${inr(lead.payment.amount)} from this lead? Use this if it was recorded by mistake or twice.`)) patch({ paymentRemoved: true }); }}>Remove payment</button>}
                     </div>
                   </div>
                 )}
@@ -1844,7 +1846,7 @@ export default function Admin() {
         onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken} onTokenChallans={onTokenChallans} onAddVehicles={onAddVehicles} myId={me.uid} onAskPayment={setPayFor}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
       {payFor && all.find((l) => l.ref === payFor) && (
-        <PaymentDialog lead={all.find((l) => l.ref === payFor)} onCancel={() => setPayFor(null)}
+        <PaymentDialog lead={all.find((l) => l.ref === payFor)} others={(() => { const g = all.find((l) => l.ref === payFor).groupRef; return g ? all.filter((l) => l.groupRef === g && l.ref !== payFor) : []; })()} onCancel={() => setPayFor(null)}
           onSave={async (amount) => {
             try {
               const { lead } = await call(`/api/admin/leads/${encodeURIComponent(payFor)}`, auth, { method: 'PATCH', body: JSON.stringify({ paymentReceived: { amount, confirmed: true } }) });
