@@ -486,3 +486,12 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 .add-veh { display: grid; gap: 8px; border: 1px dashed var(--line); border-radius: 10px; padding: 10px; background: #fff; }
 .add-veh .plate-input { flex: 1; min-width: 180px; max-width: none; width: auto; }
 .siblings .add-veh-row, .siblings .add-veh { margin-top: 8px; }
+
+/* Same-customer vehicle chips: fixed order, grey once challans are checked */
+.veh-chips .btn.veh .small { font-weight: 400; margin-left: 4px; }
+.veh-chips .btn.veh.checked { background: #ECEBE8; border-color: #CFCCC4; color: #6B7080; }
+.veh-chips .btn.veh.cur { border: 2px solid var(--navy); font-family: var(--mono); cursor: default; }
+.veh-chips .btn.veh.cur.checked { border-color: #8A8F9C; }
+.group-appr-btn { margin-top: 4px; padding: 6px 12px; font-size: 13px; }
+.group-appr { margin-top: 8px; }
+.no-challan { font-size: 14px; font-weight: 600; color: #1F6B45; background: #E3F2E9; border-radius: 8px; padding: 8px 12px; }

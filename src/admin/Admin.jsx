@@ -94,6 +94,72 @@ function approvalMessage(l, dates) {
     'Team Niptao',
   ].join('\n');
 }
+// One approval message for a customer with several vehicles: each vehicle with its approved challans
+// (or that it has none), then one total. Leads come in the fixed order shown in the panel.
+function groupApprovalMessage(group, dates) {
+  const first = group[0];
+  const line = (c, i) => `${i + 1}. Challan ${c.challanNo || '-'}${c.date ? ` (${c.date})` : ''}${c.offence ? ` - ${String(c.offence).slice(0, 70)}` : ''} - ${inr(c.amount || 0)}`;
+  const withOk = group.filter((l) => approvedOf(l).length);
+  const total = withOk.reduce((n, l) => n + payable(l), 0);
+  const blocks = group.map((l) => {
+    const ok = approvedOf(l), rest = (l.challans || []).filter((c) => !c.approved);
+    const head = `🚗 *${fmtPlate(l.plate) || 'Vehicle number to be added'}*`;
+    if (!l.challans) return [head, 'We are still checking this vehicle for challans.'];
+    if (!l.challans.length) return [head, 'No challans found on this vehicle.'];
+    if (!ok.length) return [head, `${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} (${inr(challanTotal(l))}), none selected for settlement.`];
+    return [head, `Challans we will settle (${ok.length}):`, ...ok.map(line), `Amount you pay (${feeRate(l)}%): *${inr(payable(l))}*`,
+      ...(rest.length ? [`Not included: ${rest.length} challan${rest.length === 1 ? '' : 's'}, ${inr(rest.reduce((n, c) => n + (c.amount || 0), 0))}`] : [])];
+  });
+  const plan = lokPlan(first, withOk.flatMap(approvedOf), dates || []);
+  const lokLine = plan.length
+    ? `Next Lok Adalat: ${plan.length === 1 ? `*${lokLong(plan[0].lok)}*` : plan.map((p) => `*${p.label} – ${lokLong(p.lok)}*`).join(' · ')}. We will settle the approved challans there, so please reply before then.`
+    : '';
+  return [
+    `Hi ${first.name},`,
+    '',
+    `This is Niptao. Here are the challans on your ${group.length} vehicles.`,
+    ...blocks.flatMap((b) => ['', ...b]),
+    '',
+    `*Total you pay for all vehicles: ${inr(total)}*`,
+    ...(lokLine ? ['', lokLine] : []),
+    '',
+    `Please reply *I APPROVE* to give your written approval for Niptao to settle the challans listed above for ${inr(total)}.`,
+    '',
+    `Reference: ${group.map((l) => l.ref).join(', ')}`,
+    'Team Niptao',
+  ].join('\n');
+}
+
+// Approval for all of a customer's vehicles at once. Sending marks each vehicle with approved challans as sent.
+function GroupApproval({ group, lokDates, onPatch }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const withOk = group.filter((l) => approvedOf(l).length);
+  const msg = groupApprovalMessage(group, lokDates);
+  const sent = withOk.filter((l) => l.waApproval?.state === 'sent' && !waStale(l));
+  const done = withOk.length > 0 && withOk.every((l) => l.waApproval?.state === 'received' && !waStale(l));
+  const plates = withOk.map((l) => fmtPlate(l.plate)).join(', ');
+  const each = async (list, p) => { setBusy(true); try { for (const l of list) await onPatch(l.ref, p(l)); } finally { setBusy(false); } };
+  const markSent = () => each(withOk, (l) => ({ waApproval: 'sent', note: `Sent one approval request on WhatsApp for all ${group.length} vehicles (${plates}). This vehicle: ${approvedOf(l).length} challan${approvedOf(l).length === 1 ? '' : 's'}, ${inr(payable(l))} payable.` }));
+  const markOk = () => each(sent, () => ({ waApproval: 'received', note: `Customer gave written approval on WhatsApp for all vehicles (${plates}).` }));
+  if (!open) return <button type="button" className="btn ghost group-appr-btn" onClick={() => setOpen(true)}>💬 One approval message for all {group.length} vehicles{done ? ' · ✓ approved' : sent.length ? ' · sent' : ''}</button>;
+  return (
+    <div className={'wa-appr group-appr' + (done ? ' done' : '')}>
+      <div className="sec-k">Approval for all {group.length} vehicles</div>
+      {!withOk.length ? <div className="small">Tick the challans the customer approved on each vehicle first. Vehicles with no challans are listed as "No challans found".</div> : (<>
+        <div className="small">{done ? '✓ The customer approved all vehicles in writing.' : sent.length ? `Sent for ${sent.length} vehicle${sent.length === 1 ? '' : 's'}. Waiting for "I APPROVE".` : `Covers ${withOk.length} vehicle${withOk.length === 1 ? '' : 's'} with approved challans. Total ${inr(withOk.reduce((n, l) => n + payable(l), 0))}.`}</div>
+        <div className="cc-row">
+          <a className={'btn ' + (!sent.length && !done ? 'wa-btn' : '')} href={`https://wa.me/91${group[0].phone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer"
+            onClick={(e) => { if (busy) { e.preventDefault(); return; } markSent(); }}>{sent.length || done ? 'Send again on WhatsApp' : 'Send on WhatsApp'}</a>
+          {sent.length > 0 && <button className="btn primary" disabled={busy} onClick={markOk}>Customer replied "I APPROVE"</button>}
+          <button type="button" className="btn ghost" onClick={() => setOpen(false)}>Close</button>
+        </div>
+      </>)}
+      <details className="guide"><summary>See the message</summary><pre className="wa-msg">{msg}</pre></details>
+    </div>
+  );
+}
+
 // True when the approved challans or the rate changed after the approval message went out.
 const waStale = (l) => {
   const w = l.waApproval;
@@ -589,6 +655,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
   const [waDraft, setWaDraft] = useState('');
   const [waErr, setWaErr] = useState('');
   const [plateIn, setPlateIn] = useState('');
+  const group = [lead, ...siblings].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)) || a.ref.localeCompare(b.ref));
   const [pay, setPay] = useState(null); // { text, upiLink, qr, amount } or { error }
   const [qrCopied, setQrCopied] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -670,12 +737,20 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
             {lead.groupRef ? (
               <div className="siblings">
                 <div className="sec-k">Same customer · {siblings.length + 1} vehicles</div>
-                <div className="cc-row">
-                  <span className="plate cur">{fmtPlate(lead.plate)}</span>
-                  {siblings.map((x) => (
-                    <button key={x.ref} className="btn" onClick={() => onOpen(x.ref)} title={`${x.ref} · ${x.status}`}>{fmtPlate(x.plate)} <span className="small">· {x.status}</span></button>
-                  ))}
+                {/* Fixed order (oldest first) so the chips don't move when you switch vehicles. Grey = challans checked. */}
+                <div className="cc-row veh-chips">
+                  {group.map((x) => {
+                    const cur = x.ref === lead.ref, checked = Array.isArray(x.challans);
+                    const what = !checked ? x.status : !x.challans.length ? 'no challan' : `${x.challans.length} challan${x.challans.length === 1 ? '' : 's'}`;
+                    return (
+                      <button key={x.ref} className={'btn veh' + (cur ? ' cur' : '') + (checked ? ' checked' : '')} aria-current={cur || undefined}
+                        onClick={() => { if (!cur) onOpen(x.ref); }} title={`${x.ref} · ${x.status}${checked ? ' · challans checked' : ''}`}>
+                        {fmtPlate(x.plate) || 'No number'} <span className="small">· {what}</span>
+                      </button>
+                    );
+                  })}
                 </div>
+                <GroupApproval group={group} lokDates={lokDates} onPatch={onPatch} />
                 {siblings.length + 1 < (lead.vehicles || 0) && <div className="small">{lead.vehicles - siblings.length - 1} more vehicle(s) from this request are assigned to someone else or were deleted.</div>}
                 {lead.plate && <AddVehicles lead={lead} onAdd={onAddVehicles} />}
               </div>
@@ -769,7 +844,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                     ))}
                     {chSt && !lead.challans.some((c) => (challanState(c) || '?') === chSt) && <div className="small">No challans from {STATES[chSt] || 'this state'} on this lead.</div>}
                   </div>
-                ) : <div className="small">No challans found for this vehicle.</div>}
+                ) : <div className="no-challan">✓ No challans on this vehicle ({fmtPlate(lead.plate)}).</div>}
                 {approvedOf(lead).length > 0 && (
                   <div className="payable">
                     <div><div className="k">Approved challans</div><div className="v">{inr(approvedTotal(lead))}</div></div>
@@ -1648,7 +1723,7 @@ export default function Admin() {
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.ref} className={(sel === l.ref ? 'sel' : '') + (fresh.includes(l.ref) ? ' fresh' : '')} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{l.waUnread > 0 && <span className="multi unread">💬 {l.waUnread} new</span>}{l.docsNew > 0 && <span className="multi unread docs-new" title="The customer uploaded documents">📄 {l.docsNew} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}{l.docs?.length ? ` · docs ${docsHave(l, docTypes)}` : ''}</div></td>
+                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{l.waUnread > 0 && <span className="multi unread">💬 {l.waUnread} new</span>}{l.docsNew > 0 && <span className="multi unread docs-new" title="The customer uploaded documents">📄 {l.docsNew} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? (l.challans.length ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ' · no challans') : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}{l.docs?.length ? ` · docs ${docsHave(l, docTypes)}` : ''}</div></td>
                     <td>{l.plate ? <span className="plate">{fmtPlate(l.plate)}</span> : <span className="small">Not given yet</span>}</td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>

@@ -367,8 +367,9 @@ app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
   const total = challans.reduce((n, c) => n + c.amount, 0);
   const source = clip(req.body.source, 40) || 'Parivahan';
   const ownerName = clip(req.body.ownerName, 120);
-  const note = `Fetched ${challans.length} challan${challans.length === 1 ? '' : 's'} from ${source}`
-    + (total ? `, total ₹${total.toLocaleString('en-IN')}` : '') + '.';
+  const note = challans.length
+    ? `Fetched ${challans.length} challan${challans.length === 1 ? '' : 's'} from ${source}` + (total ? `, total ₹${total.toLocaleString('en-IN')}` : '') + '.'
+    : `No challans on this vehicle (checked on ${source}).`;
   try {
     const lead = await updateLead(req.params.ref, { challans, challansSource: source, note, ...(ownerName ? { rcOwner: { name: ownerName, source } } : {}) },
       req.user.name, req.user.role === 'admin' ? null : req.user.uid);
