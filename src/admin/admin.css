@@ -152,6 +152,9 @@ tbody tr.sel { background: var(--row-sel); }
 .ask .btn { height: 32px; margin-left: auto; }
 .ch.ok { border-color: #7CC29B; background: #EEF8F2; }
 .appr { color: #1F6B45; }
+.verdict { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.verdict select { font-size: 13px; padding: 4px 6px; max-width: 100%; }
+.ch.cannot { background: #FDF2F2; border-color: #F1C6C6; }
 .appr-box { display: inline-flex; gap: 6px; align-items: center; margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--navy); cursor: pointer; }
 .appr-box input { width: 16px; height: 16px; accent-color: #1F7A4D; }
 .challan-check .guide { margin: 0 0 8px; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }

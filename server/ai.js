@@ -2,6 +2,7 @@
 // (Render → Environment). GEMINI_MODEL picks the model; otherwise gemini-flash-latest (with older names as fallbacks).
 // The AI answers questions about Niptao, asks for the vehicle number and name, and says when the
 // customer claims to have paid or needs a person. It never sends anything on its own: autopilot.js decides.
+import { notReason, cannotDo } from '../shared/verdict.js';
 import { PLATE_RE, normalizePlate } from './plate.js';
 
 export const aiConfigured = (env = process.env) => !!env.GEMINI_API_KEY;
@@ -49,7 +50,11 @@ export function customerFacts(leads, site = {}, today = new Date().toISOString()
     const parts = [`Vehicle ${l.plate}: stage "${l.status}"`];
     if (!l.challans) parts.push('challans not checked yet');
     else if (!l.challans.length) parts.push('no pending challans found');
-    else parts.push(`${l.challans.length} challan(s) found`);
+    else {
+      parts.push(`${l.challans.length} challan(s) found`);
+      const cannot = l.challans.filter(cannotDo);
+      if (cannot.length) parts.push(`${cannot.length} of them cannot be taken up right now: ${cannot.map((c) => `${c.challanNo || 'one challan'} (${notReason(c).ai})`).join(', ')}`);
+    }
     if (l.waApproval?.state === 'sent') parts.push(`approval message sent, waiting for "I APPROVE" (${ok.length} challan(s), customer pays ${inr(payable)})`);
     if (l.waApproval?.state === 'received') parts.push(`customer approved ${ok.length} challan(s), pays ${inr(payable)}`);
     if (l.paymentSent && !l.payment) parts.push('payment details sent, payment not confirmed yet');

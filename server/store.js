@@ -230,9 +230,22 @@ export function updateLead(ref, patch, by, onlyFor) {
     // approved: indexes into lead.challans that the customer agreed to settle.
     if (Array.isArray(patch.approved) && Array.isArray(lead.challans)) {
       const pick = new Set(patch.approved.filter(Number.isInteger));
-      out.challans = lead.challans.map((c, i) => ({ ...c, approved: pick.has(i) }));
+      out.challans = lead.challans.map((c, i) => ({ ...c, approved: pick.has(i) && c.canDo !== false }));
       out.approvedAt = new Date().toISOString();
       out.approvedBy = by;
+    }
+    // Can this challan be resolved: { index, canDo: true | false | null, reason }. Cannot also un-ticks "approved".
+    if (patch.challanVerdict && Array.isArray(out.challans || lead.challans)) {
+      const { index, canDo, reason } = patch.challanVerdict;
+      const list = out.challans || lead.challans;
+      const c = list[index];
+      if (c) {
+        const next = { ...c };
+        delete next.canDo; delete next.notReason;
+        if (canDo === true) next.canDo = true;
+        if (canDo === false) Object.assign(next, { canDo: false, notReason: reason, approved: false });
+        out.challans = list.map((x, i) => (i === index ? next : x));
+      }
     }
     // Written approval over WhatsApp: 'sent' snapshots what was asked for, 'received' records the customer's yes.
     if (patch.waApproval === 'sent') {
@@ -330,7 +343,13 @@ export function updateLead(ref, patch, by, onlyFor) {
     if (patch.docLink !== undefined) out.docLink = patch.docLink ? { ...patch.docLink, at: new Date().toISOString(), by } : null;
     if (patch.removeDoc) out.docs = (lead.docs || []).filter((d) => d.id !== patch.removeDoc);
     if (Array.isArray(patch.challans)) {
-      out.challans = patch.challans;
+      // Challans fetched again (e.g. by the add-on): keep the can / cannot marks already made on them.
+      const marked = new Map((lead.challans || []).filter((c) => c.challanNo && typeof c.canDo === 'boolean').map((c) => [c.challanNo, c]));
+      out.challans = patch.challans.map((c) => {
+        const old = typeof c.canDo === 'boolean' ? null : marked.get(c.challanNo);
+        if (!old) return c;
+        return old.canDo ? { ...c, canDo: true } : { ...c, canDo: false, notReason: old.notReason, approved: false };
+      });
       out.challansAt = new Date().toISOString();
       out.challansBy = by;
       out.challansSource = patch.challansSource || '';
