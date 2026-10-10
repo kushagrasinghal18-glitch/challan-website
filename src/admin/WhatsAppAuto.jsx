@@ -111,6 +111,18 @@ export default function WhatsAppAuto({ auth, call, signOut }) {
       </>)}
       {!on && msg && <div className={msg.ok ? 'ok-msg' : 'err'} role="status" style={{ marginTop: 10 }}>{msg.text}</div>}
       <TryAI auth={auth} call={call} signOut={signOut} notes={form.notes} ready={s.aiReady} />
+      <div className="try-ai">
+        <div className="ch-head"><div className="sec-k">Recent activity</div>
+          <button type="button" className="btn ghost edit" onClick={load}>Refresh</button></div>
+        <div className="hint">Why the AI did or didn't reply to each message since the site last started. Newest first.</div>
+        {!(s.activity || []).length ? <div className="small">Nothing yet. Send a WhatsApp message to the linked number, then press Refresh.</div> : (
+          <ul className="wa-activity">
+            {s.activity.map((a, i) => (
+              <li key={i} className={a.bad ? 'bad' : ''}><span className="small">{new Date(a.at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}{a.who ? ` · ${a.who}` : ''}</span> {a.text}</li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }
@@ -145,7 +157,7 @@ function TryAI({ auth, call, signOut, notes, ready }) {
       setChat([...next, { dir: 'out', text: a.reply, info }]);
     } catch (e2) {
       if (e2.status === 401) return signOut();
-      setErr(e2.message === 'ai_not_ready' ? 'Add GEMINI_API_KEY in Render → Environment first.' : 'The AI did not answer. Check the GEMINI_API_KEY in Render, then try again.');
+      setErr(e2.message === 'ai_not_ready' ? 'Add GEMINI_API_KEY in Render → Environment first.' : `The AI did not answer. ${e2.detail || 'Check the GEMINI_API_KEY in Render, then try again.'}`);
     } finally { setBusy(false); }
   }
 

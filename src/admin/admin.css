@@ -538,3 +538,6 @@ td.plates .plate { display: inline-block; margin: 2px 4px 2px 0; }
 .try-ai { margin-top: 18px; border: 1px solid #D6D2C9; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: #fff; }
 .try-ai .wa-msgs { min-height: 120px; }
 .try-info { margin-top: 4px; font-size: 12px; color: #6B4A00; }
+.wa-activity { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; font-size: 13px; }
+.wa-activity li { padding: 5px 0; border-bottom: 1px solid #EEE9E0; }
+.wa-activity li.bad { color: #9B1C1C; }

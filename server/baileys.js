@@ -17,7 +17,7 @@ const PER_DAY = () => Number(process.env.WA_MAX_PER_DAY) || 400;
 const sentAt = [];
 
 let sock = null, state = 'off', qr = null, pairCode = null, pairPhone = '', me = '', lastError = '', retry = 0, timer = null;
-let onMessage = () => {}, onStatus = () => {};
+let onMessage = () => {}, onStatus = () => {}, onSkip = () => {};
 const ours = new Map(); // message id → phone, for messages this server sent (so they aren't saved twice)
 
 export function status() {
@@ -63,11 +63,15 @@ async function handleUpsert({ messages, type }) {
     const body = readMessage(msg.message);
     if (!body) continue;
     const phone = await resolvePhone(msg.key);
-    if (!phone || phone === me) { console.log('[wa] skipped message from', jid.replace(/\d(?=\d{4})/g, '•')); continue; }
+    if (!phone || phone === me) {
+      console.log('[wa] skipped message from', jid.replace(/\d(?=\d{4})/g, '•'));
+      onSkip(phone ? 'Message from this same number ignored.' : 'Message ignored: WhatsApp did not share an Indian mobile number for this chat.');
+      continue;
+    }
     const at = new Date(Number(msg.messageTimestamp || 0) * 1000 || Date.now()).toISOString();
     try {
       await onMessage({ id: msg.key.id, phone, jid, fromMe: !!msg.key.fromMe, name: msg.pushName || '', at, ...body, raw: msg });
-    } catch (err) { console.error('[wa] message handling failed', err.message); }
+    } catch (err) { console.error('[wa] message handling failed', err.message); onSkip(`Message could not be handled: ${err.message}`); }
   }
 }
 
@@ -136,6 +140,7 @@ async function connect() {
 export async function startLive(handlers, { connectNow = true } = {}) {
   onMessage = handlers.onMessage || onMessage;
   onStatus = handlers.onStatus || onStatus;
+  onSkip = handlers.onSkip || onSkip;
   if (connectNow) await resume();
 }
 

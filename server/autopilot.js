@@ -70,6 +70,14 @@ export function mountAutopilot(app, deps) {
   const lastJid = new Map(); // phone → chat id the customer last wrote from (WhatsApp may use a private id)
   const aiSent = new Map(); // phone → times of AI replies, for the per-chat cap
   const timers = new Map();
+  // What happened lately, shown in Settings so the team can see why the AI did or didn't answer.
+  const activity = [];
+  const mask = (p) => (p ? `${p.slice(0, 2)}••••${p.slice(-4)}` : '');
+  const log = (phone, text, bad = false) => {
+    activity.unshift({ at: new Date().toISOString(), who: mask(phone), text, bad });
+    activity.length = Math.min(activity.length, 40);
+    if (bad) console.log('[wa]', mask(phone), text);
+  };
 
   // Send and keep the message on the lead. by: BOT, AUTO, or a team member's name.
   async function say(phone, ref, text, by, kind = 'text') {
@@ -127,7 +135,8 @@ export function mountAutopilot(app, deps) {
     if (m.jid) lastJid.set(m.phone, m.jid);
     const msg = { id: m.id, from: `91${m.phone}`, name: m.name, text: m.text, at: m.at, ...(m.fromMe ? { dir: 'out' } : {}) };
     // Typed on the phone (or WhatsApp Web) by the team: keep it on the lead; the AI then stays quiet a while.
-    if (m.fromMe) return enqueue(() => handleWhatsApp({ messages: [msg] }, { by: 'Phone' }));
+    if (m.fromMe) { log(m.phone, 'Team message typed on the phone. The AI stays quiet in this chat for 2 hours.'); return enqueue(() => handleWhatsApp({ messages: [msg] }, { by: 'Phone' })); }
+    log(m.phone, `Message received: "${m.text.slice(0, 60)}"`);
     let handled = false;
     await enqueue(async () => {
       const before = await byPhone(m.phone);
@@ -157,20 +166,25 @@ export function mountAutopilot(app, deps) {
 
   function schedule(phone) {
     clearTimeout(timers.get(phone));
-    timers.set(phone, setTimeout(() => { timers.delete(phone); aiTurn(phone).catch((err) => console.error('[wa] AI reply failed', err.message)); }, debounceMs));
+    timers.set(phone, setTimeout(() => { timers.delete(phone); aiTurn(phone).catch((err) => log(phone, `AI did not reply: ${err.message}`, true)); }, debounceMs));
   }
 
   async function aiTurn(phone) {
     const bot = await getBot();
-    if (bot.on === false || !bot.ai || !ai.ready() || !live.isLive()) return;
+    if (bot.on === false) return log(phone, 'No AI reply: Automatic WhatsApp is switched off.');
+    if (!bot.ai) return log(phone, 'No AI reply: "AI replies" is unticked in Settings.', true);
+    if (!ai.ready()) return log(phone, 'No AI reply: GEMINI_API_KEY is not set in Render.', true);
+    if (!live.isLive()) return log(phone, 'No AI reply: the WhatsApp number is not connected.', true);
     const leads = await byPhone(phone);
-    if (!leads.length || leads.some((l) => l.botPaused)) return;
+    if (!leads.length) return log(phone, 'No AI reply: no lead was found for this number.', true);
+    if (leads.some((l) => l.botPaused)) return log(phone, 'No AI reply: AI is paused on this chat (Turn AI back on in the lead).');
     const chat = mergedChat(leads);
     const last = chat[chat.length - 1];
-    if (!last || last.dir !== 'in' || Date.now() - new Date(last.at) > REPLY_WITHIN_MS) return;
-    if (humanRecently(chat)) return;
+    if (!last || last.dir !== 'in') return;
+    if (Date.now() - new Date(last.at) > REPLY_WITHIN_MS) return log(phone, 'No AI reply: the message is more than 12 hours old.');
+    if (humanRecently(chat)) return log(phone, 'No AI reply: someone from the team wrote in this chat in the last 2 hours.');
     const recent = (aiSent.get(phone) || []).filter((t) => t > Date.now() - 3600e3);
-    if (recent.length >= AI_PER_CHAT_HOUR) return;
+    if (recent.length >= AI_PER_CHAT_HOUR) return log(phone, 'No AI reply: 20 AI replies to this chat in the last hour already.', true);
     const answer = await ai.answer({ chat, leads, site: await getSettings(), notes: bot.notes });
     if (!answer) return;
     await enqueue(async () => {
@@ -185,6 +199,7 @@ export function mountAutopilot(app, deps) {
       }
       await say(phone, home.ref, answer.reply, BOT);
       aiSent.set(phone, [...recent, Date.now()]);
+      log(phone, `AI replied${named.length ? ` and added ${named.join(', ')}` : ''}.`);
       if (named.length) console.log('[wa] AI added vehicles', named.join(','));
       if (answer.handoff) {
         for (const l of now) await updateLead(l.ref, { botPaused: { by: BOT, reason: 'handoff' }, ...(l.ref === home.ref ? { note: 'The AI handed this chat to the team (the customer asked for a person or something it could not answer). AI replies are paused on this chat. Reply on WhatsApp, then turn AI back on from this lead if you want.' } : {}) }, BOT);
@@ -194,6 +209,7 @@ export function mountAutopilot(app, deps) {
 
   const handlers = {
     onMessage,
+    onSkip: (text) => log('', text, true),
     onStatus: (st) => enqueue(async () => {
       for (const l of await byPhone(st.phone)) if ((l.waChat || []).some((c) => c.id === st.id)) await updateLead(l.ref, { waStatus: st }, 'WhatsApp');
     }),
@@ -201,7 +217,7 @@ export function mountAutopilot(app, deps) {
   getBot().then((b) => live.startLive(handlers, { connectNow: b.on !== false })).catch((err) => console.error('[wa] start failed', err.message));
 
   // ── Admin routes ──
-  const view = async () => ({ ...live.status(), enabled: live.liveEnabled(), aiReady: ai.ready(), settings: await getBot() });
+  const view = async () => ({ ...live.status(), enabled: live.liveEnabled(), aiReady: ai.ready(), settings: await getBot(), activity });
   const fail = (res, err) => {
     if (err.code === 'live_off') return res.status(503).json({ error: 'live_off' });
     if (err.code === 'crm_off') return res.status(409).json({ error: 'crm_off' });
@@ -261,7 +277,7 @@ export function mountAutopilot(app, deps) {
       const answer = await ai.answer({ chat, leads, site: await getSettings(), notes: typeof b.notes === 'string' ? b.notes.slice(0, 4000) : (await getBot()).notes });
       if (!answer) return res.status(502).json({ error: 'no_answer' });
       res.json(answer);
-    } catch (err) { console.error('[wa] AI test failed', err.message); res.status(502).json({ error: 'ai_failed', detail: err.message.slice(0, 200) }); }
+    } catch (err) { console.error('[wa] AI test failed', err.message); res.status(502).json({ error: 'ai_failed', detail: err.message.slice(0, 300) }); }
   });
 
   // Pause or resume AI replies for this customer (all their vehicles): { paused: boolean }.
