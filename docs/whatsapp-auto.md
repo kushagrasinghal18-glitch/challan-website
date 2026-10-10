@@ -43,6 +43,7 @@ If you're on the same phone, type the number and press **Get a code instead**, t
 - **AI replies**: on or off for everyone. On a lead, the WhatsApp chat has **Pause AI** for one customer.
 - **Send payment details by itself**: on or off. Off means you send them from the lead as before.
 - **Extra notes for the AI**: offers, office hours, anything it should tell customers.
+- **Try the AI**: type as a customer and see exactly what the AI would answer, using the notes as typed. Nothing is sent on WhatsApp and no lead is created. Works even when the number isn't linked or the switch is off.
 
 The AI goes quiet in a chat for 2 hours after anyone from the team writes there (on the phone or from the panel). When a customer asks for a person or something it can't answer, it pauses itself on that chat and the list shows **🙋 needs you**. Press **Turn AI back on** in the lead when you're done.
 

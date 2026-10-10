@@ -535,3 +535,6 @@ td.plates .plate { display: inline-block; margin: 2px 4px 2px 0; }
 .bot-row.paused { color: #9A5B00; background: #FFF6E5; }
 .claim { margin-top: 8px; font-size: 13px; color: #6B4A00; background: #FFF6E5; border-radius: 8px; padding: 6px 10px; }
 .wa-auto .toggle.power { margin: 0 0 14px; padding: 12px 14px; border: 1px solid #D6D2C9; border-radius: 12px; }
+.try-ai { margin-top: 18px; border: 1px solid #D6D2C9; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: #fff; }
+.try-ai .wa-msgs { min-height: 120px; }
+.try-info { margin-top: 4px; font-size: 12px; color: #6B4A00; }

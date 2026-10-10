@@ -247,6 +247,23 @@ export function mountAutopilot(app, deps) {
     } catch (err) { fail(res, err); }
   });
 
+  // Settings → "Try the AI": a pretend customer chat. Nothing is sent on WhatsApp and no lead changes.
+  // { chat: [{ dir: 'in' | 'out', text }], notes, name, plates } → the AI's answer.
+  app.post('/api/admin/wa-live/test', requireAdmin, async (req, res) => {
+    if (!ai.ready()) return res.status(409).json({ error: 'ai_not_ready' });
+    const b = req.body || {};
+    const chat = (Array.isArray(b.chat) ? b.chat : []).slice(-30).map((m, i) => ({ id: `t${i}`, dir: m?.dir === 'out' ? 'out' : 'in', text: String(m?.text || '').slice(0, 1500), at: new Date().toISOString() })).filter((m) => m.text);
+    if (!chat.length || chat[chat.length - 1].dir !== 'in') return res.status(400).json({ error: 'empty' });
+    const name = String(b.name || '').slice(0, 80) || 'WhatsApp customer';
+    const plates = (Array.isArray(b.plates) ? b.plates : []).slice(0, 20).map(String);
+    const leads = plates.length ? plates.map((plate) => ({ name, plate, status: 'New' })) : [{ name, plate: '', status: 'New' }];
+    try {
+      const answer = await ai.answer({ chat, leads, site: await getSettings(), notes: typeof b.notes === 'string' ? b.notes.slice(0, 4000) : (await getBot()).notes });
+      if (!answer) return res.status(502).json({ error: 'no_answer' });
+      res.json(answer);
+    } catch (err) { console.error('[wa] AI test failed', err.message); res.status(502).json({ error: 'ai_failed', detail: err.message.slice(0, 200) }); }
+  });
+
   // Pause or resume AI replies for this customer (all their vehicles): { paused: boolean }.
   app.post('/api/admin/leads/:ref/bot', requireUser, async (req, res) => {
     try {

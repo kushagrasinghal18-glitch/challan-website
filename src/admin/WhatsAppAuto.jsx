@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Settings → Automatic WhatsApp: link the WhatsApp number (QR or pairing code), switch the AI and the
 // automatic payment message on or off, and give the AI extra notes. Admins only.
@@ -110,6 +110,68 @@ export default function WhatsAppAuto({ auth, call, signOut }) {
       </details>
       </>)}
       {!on && msg && <div className={msg.ok ? 'ok-msg' : 'err'} role="status" style={{ marginTop: 10 }}>{msg.text}</div>}
+      <TryAI auth={auth} call={call} signOut={signOut} notes={form.notes} ready={s.aiReady} />
     </section>
+  );
+}
+
+// Pretend to be a customer and see what the AI would answer. Uses the notes typed above, even unsaved.
+// Nothing goes out on WhatsApp and no lead is created.
+function TryAI({ auth, call, signOut, notes, ready }) {
+  const [chat, setChat] = useState([]); // [{ dir: 'in' | 'out', text, info? }]
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [known, setKnown] = useState({ name: '', plates: [] });
+  const boxRef = useRef(null);
+  useEffect(() => { const el = boxRef.current; if (el) el.scrollTop = el.scrollHeight; }, [chat.length, busy]);
+
+  async function send(e) {
+    e.preventDefault();
+    const text = draft.trim();
+    if (!text || busy) return;
+    const next = [...chat, { dir: 'in', text }];
+    setChat(next); setDraft(''); setErr(''); setBusy(true);
+    try {
+      const a = await call('/api/admin/wa-live/test', auth, { method: 'POST', body: JSON.stringify({ chat: next.map(({ dir, text: t }) => ({ dir, text: t })), notes, ...known }) });
+      const plates = [...new Set([...known.plates, ...a.plates])];
+      setKnown({ name: a.name || known.name, plates });
+      const info = [
+        a.plates.length ? `Would add vehicle${a.plates.length === 1 ? '' : 's'} ${a.plates.join(', ')} to the lead` : '',
+        a.name ? `Would save the name "${a.name}"` : '',
+        a.paid ? 'Would flag "says paid" on the lead' : '',
+        a.handoff ? 'Would hand this chat to the team and pause itself' : '',
+      ].filter(Boolean);
+      setChat([...next, { dir: 'out', text: a.reply, info }]);
+    } catch (e2) {
+      if (e2.status === 401) return signOut();
+      setErr(e2.message === 'ai_not_ready' ? 'Add GEMINI_API_KEY in Render → Environment first.' : 'The AI did not answer. Check the GEMINI_API_KEY in Render, then try again.');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="try-ai">
+      <div className="ch-head"><div className="sec-k">Try the AI</div>
+        {chat.length > 0 && <button type="button" className="btn ghost edit" onClick={() => { setChat([]); setKnown({ name: '', plates: [] }); setErr(''); }}>Start over</button>}</div>
+      <div className="hint">Type as if you were a customer. You see exactly what the AI would reply, using the notes above (even before you save them). Nothing is sent on WhatsApp and no lead is created.</div>
+      {!ready && <div className="warn">Not active yet: add <code>GEMINI_API_KEY</code> in Render → Environment.</div>}
+      <div className="wa-msgs" ref={boxRef}>
+        {!chat.length && <div className="small">e.g. "Hi, I have 3 challans on my car, how much will it cost?"</div>}
+        {chat.map((m, i) => (
+          <div key={i} className={'wa-bub ' + m.dir}>
+            <div className="t">{m.text}</div>
+            <div className="m">{m.dir === 'in' ? 'You (as customer)' : 'Niptao AI'}</div>
+            {m.info?.length > 0 && <div className="try-info">{m.info.map((x) => <div key={x}>↳ {x}</div>)}</div>}
+          </div>
+        ))}
+        {busy && <div className="wa-bub out"><div className="t">typing…</div></div>}
+      </div>
+      <form className="wa-reply" onSubmit={send}>
+        <textarea rows={2} value={draft} disabled={!ready} onChange={(e) => setDraft(e.target.value)} placeholder="Message as a customer" aria-label="Test message"
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) send(e); }} />
+        <button className="btn wa-btn" disabled={busy || !ready || !draft.trim()}>Send</button>
+      </form>
+      {err && <div className="err">{err}</div>}
+    </div>
   );
 }
