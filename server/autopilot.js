@@ -191,6 +191,9 @@ export function mountAutopilot(app, deps) {
       const now = await byPhone(phone);
       const latest = mergedChat(now);
       if (latest[latest.length - 1]?.id !== last.id) return; // the customer wrote again meanwhile: that turn answers
+      const nowBot = await getBot(); // switched off while the AI was thinking: send nothing
+      if (nowBot.on === false || !nowBot.ai) return log(phone, 'No AI reply: AI replies were turned off just now.');
+      if (now.some((l) => l.botPaused)) return log(phone, 'No AI reply: AI is paused on this chat (Turn AI back on in the lead).');
       const named = (await attachPlates(phone, answer.plates, answer.name)) || [];
       const home = now.find((l) => (l.waChat || []).some((c) => c.id === last.id)) || now[0];
       const waiting = now.filter((l) => l.paymentSent && !l.payment && !l.paymentClaim);

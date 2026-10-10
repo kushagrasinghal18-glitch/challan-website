@@ -92,6 +92,22 @@ test('end to end: AI chat → lead with vehicle → approval → payment details
   assert.deepEqual(two.map((l) => l.plate).sort(), ['DL3CAB1234', 'UP16AB1234']);
   assert.ok(two.every((l) => l.groupRef && l.vehicles === 2));
 
+  // 2b. "AI replies" unticked: no reply, and none when it is unticked while the AI is still thinking.
+  const put = (body) => new Promise((resolve) => routes['/api/admin/wa-live/settings']({ body, user: { name: 'Asha' } }, { json: resolve, status: () => ({ json: resolve }) }));
+  await put({ ai: false, autoPayment: true, notes: '' });
+  const quiet = sent.length;
+  answers.push(() => ({ reply: 'should not be sent (AI off)', plates: [], name: '', paid: false, handoff: false }));
+  await incoming('are you there?');
+  await settle();
+  assert.equal(sent.length, quiet);
+  answers.length = 0;
+  await put({ ai: true, autoPayment: true, notes: '' });
+  answers.push(async () => { await put({ ai: false, autoPayment: true, notes: '' }); return { reply: 'should not be sent (turned off meanwhile)', plates: [], name: '', paid: false, handoff: false }; });
+  await incoming('hello?');
+  await settle();
+  assert.equal(sent.length, quiet);
+  await put({ ai: true, autoPayment: true, notes: '' });
+
   // 3. The team sends the approval (from the panel), the customer replies I APPROVE: payment details go out.
   const up = two.find((l) => l.plate === 'UP16AB1234');
   await store.updateLead(up.ref, { challans: [{ challanNo: 'UP123', amount: 3000 }] }, 'Asha');

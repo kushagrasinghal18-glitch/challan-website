@@ -28,6 +28,13 @@ export default function WhatsAppAuto({ auth, call, signOut }) {
     catch (e) { fail(e); return null; } finally { setBusy(false); }
   };
 
+  // The two switches take effect the moment they are clicked (no Save needed); unsaved notes stay as typed.
+  const toggle = async (key, value) => {
+    setForm((f) => ({ ...f, [key]: value }));
+    const v = await act('/api/admin/wa-live/settings', { ...s.settings, [key]: value }, value ? 'Turned on.' : 'Turned off.');
+    setForm((f) => ({ ...f, [key]: v ? v.settings[key] : !value }));
+  };
+
   if (!s || !form) return <section className="panel pad"><h2>Automatic WhatsApp</h2><div className="hint">Loading…</div></section>;
   const linked = s.state === 'open';
   const on = s.settings.on !== false;
@@ -84,13 +91,13 @@ export default function WhatsAppAuto({ auth, call, signOut }) {
       </div>
 
       <label className="toggle">
-        <input type="checkbox" checked={form.ai} onChange={(e) => setForm({ ...form, ai: e.target.checked })} />
+        <input type="checkbox" checked={form.ai} disabled={busy} onChange={(e) => toggle('ai', e.target.checked)} />
         <span><b>AI replies</b><br />
           <span className="hint">Answers questions about Niptao, asks for the vehicle number and name, and adds them to the lead. It goes quiet in a chat for 2 hours after someone from the team writes there, and hands the chat to you when a customer asks for a person.</span>
           {!s.aiReady && <span className="warn" style={{ display: 'block', marginTop: 6 }}>Not active yet: add <code>GEMINI_API_KEY</code> in Render → Environment.</span>}</span>
       </label>
       <label className="toggle">
-        <input type="checkbox" checked={form.autoPayment} onChange={(e) => setForm({ ...form, autoPayment: e.target.checked })} />
+        <input type="checkbox" checked={form.autoPayment} disabled={busy} onChange={(e) => toggle('autoPayment', e.target.checked)} />
         <span><b>Send payment details by itself</b><br />
           <span className="hint">When the customer replies "I APPROVE", the payment message and QR from Payment details go out straight away. A payment screenshot they send is saved on the lead and flagged for you to confirm.</span></span>
       </label>
