@@ -63,7 +63,7 @@ test('end to end: AI chat → lead with vehicle → approval → payment details
   };
   const answers = [];
   const routes = {};
-  const app = new Proxy({}, { get: () => (p) => { routes[p] = true; } });
+  const app = new Proxy({}, { get: () => (p, ...fns) => { routes[p] = fns[fns.length - 1]; } });
   mountAutopilot(app, {
     handleWhatsApp: index.handleWhatsApp, enqueue: index.enqueueWa, attachPlates: index.attachPlates,
     requireUser: [], requireAdmin: [], canSee: () => true, live, debounceMs: 10,
@@ -125,6 +125,19 @@ test('end to end: AI chat → lead with vehicle → approval → payment details
   await settle();
   assert.equal(sent.length, count);
   assert.ok(routes['/api/admin/wa-live'] && routes['/api/admin/leads/:ref/proof'] && routes['/api/admin/wa-live/power']);
+
+  // 5b. Settings → Try the AI: answers from a pretend chat, sends nothing and changes no lead.
+  const sentNow = sent.length, allBefore = JSON.stringify(await store.listLeads());
+  let seen;
+  answers.length = 0; // step 5's answer was never used: the AI stayed quiet
+  answers.push((c) => { seen = c; return { reply: 'Test reply', plates: ['MH12AB1234'], name: '', paid: false, handoff: false }; });
+  const out = await new Promise((resolve) => routes['/api/admin/wa-live/test'](
+    { body: { chat: [{ dir: 'in', text: 'hi' }, { dir: 'out', text: 'hello' }, { dir: 'in', text: 'MH12AB1234' }], notes: 'try notes' } },
+    { status() { return this; }, json: resolve }));
+  assert.equal(out.reply, 'Test reply');
+  assert.deepEqual(seen.map((m) => m.text), ['hi', 'hello', 'MH12AB1234']);
+  assert.equal(sent.length, sentNow);
+  assert.equal(JSON.stringify(await store.listLeads()), allBefore);
 
   // 6. Switched off in Settings: messages are ignored and nothing is sent, as before the CRM.
   await store.setKV('bot', { on: false });
