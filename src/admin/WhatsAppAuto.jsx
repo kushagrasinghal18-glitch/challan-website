@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 const ERR = {
   invalid_phone: 'Type the 10-digit WhatsApp number you are linking.',
   live_off: 'Automatic WhatsApp is switched off on the server (WA_BAILEYS=off in Render).',
+  crm_off: 'Switch Automatic WhatsApp on first.',
 };
 
 export default function WhatsAppAuto({ auth, call, signOut }) {
@@ -23,12 +24,13 @@ export default function WhatsAppAuto({ auth, call, signOut }) {
 
   const act = async (path, body, okText) => {
     setBusy(true); setMsg(null);
-    try { const v = await call(path, auth, { method: path.endsWith('settings') ? 'PUT' : 'POST', body: JSON.stringify(body || {}) }); setS(v); if (okText) setMsg({ ok: true, text: okText }); return v; }
+    try { const v = await call(path, auth, { method: /(settings|power)$/.test(path) ? 'PUT' : 'POST', body: JSON.stringify(body || {}) }); setS(v); if (okText) setMsg({ ok: true, text: okText }); return v; }
     catch (e) { fail(e); return null; } finally { setBusy(false); }
   };
 
   if (!s || !form) return <section className="panel pad"><h2>Automatic WhatsApp</h2><div className="hint">Loading…</div></section>;
   const linked = s.state === 'open';
+  const on = s.settings.on !== false;
   const fmt = (p) => (p ? `+91 ${p.slice(0, 5)} ${p.slice(5)}` : '');
 
   return (
@@ -36,6 +38,16 @@ export default function WhatsAppAuto({ auth, call, signOut }) {
       <h2>Automatic WhatsApp</h2>
       <p className="hint" style={{ marginTop: 0 }}>Link your WhatsApp number once. Then customers who message it get AI replies, their vehicle numbers become leads, "I APPROVE" is marked by itself and the payment details go out straight after. It only ever replies: nobody gets a first message from it.</p>
 
+      <label className="toggle power">
+        <input type="checkbox" checked={on} disabled={busy} onChange={(e) => {
+          const next = e.target.checked;
+          if (!next && !window.confirm('Switch off Automatic WhatsApp?\n\nNo AI replies and no automatic messages. The panel goes back to how it worked before (WhatsApp buttons and the add-on). The number stays linked, so switching on again needs no new scan.')) return;
+          act('/api/admin/wa-live/power', { on: next }, next ? 'Switched on.' : 'Switched off. Everything works as before.');
+        }} />
+        <span><b>Automatic WhatsApp is {on ? 'ON' : 'OFF'}</b><br />
+          <span className="hint">{on ? 'Untick to switch everything off and work exactly as before.' : 'Nothing is sent automatically. Send messages yourself with the WhatsApp buttons on each lead, as before.'}</span></span>
+      </label>
+      {on && (<>
       <div className={'wa-link ' + (linked ? 'on' : '')}>
         {linked ? (<>
           <div className="ok-line">✓ Linked{s.me ? ` to ${fmt(s.me)}` : ''}. Working.</div>
@@ -96,6 +108,8 @@ export default function WhatsAppAuto({ auth, call, signOut }) {
           <li>The site has to stay awake for replies to go out. See the setup guide.</li>
         </ul>
       </details>
+      </>)}
+      {!on && msg && <div className={msg.ok ? 'ok-msg' : 'err'} role="status" style={{ marginTop: 10 }}>{msg.text}</div>}
     </section>
   );
 }

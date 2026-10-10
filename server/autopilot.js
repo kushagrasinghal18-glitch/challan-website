@@ -20,7 +20,8 @@ const AI_PER_CHAT_HOUR = 20;
 const DEBOUNCE_MS = 5000; // customers often send several short messages in a row: answer once
 const PROOF_MAX = 5 * 1024 * 1024;
 
-const defaults = { ai: true, autoPayment: true, notes: '' };
+// on: the master switch. Off = nothing automatic, the number is disconnected, the panel works as before.
+const defaults = { on: true, ai: true, autoPayment: true, notes: '' };
 export const getBot = async () => ({ ...defaults, ...(await getKV('bot', {})) });
 const todayIST = () => new Date(Date.now() + 5.5 * 36e5).toISOString().slice(0, 10);
 const inr = (n) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
@@ -122,6 +123,7 @@ export function mountAutopilot(app, deps) {
   }
 
   async function onMessage(m) {
+    if ((await getBot()).on === false) return; // switched off: the connection is closed anyway
     if (m.jid) lastJid.set(m.phone, m.jid);
     const msg = { id: m.id, from: `91${m.phone}`, name: m.name, text: m.text, at: m.at, ...(m.fromMe ? { dir: 'out' } : {}) };
     // Typed on the phone (or WhatsApp Web) by the team: keep it on the lead; the AI then stays quiet a while.
@@ -160,7 +162,7 @@ export function mountAutopilot(app, deps) {
 
   async function aiTurn(phone) {
     const bot = await getBot();
-    if (!bot.ai || !ai.ready() || !live.isLive()) return;
+    if (bot.on === false || !bot.ai || !ai.ready() || !live.isLive()) return;
     const leads = await byPhone(phone);
     if (!leads.length || leads.some((l) => l.botPaused)) return;
     const chat = mergedChat(leads);
@@ -190,17 +192,19 @@ export function mountAutopilot(app, deps) {
     });
   }
 
-  live.startLive({
+  const handlers = {
     onMessage,
     onStatus: (st) => enqueue(async () => {
       for (const l of await byPhone(st.phone)) if ((l.waChat || []).some((c) => c.id === st.id)) await updateLead(l.ref, { waStatus: st }, 'WhatsApp');
     }),
-  }).catch((err) => console.error('[wa] start failed', err.message));
+  };
+  getBot().then((b) => live.startLive(handlers, { connectNow: b.on !== false })).catch((err) => console.error('[wa] start failed', err.message));
 
   // ── Admin routes ──
   const view = async () => ({ ...live.status(), enabled: live.liveEnabled(), aiReady: ai.ready(), settings: await getBot() });
   const fail = (res, err) => {
     if (err.code === 'live_off') return res.status(503).json({ error: 'live_off' });
+    if (err.code === 'crm_off') return res.status(409).json({ error: 'crm_off' });
     console.error('[wa] admin action failed', err.message); res.status(500).json({ error: 'failed' });
   };
 
@@ -211,6 +215,7 @@ export function mountAutopilot(app, deps) {
     const phone = String(req.body?.phone || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
     if (phone && !/^[6-9]\d{9}$/.test(phone)) return res.status(400).json({ error: 'invalid_phone' });
     try {
+      if ((await getBot()).on === false) throw Object.assign(new Error('switched off'), { code: 'crm_off' });
       await live.link(phone);
       // Give WhatsApp a moment to send the first QR (or the pairing code).
       for (let i = 0; i < 20 && !live.status().qr && !(phone && live.status().pairCode) && !live.isLive(); i++) await new Promise((r) => setTimeout(r, 500));
@@ -225,7 +230,19 @@ export function mountAutopilot(app, deps) {
   app.put('/api/admin/wa-live/settings', requireAdmin, async (req, res) => {
     const b = req.body || {};
     try {
-      await setKV('bot', { ai: b.ai !== false, autoPayment: b.autoPayment !== false, notes: String(b.notes || '').slice(0, 4000) });
+      await setKV('bot', { ...(await getBot()), ai: b.ai !== false, autoPayment: b.autoPayment !== false, notes: String(b.notes || '').slice(0, 4000) });
+      res.json(await view());
+    } catch (err) { fail(res, err); }
+  });
+
+  // Master switch { on: boolean }. Off disconnects the number (the login is kept) and stops every
+  // automatic message; the admin panel goes back to the WhatsApp buttons and add-on as before.
+  app.put('/api/admin/wa-live/power', requireAdmin, async (req, res) => {
+    const on = req.body?.on === true;
+    try {
+      await setKV('bot', { ...(await getBot()), on });
+      if (on) await live.resume(); else await live.pause();
+      console.log('[wa] automatic WhatsApp switched', on ? 'on' : 'off', 'by', req.user.name);
       res.json(await view());
     } catch (err) { fail(res, err); }
   });

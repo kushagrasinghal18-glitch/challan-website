@@ -534,3 +534,4 @@ td.plates .plate { display: inline-block; margin: 2px 4px 2px 0; }
 .bot-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: #146C3A; background: #F1FBF4; border-radius: 8px; padding: 4px 10px; }
 .bot-row.paused { color: #9A5B00; background: #FFF6E5; }
 .claim { margin-top: 8px; font-size: 13px; color: #6B4A00; background: #FFF6E5; border-radius: 8px; padding: 6px 10px; }
+.wa-auto .toggle.power { margin: 0 0 14px; padding: 12px 14px; border: 1px solid #D6D2C9; border-radius: 12px; }

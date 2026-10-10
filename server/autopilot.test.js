@@ -69,6 +69,7 @@ test('end to end: AI chat → lead with vehicle → approval → payment details
     requireUser: [], requireAdmin: [], canSee: () => true, live, debounceMs: 10,
     aiConfigured: () => true, aiAnswer: async ({ chat }) => answers.shift()?.(chat) ?? null,
   });
+  await new Promise((r) => setTimeout(r, 50)); // the connection starts once the saved switch is read
   const phone = '9876500077';
   let n = 0;
   const incoming = (text, extra = {}) => handlers.onMessage({ id: `in${++n}`, phone, jid: `91${phone}@s.whatsapp.net`, fromMe: false, name: 'Ravi', at: new Date().toISOString(), kind: 'text', text, ...extra });
@@ -123,5 +124,16 @@ test('end to end: AI chat → lead with vehicle → approval → payment details
   await incoming('ok');
   await settle();
   assert.equal(sent.length, count);
-  assert.ok(routes['/api/admin/wa-live'] && routes['/api/admin/leads/:ref/proof']);
+  assert.ok(routes['/api/admin/wa-live'] && routes['/api/admin/leads/:ref/proof'] && routes['/api/admin/wa-live/power']);
+
+  // 6. Switched off in Settings: messages are ignored and nothing is sent, as before the CRM.
+  await store.setKV('bot', { on: false });
+  const leadsBefore = JSON.stringify(await leads());
+  const sentBefore = sent.length;
+  answers.push(() => ({ reply: 'should not be sent either', plates: ['HR26AB1234'], name: '', paid: false, handoff: false }));
+  await handlers.onMessage({ id: 'x1', phone: '9876500099', fromMe: false, name: 'New', at: new Date().toISOString(), kind: 'text', text: 'hi HR26AB1234' });
+  await settle();
+  assert.equal(sent.length, sentBefore);
+  assert.equal((await store.listLeads()).filter((l) => l.phone === '9876500099').length, 0);
+  assert.equal(JSON.stringify(await leads()), leadsBefore);
 });

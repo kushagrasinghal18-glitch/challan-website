@@ -49,6 +49,7 @@ The AI goes quiet in a chat for 2 hours after anyone from the team writes there 
 ## Good to know
 
 - Sending caps: 60 messages an hour and 400 a day for the whole number. Change them with `WA_MAX_PER_HOUR` / `WA_MAX_PER_DAY` in Render if you need to.
-- To stop everything: **Unlink this number** in Settings, or set `WA_BAILEYS=off` in Render.
+- **To switch it all off:** untick **Automatic WhatsApp is ON** at the top of the section. No AI replies and no automatic messages; the panel works exactly as before (WhatsApp buttons on each lead and the add-on). The number stays linked, so ticking it again needs no new scan.
+- To remove the number completely: **Unlink this number**, or set `WA_BAILEYS=off` in Render.
 - After an update, if Settings says "Another copy of the site took over", press **Link with QR code** once. It reconnects without a new scan.
 - The AI never sends payment details, never says a payment was received, and never quotes amounts that aren't on the lead.

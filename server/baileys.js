@@ -132,10 +132,23 @@ async function connect() {
   });
 }
 
-// On server start: reconnect when a number was linked before.
-export async function startLive(handlers) {
+// On server start: reconnect when a number was linked before (unless switched off in Settings).
+export async function startLive(handlers, { connectNow = true } = {}) {
   onMessage = handlers.onMessage || onMessage;
   onStatus = handlers.onStatus || onStatus;
+  if (connectNow) await resume();
+}
+
+// Switched off in Settings: disconnect but keep the login, so switching on again needs no new scan.
+export async function pause() {
+  clearTimeout(timer);
+  const s = sock; sock = null;
+  if (s) { try { s.ev.removeAllListeners(); s.end?.(undefined); } catch { /* already closed */ } }
+  state = 'off'; qr = null; pairCode = null; pairPhone = ''; lastError = '';
+}
+
+// Switched on again: reconnect with the saved login, if there is one.
+export async function resume() {
   if (liveEnabled() && await hasSavedLogin()) await connect().catch((err) => console.error('[wa] start failed', err.message));
 }
 
@@ -169,7 +182,7 @@ function takeSendSlot() {
   sentAt.push(now);
 }
 
-const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Sends like a person would: shows "typing…" for a moment first. Returns the message id.
 export async function sendText(phone, text, { jid, typing = true } = {}) {
@@ -178,7 +191,7 @@ export async function sendText(phone, text, { jid, typing = true } = {}) {
   const to = jid || jidOf(phone);
   if (typing) {
     try { await sock.presenceSubscribe(to); await sock.sendPresenceUpdate('composing', to); } catch { /* not important */ }
-    await pause(Math.min(6000, 1500 + String(text).length * 25));
+    await wait(Math.min(6000, 1500 + String(text).length * 25));
     try { await sock.sendPresenceUpdate('paused', to); } catch { /* not important */ }
   }
   if (!isLive()) throw Object.assign(new Error('not connected'), { code: 'not_connected' });
