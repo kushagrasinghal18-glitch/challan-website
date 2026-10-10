@@ -1,5 +1,5 @@
 // AI replies on WhatsApp (Google Gemini). On when GEMINI_API_KEY is set in the server environment
-// (Render → Environment). GEMINI_MODEL picks the model, default gemini-2.5-flash.
+// (Render → Environment). GEMINI_MODEL picks the model; otherwise gemini-flash-latest (with older names as fallbacks).
 // The AI answers questions about Niptao, asks for the vehicle number and name, and says when the
 // customer claims to have paid or needs a person. It never sends anything on its own: autopilot.js decides.
 import { PLATE_RE, normalizePlate } from './plate.js';
@@ -91,24 +91,49 @@ export function parseAnswer(text) {
   return { reply, plates, name: name.length >= 2 ? name : '', paid: j.paid === true, handoff: j.handoff === true };
 }
 
+// Models to try in order. Google retires model names over time (gemini-2.5-flash now answers 404 for
+// many keys), so an unknown model falls through to the next one; the one that works is remembered.
+const FALLBACKS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+let working = '';
+export const modelsToTry = (env = process.env) => [...new Set([working, env.GEMINI_MODEL, ...FALLBACKS].filter(Boolean))];
+export const aiModel = () => working;
+
+// Plain-English reason for a failed call, shown in Settings.
+export function explainError(status, message = '') {
+  const m = String(message);
+  if (status === 400 && /API key not valid|API_KEY_INVALID/i.test(m)) return 'The GEMINI_API_KEY in Render is not valid. Copy it again from aistudio.google.com.';
+  if (status === 403) return `Google refused the key (${m.slice(0, 120)}). Check the key in Render and that the Gemini API is enabled for it.`;
+  if (status === 429) return 'The Gemini key has run out of free requests for now (quota). Wait a bit, or turn on billing for the key in Google AI Studio.';
+  return `Gemini error ${status || ''}: ${m.slice(0, 200)}`.trim();
+}
+
 export async function aiAnswer({ chat, leads, site, notes }, env = process.env) {
   const contents = toContents(chat);
   if (!contents.length || contents[contents.length - 1].role !== 'user') return null;
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL(env))}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt(leads, site, notes) }] },
-      contents,
-      generationConfig: {
-        temperature: 0.4, maxOutputTokens: 2048, responseMimeType: 'application/json',
-        responseSchema: { type: 'OBJECT', required: ['reply', 'plates', 'name', 'paid', 'handoff'], properties: {
-          reply: { type: 'STRING' }, plates: { type: 'ARRAY', items: { type: 'STRING' } }, name: { type: 'STRING' }, paid: { type: 'BOOLEAN' }, handoff: { type: 'BOOLEAN' } } },
-      },
-    }),
-    signal: AbortSignal.timeout(30_000),
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: systemPrompt(leads, site, notes) }] },
+    contents,
+    generationConfig: {
+      // Newer models "think" first and that counts towards this limit, so leave plenty of room.
+      temperature: 0.4, maxOutputTokens: 8192, responseMimeType: 'application/json',
+      responseSchema: { type: 'OBJECT', required: ['reply', 'plates', 'name', 'paid', 'handoff'], properties: {
+        reply: { type: 'STRING' }, plates: { type: 'ARRAY', items: { type: 'STRING' } }, name: { type: 'STRING' }, paid: { type: 'BOOLEAN' }, handoff: { type: 'BOOLEAN' } } },
+    },
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
-  return parseAnswer(data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join(''));
+  let last = null;
+  for (const model of modelsToTry(env)) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': String(env.GEMINI_API_KEY || '').trim() }, body,
+      signal: AbortSignal.timeout(45_000),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 404) { last = `model ${model} not available`; if (working === model) working = ''; continue; }
+    if (!res.ok) throw Object.assign(new Error(explainError(res.status, data.error?.message)), { status: res.status });
+    working = model;
+    const cand = data.candidates?.[0];
+    const answer = parseAnswer(cand?.content?.parts?.map((p) => p.text || '').join(''));
+    if (!answer) throw new Error(`Gemini (${model}) gave no usable answer${cand?.finishReason ? ` (${cand.finishReason})` : data.promptFeedback?.blockReason ? ` (blocked: ${data.promptFeedback.blockReason})` : ''}.`);
+    return answer;
+  }
+  throw new Error(`No Gemini model answered (${last}). Set GEMINI_MODEL in Render to a current model name from aistudio.google.com.`);
 }

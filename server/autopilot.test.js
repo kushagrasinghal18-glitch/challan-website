@@ -150,3 +150,23 @@ test('end to end: AI chat → lead with vehicle → approval → payment details
   assert.equal((await store.listLeads()).filter((l) => l.phone === '9876500099').length, 0);
   assert.equal(JSON.stringify(await leads()), leadsBefore);
 });
+
+test('AI moves on from a retired model and explains key problems', async (t) => {
+  const { aiAnswer, aiModel } = await import('./ai.js');
+  const real = globalThis.fetch;
+  t.after(() => { globalThis.fetch = real; });
+  const asked = [];
+  globalThis.fetch = async (url) => {
+    const model = decodeURIComponent(String(url).match(/models\/([^:]+):/)[1]);
+    asked.push(model);
+    if (model !== 'gemini-2.5-flash') return new Response(JSON.stringify({ error: { message: 'not found' } }), { status: 404 });
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"reply":"Hi!","plates":[],"name":"","paid":false,"handoff":false}' }] } }] }), { status: 200 });
+  };
+  const env = { GEMINI_API_KEY: 'k', GEMINI_MODEL: 'gemini-old' };
+  const a = await aiAnswer({ chat: [{ dir: 'in', text: 'hi' }], leads: [], site: {} }, env);
+  assert.equal(a.reply, 'Hi!');
+  assert.deepEqual(asked, ['gemini-old', 'gemini-flash-latest', 'gemini-2.5-flash']);
+  assert.equal(aiModel(), 'gemini-2.5-flash');
+  globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'API key not valid. Please pass a valid API key.' } }), { status: 400 });
+  await assert.rejects(aiAnswer({ chat: [{ dir: 'in', text: 'hi' }], leads: [], site: {} }, env), /not valid/);
+});

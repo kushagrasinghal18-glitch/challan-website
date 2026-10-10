@@ -203,7 +203,7 @@ async function call(path, auth, opts = {}) {
     headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth.token}` } : {}) },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) { const e = new Error(data.error || 'error'); e.status = res.status; throw e; }
+  if (!res.ok) { const e = new Error(data.error || 'error'); e.status = res.status; e.detail = data.detail || ''; throw e; }
   return data;
 }
 
