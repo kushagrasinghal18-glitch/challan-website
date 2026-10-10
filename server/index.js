@@ -109,6 +109,36 @@ async function saveNewLead(code, lead) {
     catch (err) { if (err.code === '23505' && attempt < 3) continue; throw err; }
   }
 }
+// One customer = one phone number: their open vehicles share a groupRef, however they came in (several
+// website forms, WhatsApp, the add-on), so the list shows them in one row. Settled and Lost leads stay apart.
+const CLOSED = ['Settled', 'Lost'];
+export async function linkByPhone(phone, all) {
+  const open = (all || await listLeads()).filter((l) => l.phone === phone && !CLOSED.includes(l.status))
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)) || a.ref.localeCompare(b.ref));
+  if (open.length < 2) return;
+  const groupRef = open.find((l) => l.groupRef)?.groupRef || open[0].ref;
+  for (const l of open) {
+    if (l.groupRef !== groupRef || l.vehicles !== open.length) await updateLead(l.ref, { group: { groupRef, vehicles: open.length } }, 'System');
+  }
+}
+// On start: link leads that came in separately before this existed.
+async function linkAllByPhone() {
+  const all = await listLeads();
+  const phones = new Set(all.filter((l) => l.phone && !CLOSED.includes(l.status)).map((l) => l.phone));
+  let n = 0;
+  for (const phone of phones) {
+    if (all.filter((l) => l.phone === phone && !CLOSED.includes(l.status)).length > 1) { await linkByPhone(phone, all); n++; }
+  }
+  if (n) console.log('[leads] linked vehicles of', n, 'customers by phone');
+}
+// Same customer already being handled by someone: their new vehicle goes to the same person.
+async function sameAgent(lead) {
+  try {
+    const prev = (await listLeads()).find((l) => l.phone === lead.phone && l.agentId && !CLOSED.includes(l.status));
+    if (prev) { Object.assign(lead, { agent: prev.agent, agentId: prev.agentId }); return true; }
+  } catch { /* fall back to auto-assign */ }
+  return false;
+}
 async function autoAssign(lead) {
   try {
     if ((await getSettings()).autoAssign) {
@@ -145,7 +175,7 @@ app.post('/api/leads', limit(10, 10 * 60_000), async (req, res) => {
     name, phone, lang: b.lang === 'hi' ? 'hi' : 'en', status: 'New', agent: '', agentId: '', notes: [],
     ...(promo ? { promoCode: promo.code, feeRate: promo.pays } : {}),
   };
-  await autoAssign(base);
+  if (!(await sameAgent(base))) await autoAssign(base);
   const refs = [];
   for (const p of plates) {
     const extraFields = plates.length > 1 ? { groupRef: refs[0] || null, vehicles: plates.length } : {};
@@ -160,6 +190,7 @@ app.post('/api/leads', limit(10, 10 * 60_000), async (req, res) => {
       }
     }
   }
+  await linkByPhone(phone).catch((err) => console.error('[leads] link failed', err.message));
   res.json({ ref: refs[0], refs, plates });
 });
 
@@ -472,7 +503,6 @@ app.post('/api/admin/leads/:ref/doclink', requireUser, async (req, res) => {
 // ── Customer upload page (public, but only with the lead's secret link) ──
 // The customer sees which documents are still needed and can add files. They can never see,
 // download or delete files, so a forwarded link can't expose anything.
-const CLOSED = ['Settled', 'Lost'];
 async function linkLead(token) {
   const lead = await leadByDocToken(token);
   if (!lead?.docLink || lead.docLink.token !== token) return { error: 'link_not_found' };
@@ -786,6 +816,7 @@ export async function handleWhatsApp({ messages = [], statuses = [] }, opts = {}
       };
       const base = opts.assign ? { ...fields, agent: opts.assign.name, agentId: opts.assign.id } : await autoAssign(fields);
       const ref = await saveNewLead(CITY_CODES[base.city] || 'GBN', base);
+      await linkByPhone(phone);
       lead = { ref };
     }
     touched.add(lead.ref);
@@ -834,6 +865,7 @@ export async function attachPlates(phone, plates = [], name = '') {
     });
   }
   for (const l of mine) await updateLead(l.ref, { group: { groupRef, vehicles } }, 'WhatsApp');
+  await linkByPhone(phone);
   return fresh;
 }
 
@@ -916,4 +948,5 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const port = Number(process.env.PORT) || 8787;
+linkAllByPhone().catch((err) => console.error('[leads] linking by phone failed', err.message));
 export const server = app.listen(port, () => console.log(`API on http://localhost:${port} · challans: ${providerName()} · otp: ${otpMode()}`));
