@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import LokAdalat from './LokAdalat.jsx';
 
 // Admin-only numbers worked out from the leads already loaded in the panel (nothing extra is fetched).
 // Leads received count by the day they came in; settled, lost and payments count by the day the
@@ -40,7 +41,7 @@ const paidAt = (l) => reachedAt(l, 'Payment received') || (l.status === 'Settled
 const approvedByCustomer = (l) => l.waApproval?.state === 'received' || (l.challans || []).some((c) => c.approved);
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
-export default function Analytics({ leads, staff, payable, inr }) {
+export default function Analytics({ leads, staff, payable, inr, lokDates }) {
   const [kind, setKind] = useState('30');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -192,6 +193,8 @@ export default function Analytics({ leads, staff, payable, inr }) {
           ))}
         </div>
       </section>
+
+      <LokAdalat leads={leads} dates={lokDates || []} inr={inr} />
 
       <div className="an-grid">
         <Table title="By current stage" rows={d.byStatus} withMoney={false} />

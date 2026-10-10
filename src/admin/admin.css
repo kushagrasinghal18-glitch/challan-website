@@ -408,6 +408,14 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 .an-table .lbl { color: var(--navy); font-weight: 600; width: 40%; }
 .an-table .meter { height: 4px; background: #EEF2F8; border-radius: 2px; margin-top: 4px; }
 .an-table .meter span { display: block; height: 100%; background: #2a78d6; border-radius: 2px; }
+.an-lok-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 18px 0 8px; }
+.an-lok-head h2 { margin: 0; }
+.an-lok-head .btn { margin-left: auto; }
+.an-lok { min-width: 760px; }
+.an-lok th, .an-lok td { text-align: left; vertical-align: top; }
+.an-lok .lbl { width: auto; }
+.an-lok .chal { font-variant-numeric: tabular-nums; }
+.an-lok th:last-child { text-align: right; }
 @media (max-width: 1000px) { .an-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .an-grid { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .an-funnel .row { grid-template-columns: 1fr 70px; } .an-funnel .track { grid-column: 1 / -1; grid-row: 2; } }
 
