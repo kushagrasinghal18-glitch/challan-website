@@ -41,7 +41,8 @@ const paidAt = (l) => reachedAt(l, 'Payment received') || (l.status === 'Settled
 const approvedByCustomer = (l) => l.waApproval?.state === 'received' || (l.challans || []).some((c) => c.approved);
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
-export default function Analytics({ leads, staff, payable, inr, lokDates }) {
+export default function Analytics({ leads, staff, payable, inr, lokDates, onOpenLead }) {
+  const [showPaid, setShowPaid] = useState(false);
   const [kind, setKind] = useState('30');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -157,10 +158,42 @@ export default function Analytics({ leads, staff, payable, inr, lokDates }) {
       </div>
 
       <div className="an-tiles">
-        {tiles.map(([l, v, hint]) => (
+        {tiles.map(([l, v, hint]) => (l === 'Revenue' ? (
+          <button type="button" className={'an-tile an-click' + (showPaid ? ' on' : '')} key={l} title="Show the leads behind this number" aria-expanded={showPaid} onClick={() => setShowPaid((x) => !x)}>
+            <div className="l">{l} {showPaid ? '▾' : '▸'}</div><div className="v">{v}</div><div className="h">{hint} · click to see the leads</div>
+          </button>
+        ) : (
           <div className="an-tile" key={l} title={hint}><div className="l">{l}</div><div className="v">{v}</div><div className="h">{hint}</div></div>
-        ))}
+        )))}
       </div>
+
+      {showPaid && (
+        <section className="panel pad an-card">
+          <h2>Revenue: {inr(d.revenue)} from {d.paid.length} lead{d.paid.length === 1 ? '' : 's'}</h2>
+          <div className="small" style={{ marginBottom: 10 }}>Each lead counts the amount the customer pays (approved challans × their rate) on the day it reached Payment received, or Settled for leads that skipped that stage.</div>
+          {!d.paid.length ? <div className="small">No payments in this period.</div> : (
+            <table className="an-table an-paid">
+              <thead><tr><th>Lead</th><th>Paid on</th><th>Stage now</th><th>Approved challans</th><th>Rate</th><th>Revenue</th></tr></thead>
+              <tbody>
+                {[...d.paid].sort((a, b) => String(paidAt(b)).localeCompare(String(paidAt(a)))).map((l) => {
+                  const ok = (l.challans || []).filter((c) => c.approved);
+                  return (
+                    <tr key={l.ref}>
+                      <td className="lbl">{onOpenLead ? <button type="button" className="linkish" onClick={() => onOpenLead(l.ref)}>{l.name}</button> : l.name}
+                        <div className="small">{l.ref} · {l.plate || 'no vehicle number'}</div></td>
+                      <td>{new Date(paidAt(l)).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })}</td>
+                      <td>{l.status}</td>
+                      <td className="num">{ok.length} · {inr(ok.reduce((n, c) => n + (c.amount || 0), 0))}</td>
+                      <td className="num">{[50, 40, 30].includes(l.feeRate) ? l.feeRate : 50}%</td>
+                      <td className="num"><b>{inr(payable(l))}</b></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
 
       <section className="panel pad an-card">
         <h2>Leads received per {d.step === 7 ? 'week' : 'day'}</h2>

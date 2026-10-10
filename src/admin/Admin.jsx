@@ -1681,7 +1681,7 @@ export default function Admin() {
         ) : page === 'analytics' ? (
           <>
             <div className="head"><div><h1>Analytics</h1><div className="sub">Leads, conversions and revenue. Updates every 15 seconds.</div></div></div>
-            <Analytics leads={leads} staff={staff} payable={payable} inr={inr} lokDates={site?.lokAdalatDates} />
+            <Analytics leads={leads} staff={staff} payable={payable} inr={inr} lokDates={site?.lokAdalatDates} onOpenLead={(ref) => { setSel(ref); setAsk(null); }} />
           </>
         ) : page === 'settings' && !isAdmin ? (
           <>

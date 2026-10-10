@@ -497,3 +497,6 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 .no-challan { font-size: 14px; font-weight: 600; color: #1F6B45; background: #E3F2E9; border-radius: 8px; padding: 8px 12px; }
 .check-line { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-top: 10px; cursor: pointer; }
 .check-line input { width: 16px; height: 16px; margin: 0; }
+.an-tile.an-click { text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.an-tile.an-click:hover, .an-tile.an-click.on { border-color: #2F5AA8; }
+.an-paid .linkish { background: none; border: 0; padding: 0; color: #2F5AA8; text-decoration: underline; cursor: pointer; font: inherit; font-weight: 600; text-align: left; }
