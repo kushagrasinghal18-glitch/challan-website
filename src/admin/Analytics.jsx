@@ -37,7 +37,8 @@ function furthest(l) {
 }
 const PAID = FLOW.indexOf('Payment received');
 // When the customer paid: the Payment received stage, else (older leads that skipped it) when it was settled.
-const paidAt = (l) => reachedAt(l, 'Payment received') || (l.status === 'Settled' ? reachedAt(l, 'Settled') : null);
+// Only leads that are paid now count: a lead moved back before Payment received, or Lost (refunded), drops out.
+const paidAt = (l) => (FLOW.indexOf(l.status) < PAID ? null : reachedAt(l, 'Payment received') || (l.status === 'Settled' ? reachedAt(l, 'Settled') : null));
 const approvedByCustomer = (l) => l.waApproval?.state === 'received' || (l.challans || []).some((c) => c.approved);
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
