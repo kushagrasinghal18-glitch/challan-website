@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getChallans, providerName } from './providers/index.js';
 import { PLATE_RE, normalizePlate } from './plate.js';
+import { NOT_REASONS } from '../shared/verdict.js';
 import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, checkAdminPassword, hashPassword, verifyPassword, issueTeamToken, readTeamToken } from './auth.js';
 import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
@@ -372,7 +373,8 @@ app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
   if (!Array.isArray(list) || list.length > 300) return res.status(400).json({ error: 'invalid_challans' });
   const challans = list.map((c) => ({
     challanNo: clip(c?.challanNo, 60), date: clip(c?.date, 40), offence: clip(c?.offence, 300),
-    location: clip(c?.location, 200), status: clip(c?.status, 80), approved: c?.approved === true,
+    location: clip(c?.location, 200), status: clip(c?.status, 80), approved: c?.approved === true && c?.canDo !== false,
+    ...(typeof c?.canDo === 'boolean' ? { canDo: c.canDo } : {}), ...(c?.canDo === false && NOT_REASONS[c?.notReason] ? { notReason: c.notReason } : {}),
     amount: Math.max(0, Math.round(Number(String(c?.amount ?? '').replace(/[^\d.]/g, '')) || 0)),
   })).filter((c) => c.challanNo || c.offence || c.amount);
   const total = challans.reduce((n, c) => n + c.amount, 0);
@@ -674,6 +676,12 @@ app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
   const patch = { status: b.status, note: b.note, approved: Array.isArray(b.approved) ? b.approved.slice(0, 300) : undefined, feeRate: Number(b.feeRate) || undefined,
     waApproval: ['sent', 'received', 'clear'].includes(b.waApproval) ? b.waApproval : undefined, waRead: b.waRead === true, docsSeen: b.docsSeen === true,
     paymentSent: b.paymentSent === true };
+  // Can this challan be resolved? { index, canDo: true | false | null, reason: 'area' | 'court' }
+  if (b.challanVerdict !== undefined) {
+    const v = b.challanVerdict || {};
+    if (!Number.isInteger(v.index) || ![true, false, null].includes(v.canDo) || (v.canDo === false && !NOT_REASONS[v.reason])) return res.status(400).json({ error: 'invalid_verdict' });
+    patch.challanVerdict = { index: v.index, canDo: v.canDo, reason: v.canDo === false ? v.reason : undefined };
+  }
   // Payment received needs the amount actually received, confirmed in the panel's pop-up.
   if (b.paymentReceived !== undefined) {
     const amount = Math.round(Number(b.paymentReceived?.amount));

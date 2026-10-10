@@ -214,3 +214,23 @@ test('payment received: records the amount and moves an early lead on', async ()
   assert.equal(l.status, 'Scheduled');
   assert.equal(l.payment.amount, 1600);
 });
+
+test('challans can be marked can / cannot be resolved, and the marks survive a re-fetch', async () => {
+  await addLead({ ref: 'GBN-9', createdAt: '2026-10-03T00:00:00Z', name: 'C', plate: 'DL3CAB1234', phone: '9876543219', status: 'New', notes: [] });
+  await updateLead('GBN-9', { challans: [{ challanNo: 'DL1', amount: 1000 }, { challanNo: 'HR2', amount: 500 }, { challanNo: 'UP3', amount: 300 }] }, 'K');
+  await updateLead('GBN-9', { approved: [0, 1] }, 'K');
+  let l = await updateLead('GBN-9', { challanVerdict: { index: 1, canDo: false, reason: 'area' } }, 'K');
+  assert.deepEqual(l.challans[1], { challanNo: 'HR2', amount: 500, approved: false, canDo: false, notReason: 'area' });
+  l = await updateLead('GBN-9', { challanVerdict: { index: 0, canDo: true } }, 'K');
+  assert.equal(l.challans[0].canDo, true);
+  assert.equal(l.challans[0].approved, true);
+  // A cannot challan can't be approved.
+  l = await updateLead('GBN-9', { approved: [0, 1, 2] }, 'K');
+  assert.deepEqual(l.challans.map((c) => c.approved), [true, false, true]);
+  // Fetched again (no marks sent): the marks stay on the same challan numbers.
+  l = await updateLead('GBN-9', { challans: [{ challanNo: 'HR2', amount: 500 }, { challanNo: 'DL1', amount: 1000 }, { challanNo: 'NEW', amount: 1 }] }, 'K');
+  assert.deepEqual(l.challans.map((c) => [c.challanNo, c.canDo, c.notReason]), [['HR2', false, 'area'], ['DL1', true, undefined], ['NEW', undefined, undefined]]);
+  // Clearing the check.
+  l = await updateLead('GBN-9', { challanVerdict: { index: 0, canDo: null } }, 'K');
+  assert.equal('canDo' in l.challans[0], false);
+});

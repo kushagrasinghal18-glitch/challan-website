@@ -4,6 +4,7 @@ import Analytics from './Analytics.jsx';
 import Calendar from './Calendar.jsx';
 import WhatsAppAuto from './WhatsAppAuto.jsx';
 import { lokPlan, lokLong } from '../../shared/lok.js';
+import { NOT_REASONS, notReason, cannotDo } from '../../shared/verdict.js';
 
 const STATUS_COLORS = {
   New: ['#E8EEF8', '#2F5AA8'], Contacted: ['#F0EAF8', '#6A42A0'], 'Payment received': ['#FBE7EF', '#9A2F5E'], 'Documents received': ['#FFF1D9', '#8A5200'], 'Documents verified': ['#FDF3C4', '#6B5300'],
@@ -69,7 +70,7 @@ const leadStates = (l) => {
 // upcoming). No court name: the court is only known once the token is generated.
 function approvalMessage(l, dates) {
   const all = l.challans || [];
-  const ok = all.filter((c) => c.approved), rest = all.filter((c) => !c.approved);
+  const ok = all.filter((c) => c.approved), rest = all.filter((c) => !c.approved && !cannotDo(c)), cannot = all.filter(cannotDo);
   const plan = lokPlan(l, ok.length ? ok : all, dates || []);
   const lokLine = plan.length
     ? `Next Lok Adalat: ${plan.length === 1 ? `*${lokLong(plan[0].lok)}*` : plan.map((p) => `*${p.label} – ${lokLong(p.lok)}*`).join(' · ')}. We will settle the approved challans there, so please reply before then.`
@@ -87,6 +88,7 @@ function approvalMessage(l, dates) {
     `Amount you pay (${feeRate(l)}%): *${inr(payable(l))}*`,
     ...(rest.length ? ['', `*Remaining challans, not included (${rest.length})*`, ...rest.map(line), `Remaining amount: ${inr(restTotal)}`,
       'These stay pending on your vehicle. Tell us if you want us to settle these too.'] : []),
+    ...cannotBlock(cannot, line),
     ...(lokLine ? ['', lokLine] : []),
     '',
     `Please reply *I APPROVE* to give your written approval for Niptao to settle the ${ok.length} challan${ok.length === 1 ? '' : 's'} listed under "Challans we will settle for you" for ${inr(payable(l))}.`,
@@ -94,6 +96,11 @@ function approvalMessage(l, dates) {
     `Reference: ${l.ref}`,
     'Team Niptao',
   ].join('\n');
+}
+// Challans the team marked "cannot be resolved", each with the reason in words the customer understands.
+function cannotBlock(cannot, line) {
+  if (!cannot.length) return [];
+  return ['', `*Challans we cannot take up right now (${cannot.length})*`, ...cannot.flatMap((c, i) => [line(c, i), `   _${notReason(c).customer}_`])];
 }
 // One approval message for a customer with several vehicles: each vehicle with its approved challans
 // (or that it has none), then one total. Leads come in the fixed order shown in the panel.
@@ -103,13 +110,13 @@ function groupApprovalMessage(group, dates) {
   const withOk = group.filter((l) => approvedOf(l).length);
   const total = withOk.reduce((n, l) => n + payable(l), 0);
   const blocks = group.map((l) => {
-    const ok = approvedOf(l), rest = (l.challans || []).filter((c) => !c.approved);
+    const ok = approvedOf(l), rest = (l.challans || []).filter((c) => !c.approved && !cannotDo(c)), cannot = (l.challans || []).filter(cannotDo);
     const head = `🚗 *${fmtPlate(l.plate) || 'Vehicle number to be added'}*`;
     if (!l.challans) return [head, 'We are still checking this vehicle for challans.'];
     if (!l.challans.length) return [head, 'No challans found on this vehicle.'];
-    if (!ok.length) return [head, `${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} (${inr(challanTotal(l))}), none selected for settlement.`];
-    return [head, `Challans we will settle (${ok.length}):`, ...ok.map(line), `Amount you pay (${feeRate(l)}%): *${inr(payable(l))}*`,
-      ...(rest.length ? [`Not included: ${rest.length} challan${rest.length === 1 ? '' : 's'}, ${inr(rest.reduce((n, c) => n + (c.amount || 0), 0))}`] : [])];
+    const notIncl = rest.length ? [`Not included: ${rest.length} challan${rest.length === 1 ? '' : 's'}, ${inr(rest.reduce((n, c) => n + (c.amount || 0), 0))}`] : [];
+    if (!ok.length) return [head, ...(rest.length ? [`${rest.length} challan${rest.length === 1 ? '' : 's'} (${inr(rest.reduce((n, c) => n + (c.amount || 0), 0))}), none selected for settlement.`] : []), ...cannotBlock(cannot, line).slice(1)];
+    return [head, `Challans we will settle (${ok.length}):`, ...ok.map(line), `Amount you pay (${feeRate(l)}%): *${inr(payable(l))}*`, ...notIncl, ...cannotBlock(cannot, line).slice(1)];
   });
   const plan = lokPlan(first, withOk.flatMap(approvedOf), dates || []);
   const lokLine = plan.length
@@ -738,6 +745,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
   };
   const approvalRef = useRef(null);
   useEffect(() => { if (askApproval) approvalRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [askApproval, lead.ref]);
+  const setVerdict = (i, canDo, reason) => patch({ challanVerdict: { index: i, canDo, reason: canDo === false ? (reason || 'area') : undefined } });
   const toggleApproved = (i) => {
     const now = (lead.challans || []).map((c, j) => (j === i ? !c.approved : !!c.approved));
     patch({ approved: now.flatMap((on, j) => (on ? [j] : [])) });
@@ -879,12 +887,25 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                 {lead.challans.length ? (
                   <div className="ch-list">
                     {lead.challans.map((c, i) => (chSt && (challanState(c) || '?') !== chSt ? null :
-                      <div className={'ch' + (c.approved ? ' ok' : '')} key={c.challanNo || i}>
+                      <div className={'ch' + (c.approved ? ' ok' : cannotDo(c) ? ' cannot' : '')} key={c.challanNo || i}>
                         <div className="ch-top"><span className="no">{c.challanNo || '—'}{(() => { const t = c.challanNo && (lead.tokens || []).find((x) => (x.challans || []).includes(c.challanNo));
                           return t ? <span className="ch-token">Token {t.number || ''}{t.number ? ' · ' : ''}{tokenDay(t.date).replace(/, \d{4}$/, '')}</span> : null; })()}</span><b>{c.amount ? `₹${c.amount.toLocaleString('en-IN')}` : ''}</b></div>
                         {c.offence && <div>{c.offence}</div>}
                         <div className="small">{[STATES[challanState(c)], c.date, c.location, c.status].filter(Boolean).join(' · ')}</div>
-                        <label className="appr-box"><input type="checkbox" checked={!!c.approved} disabled={busy} onChange={() => toggleApproved(i)} /> Customer approved</label>
+                        <div className="verdict">
+                          <select aria-label="Can this challan be resolved?" value={c.canDo === true ? 'yes' : c.canDo === false ? 'no' : ''} disabled={busy}
+                            onChange={(e) => setVerdict(i, e.target.value === 'yes' ? true : e.target.value === 'no' ? false : null, c.notReason)}>
+                            <option value="">Can it be resolved?</option>
+                            <option value="yes">✓ Can be resolved</option>
+                            <option value="no">✗ Cannot be resolved</option>
+                          </select>
+                          {cannotDo(c) && (
+                            <select aria-label="Reason it cannot be resolved" value={c.notReason || 'area'} disabled={busy} onChange={(e) => setVerdict(i, false, e.target.value)}>
+                              {Object.entries(NOT_REASONS).map(([k, r]) => <option key={k} value={k}>{r.label}</option>)}
+                            </select>
+                          )}
+                        </div>
+                        {!cannotDo(c) && <label className="appr-box"><input type="checkbox" checked={!!c.approved} disabled={busy} onChange={() => toggleApproved(i)} /> Customer approved</label>}
                       </div>
                     ))}
                     {chSt && !lead.challans.some((c) => (challanState(c) || '?') === chSt) && <div className="small">No challans from {STATES[chSt] || 'this state'} on this lead.</div>}
