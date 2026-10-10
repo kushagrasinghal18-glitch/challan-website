@@ -500,3 +500,16 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 .an-tile.an-click { text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .an-tile.an-click:hover, .an-tile.an-click.on { border-color: #2F5AA8; }
 .an-paid .linkish { background: none; border: 0; padding: 0; color: #2F5AA8; text-decoration: underline; cursor: pointer; font: inherit; font-weight: 600; text-align: left; }
+
+/* Confirm payment received */
+.pay-scrim { display: flex; align-items: center; justify-content: center; z-index: 60; padding: 16px; }
+.pay-dialog { background: #fff; border-radius: 14px; padding: 20px; width: min(440px, 100%); display: grid; gap: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, .25); }
+.pay-dialog h3 { margin: 0; font-size: 18px; }
+.pay-dialog .field { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+.pay-dialog .field input { font: inherit; font-size: 18px; padding: 10px 12px; border: 1px solid #CFCABD; border-radius: 8px; }
+.pay-due { font-size: 14px; }
+.pay-sure { align-items: flex-start; margin-top: 0; }
+.pay-sure input { margin-top: 2px; flex: none; }
+.pay-btns { justify-content: flex-end; margin: 4px 0 0; }
+.pay-got.done { border-color: #A8D5B9; background: #F1F9F4; }
+.pay-dialog .stale { font-size: 13px; color: #8A5200; background: #FFF4DE; border-radius: 8px; padding: 6px 10px; }

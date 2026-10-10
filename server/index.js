@@ -672,6 +672,12 @@ app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
   const patch = { status: b.status, note: b.note, approved: Array.isArray(b.approved) ? b.approved.slice(0, 300) : undefined, feeRate: Number(b.feeRate) || undefined,
     waApproval: ['sent', 'received', 'clear'].includes(b.waApproval) ? b.waApproval : undefined, waRead: b.waRead === true, docsSeen: b.docsSeen === true,
     paymentSent: b.paymentSent === true };
+  // Payment received needs the amount actually received, confirmed in the panel's pop-up.
+  if (b.paymentReceived !== undefined) {
+    const amount = Math.round(Number(b.paymentReceived?.amount));
+    if (!(amount > 0 && amount <= 10_000_000) || b.paymentReceived?.confirmed !== true) return res.status(400).json({ error: 'payment_amount_required' });
+    patch.paymentReceived = { amount };
+  } else if (b.status === 'Payment received') return res.status(400).json({ error: 'payment_amount_required' });
   if (b.plate !== undefined) {
     const p = normalizePlate(b.plate);
     if (!PLATE_RE.test(p)) return res.status(400).json({ error: 'invalid_plate' });

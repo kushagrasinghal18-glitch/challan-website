@@ -259,6 +259,11 @@ export function updateLead(ref, patch, by, onlyFor) {
         ? { ...m, status: patch.waStatus.status, ...(patch.waStatus.error ? { error: patch.waStatus.error } : {}) } : m));
     }
     if (patch.waRead) out.waUnread = 0;
+    // Money actually received, as entered and confirmed by the team. Moves an early lead to Payment received.
+    if (patch.paymentReceived) {
+      out.payment = { amount: patch.paymentReceived.amount, at: new Date().toISOString(), by };
+      if (['New', 'Contacted'].includes(out.status || lead.status)) out.status = 'Payment received';
+    }
     if (patch.paymentSent) {
       const ok = (lead.challans || []).filter((c) => c.approved);
       const rate = FEE_RATES.includes(lead.feeRate) ? lead.feeRate : 50;
@@ -309,6 +314,7 @@ export function updateLead(ref, patch, by, onlyFor) {
       out.tokens = claim(lead.tokens, patch.tokenChallans.id, patch.tokenChallans.challans || []);
     }
     if (patch.removeToken) out.tokens = (lead.tokens || []).filter((t) => t.id !== patch.removeToken);
+    if (patch.paymentReceived) autoNotes.push(`Payment received: ₹${patch.paymentReceived.amount.toLocaleString('en-IN')} (confirmed by ${by}).`);
     if (patch.docsSeen) out.docsNew = 0;
     // Private upload link for the customer: { token, expiresAt } or null to switch it off.
     if (patch.docLink !== undefined) out.docLink = patch.docLink ? { ...patch.docLink, at: new Date().toISOString(), by } : null;

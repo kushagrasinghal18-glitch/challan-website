@@ -201,3 +201,16 @@ test('tokens: uploading one moves an open lead to Scheduled', async () => {
   l = await updateLead('TOK-1', { removeToken: 'tok1aaaaaaaa' }, 'Priya');
   assert.deepEqual(l.tokens.map((t) => t.id), ['tok1bbbbbbbb', 'tok1cccccccc']);
 });
+
+test('payment received: records the amount and moves an early lead on', async () => {
+  await addLead({ ref: 'PAY-1', createdAt: '2026-10-10T00:00:00Z', name: 'Kiran', plate: 'UP16AB3333', phone: '9876500003', status: 'Contacted', notes: [] });
+  let l = await updateLead('PAY-1', { paymentReceived: { amount: 1500 } }, 'Priya');
+  assert.equal(l.status, 'Payment received');
+  assert.deepEqual([l.payment.amount, l.payment.by], [1500, 'Priya']);
+  assert.match(l.notes[0].text, /Payment received: ₹1,500 \(confirmed by Priya\)/);
+  // Recorded later on a lead that is further along: amount saved, stage kept.
+  l = await updateLead('PAY-1', { status: 'Scheduled' }, 'Priya');
+  l = await updateLead('PAY-1', { paymentReceived: { amount: 1600 } }, 'Amit');
+  assert.equal(l.status, 'Scheduled');
+  assert.equal(l.payment.amount, 1600);
+});

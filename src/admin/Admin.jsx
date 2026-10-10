@@ -647,7 +647,49 @@ function AddVehicles({ lead, onAdd }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans, onAddVehicles, myId }) {
+// "Are you sure the payment is received?" Needs the amount received and a tick before it saves.
+function PaymentDialog({ lead, onCancel, onSave }) {
+  const due = payable(lead);
+  const [amount, setAmount] = useState(lead.payment ? String(lead.payment.amount) : '');
+  const [sure, setSure] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const n = Math.round(Number(amount) || 0);
+  const ok = n > 0 && sure && !busy;
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onCancel]);
+  const save = async (e) => {
+    e.preventDefault();
+    if (!ok) return;
+    setBusy(true); setErr('');
+    try { if (!(await onSave(n))) setErr('Not saved. Check your connection and try again.'); } finally { setBusy(false); }
+  };
+  return (
+    <div className="scrim pay-scrim" onClick={(e) => e.target === e.currentTarget && onCancel()}>
+      <form className="pay-dialog" role="dialog" aria-modal="true" aria-labelledby="pay-title" onSubmit={save}>
+        <h3 id="pay-title">Are you sure the payment is received?</h3>
+        <div className="small">{lead.name}{lead.plate ? ` · ${fmtPlate(lead.plate)}` : ''} · {lead.ref}</div>
+        <div className="pay-due">Amount due: <b>{approvedOf(lead).length ? inr(due) : 'no challans approved yet'}</b></div>
+        <label className="field">Amount received (₹)
+          <input inputMode="numeric" autoFocus value={amount} placeholder="e.g. 2500" onChange={(e) => { setAmount(e.target.value.replace(/[^\d]/g, '')); setSure(false); }} />
+        </label>
+        {n > 0 && due > 0 && n !== due && <div className="stale">This is {n < due ? 'less' : 'more'} than the amount due ({inr(due)}). Check it before confirming.</div>}
+        <label className="check-line pay-sure"><input type="checkbox" checked={sure} disabled={!(n > 0)} onChange={(e) => setSure(e.target.checked)} />
+          I confirm {n > 0 ? inr(n) : 'the payment'} has been received in our account.</label>
+        {err && <div className="err" role="alert">{err}</div>}
+        <div className="cc-row pay-btns">
+          <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn primary" disabled={!ok}>{busy ? 'Saving…' : 'Yes, payment received'}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans, onAddVehicles, myId, onAskPayment }) {
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
@@ -723,7 +765,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
             <div className="status-btns head-status" role="group" aria-label="Stage">
               {statuses.map((s) => {
                 const on = lead.status === s, [, fg] = STATUS_COLORS[s] || STATUS_COLORS.New;
-                return <button key={s} disabled={busy} onClick={() => { if (on) return; patch({ status: s }); if (s === 'Contacted') onAsked(true); }}
+                return <button key={s} disabled={busy} onClick={() => { if (on) return; if (s === 'Payment received') { onAskPayment(lead.ref); return; } patch({ status: s }); if (s === 'Contacted') onAsked(true); }}
                   style={on ? { background: fg, borderColor: fg, color: '#fff' } : undefined} aria-pressed={on}>{s}</button>;
               })}
             </div>
@@ -887,6 +929,18 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                     </div>
                   );
                 })()}
+                {(approvedIn || lead.payment || approvedOf(lead).length > 0) && (
+                  <div className={'wa-appr pay-got' + (lead.payment ? ' done' : '')}>
+                    <div className="sec-k">Payment received</div>
+                    {lead.payment
+                      ? <div className="ok-line">✓ {inr(lead.payment.amount)} received · confirmed by {lead.payment.by} · {fullDate(lead.payment.at)}
+                          {lead.payment.amount !== payable(lead) && <span className="small"> (amount due {inr(payable(lead))})</span>}</div>
+                      : <div className="small">When the money reaches your account, record it here. Amount due: {inr(payable(lead))}.</div>}
+                    <div className="cc-row">
+                      <button className={'btn ' + (lead.payment ? 'ghost' : 'primary')} disabled={busy} onClick={() => onAskPayment(lead.ref)}>{lead.payment ? 'Change amount' : '✓ Mark payment received'}</button>
+                    </div>
+                  </div>
+                )}
                 {approvedIn && (
                   <div className={'wa-appr pay-box' + (lead.paymentSent ? ' done' : '')}>
                     <div className="sec-k">Payment details on WhatsApp</div>
@@ -1587,7 +1641,9 @@ export default function Admin() {
 
   // After "Contacted", open the lead and ask which challans the customer approved.
   const [ask, setAsk] = useState(null);
+  const [payFor, setPayFor] = useState(null); // lead ref whose payment is being confirmed
   const changeStatus = async (ref, status) => {
+    if (status === 'Payment received') { setPayFor(ref); return; }
     await onPatch(ref, { status });
     if (status === 'Contacted') { setSel(ref); setAsk(ref); }
   };
@@ -1768,8 +1824,19 @@ export default function Admin() {
       {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st} lokDates={site?.lokAdalatDates}
         siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend} getPayment={getPayment} isAdminUser={isAdmin}
         docTypes={docTypes} onUploadDoc={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onDocLink={onDocLink}
-        onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken} onTokenChallans={onTokenChallans} onAddVehicles={onAddVehicles} myId={me.uid}
+        onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken} onTokenChallans={onTokenChallans} onAddVehicles={onAddVehicles} myId={me.uid} onAskPayment={setPayFor}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
+      {payFor && all.find((l) => l.ref === payFor) && (
+        <PaymentDialog lead={all.find((l) => l.ref === payFor)} onCancel={() => setPayFor(null)}
+          onSave={async (amount) => {
+            try {
+              const { lead } = await call(`/api/admin/leads/${encodeURIComponent(payFor)}`, auth, { method: 'PATCH', body: JSON.stringify({ paymentReceived: { amount, confirmed: true } }) });
+              setLeads((ls) => ls.map((l) => (l.ref === payFor ? lead : l)));
+              setPayFor(null);
+              return true;
+            } catch (e) { if (e.status === 401) signOut(); return false; }
+          }} />
+      )}
     </>
   );
 }

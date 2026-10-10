@@ -38,7 +38,7 @@ function furthest(l) {
 const PAID = FLOW.indexOf('Payment received');
 // When the customer paid: the Payment received stage, else (older leads that skipped it) when it was settled.
 // Only leads that are paid now count: a lead moved back before Payment received, or Lost (refunded), drops out.
-const paidAt = (l) => (FLOW.indexOf(l.status) < PAID ? null : reachedAt(l, 'Payment received') || (l.status === 'Settled' ? reachedAt(l, 'Settled') : null));
+const paidAt = (l) => (FLOW.indexOf(l.status) < PAID ? null : l.payment?.at || reachedAt(l, 'Payment received') || (l.status === 'Settled' ? reachedAt(l, 'Settled') : null));
 const approvedByCustomer = (l) => l.waApproval?.state === 'received' || (l.challans || []).some((c) => c.approved);
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
@@ -57,7 +57,9 @@ export default function Analytics({ leads, staff, payable, inr, lokDates, onOpen
     const settled = all.filter((l) => inRange(reachedAt(l, 'Settled')) && l.status === 'Settled');
     const lost = all.filter((l) => inRange(reachedAt(l, 'Lost')) && l.status === 'Lost');
     const paid = all.filter((l) => inRange(paidAt(l)));
-    const revenue = paid.reduce((n, l) => n + payable(l), 0);
+    // The amount the team confirmed receiving; older leads without one use the amount due.
+    const got = (l) => (l.payment ? l.payment.amount : payable(l));
+    const revenue = paid.reduce((n, l) => n + got(l), 0);
     const paySent = all.filter((l) => inRange(l.paymentSent?.at));
     const open = all.filter((l) => !['Settled', 'Lost'].includes(l.status));
     const pipeline = open.filter((l) => approvedByCustomer(l) && furthest(l) < PAID).reduce((n, l) => n + payable(l), 0);
@@ -91,7 +93,7 @@ export default function Analytics({ leads, staff, payable, inr, lokDates, onOpen
         const r = m.get(k) || { key: k, label: labelOf(k), n: 0, settled: 0, lost: 0, revenue: 0 };
         r.n++;
         if (l.status === 'Settled') r.settled++;
-        if (paidAt(l)) r.revenue += payable(l);
+        if (paidAt(l)) r.revenue += got(l);
         if (l.status === 'Lost') r.lost++;
         m.set(k, r);
       }
@@ -99,7 +101,7 @@ export default function Analytics({ leads, staff, payable, inr, lokDates, onOpen
     };
     const staffName = Object.fromEntries((staff || []).map((u) => [u.id, u.name]));
     return {
-      received, settled, lost, paid, revenue, paySent, pipeline, avgDays, buckets, step, funnel,
+      received, settled, lost, paid, revenue, got, paySent, pipeline, avgDays, buckets, step, funnel,
       conv: pct(received.filter((l) => l.status === 'Settled').length, received.length),
       byStatus: [...FLOW, 'Lost'].map((s) => ({ key: s, label: s, n: received.filter((l) => l.status === s).length })),
       bySource: group((l) => l.source || 'Website', (k) => k),
@@ -171,7 +173,7 @@ export default function Analytics({ leads, staff, payable, inr, lokDates, onOpen
       {showPaid && (
         <section className="panel pad an-card">
           <h2>Revenue: {inr(d.revenue)} from {d.paid.length} lead{d.paid.length === 1 ? '' : 's'}</h2>
-          <div className="small" style={{ marginBottom: 10 }}>Each lead counts the amount the customer pays (approved challans × their rate) on the day it reached Payment received, or Settled for leads that skipped that stage.</div>
+          <div className="small" style={{ marginBottom: 10 }}>Each lead counts the amount received, as entered when payment was confirmed, on that day. Older leads without an entered amount count the amount due (approved challans × their rate).</div>
           {!d.paid.length ? <div className="small">No payments in this period.</div> : (
             <table className="an-table an-paid">
               <thead><tr><th>Lead</th><th>Paid on</th><th>Stage now</th><th>Approved challans</th><th>Rate</th><th>Revenue</th></tr></thead>
@@ -186,7 +188,7 @@ export default function Analytics({ leads, staff, payable, inr, lokDates, onOpen
                       <td>{l.status}</td>
                       <td className="num">{ok.length} · {inr(ok.reduce((n, c) => n + (c.amount || 0), 0))}</td>
                       <td className="num">{[50, 40, 30].includes(l.feeRate) ? l.feeRate : 50}%</td>
-                      <td className="num"><b>{inr(payable(l))}</b></td>
+                      <td className="num"><b>{inr(d.got(l))}</b>{!l.payment && <div className="small">amount due, not entered</div>}</td>
                     </tr>
                   );
                 })}
