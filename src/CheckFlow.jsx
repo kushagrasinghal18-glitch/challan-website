@@ -3,7 +3,8 @@ import * as api from './api.js';
 import * as Icon from './icons.jsx';
 import { PLATE_RE, fmtPlate } from './format.js';
 
-const MAX_VEHICLES = 5;
+// Matches the server's flood guard; normal customers never reach it.
+const MAX_VEHICLES = 100;
 const bare = (p) => p.replace(/\s/g, '');
 
 // Lead capture: one form (name + mobile, vehicle carried over from the hero) → thanks.

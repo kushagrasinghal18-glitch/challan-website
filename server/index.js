@@ -92,7 +92,8 @@ app.get('/api/challans', limit(20, 10 * 60_000), requireSession, async (req, res
   }
 });
 
-const MAX_VEHICLES = 5;
+// Only a guard against a script flooding the lead list; real customers (fleet owners included) stay far below it.
+const MAX_VEHICLES = 100;
 // Saves a lead under a fresh reference like GBN-2612345, retrying the rare duplicate.
 async function saveNewLead(code, lead) {
   for (let attempt = 0; ; attempt++) {
