@@ -647,7 +647,7 @@ function AddVehicles({ lead, onAdd }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans, onAddVehicles }) {
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans, onAddVehicles, myId }) {
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
@@ -914,7 +914,9 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
               </div>
             )}
 
-            <Docs lead={lead} types={docTypes} onUpload={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onPatch={onPatch} onDocLink={onDocLink} />
+            {isAdmin || lead.agentId === myId
+              ? <Docs lead={lead} types={docTypes} onUpload={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onPatch={onPatch} onDocLink={onDocLink} />
+              : <div className="docs"><div className="docs-toggle"><span className="sec-k">Documents</span><span className="small">{(lead.docs || []).length} file{(lead.docs || []).length === 1 ? '' : 's'} · open only for admins and {lead.agent || 'the assigned staff member'}</span></div></div>}
           </div>
           <div className="col-side">
             <div className="actions">
@@ -1237,7 +1239,7 @@ const STAFF_ERRORS = {
 };
 
 function Staff({ auth, me, staff, reload, signOut }) {
-  const blank = { name: '', username: '', password: '', role: 'staff' };
+  const blank = { name: '', username: '', password: '', role: 'staff', seeAll: true };
   const [add, setAdd] = useState(blank);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -1263,11 +1265,11 @@ function Staff({ auth, me, staff, reload, signOut }) {
   return (
     <section className="panel pad" id="staff">
       <h2>Staff</h2>
-      <p className="hint">Everyone signs in at this same page with their own username and password. <b>Staff</b> see only the leads assigned to them. <b>Admins</b> see all leads and can change settings. Your own login is username <b>admin</b> with the ADMIN_PASSWORD from Render.</p>
+      <p className="hint">Everyone signs in at this same page with their own username and password. <b>Staff</b> see all leads, or only the ones assigned to them if you set <b>Leads</b> to "Only assigned". Customer documents open only for admins and the staff member the lead is assigned to. <b>Admins</b> see all leads and can change settings. Your own login is username <b>admin</b> with the ADMIN_PASSWORD from Render.</p>
       {staff.length > 0 && (
         <div className="table-wrap">
           <table className="staff-table">
-            <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Leads</th><th>Status</th><th /></tr></thead>
             <tbody>
               {staff.map((u) => (
                 <tr key={u.id} className={u.active ? '' : 'off'}>
@@ -1277,6 +1279,14 @@ function Staff({ auth, me, staff, reload, signOut }) {
                     <select value={u.role} disabled={busy || u.id === me.uid} onChange={(e) => patch(u.id, { role: e.target.value }, `${u.name} is now ${e.target.value === 'admin' ? 'an admin' : 'staff'}.`)}>
                       <option value="staff">Staff</option><option value="admin">Admin</option>
                     </select>
+                  </td>
+                  <td>
+                    {u.role === 'admin' ? <span className="small">All leads</span> : (
+                      <select value={u.seeAll ? 'all' : 'mine'} disabled={busy} aria-label={`Which leads ${u.name} sees`}
+                        onChange={(e) => patch(u.id, { seeAll: e.target.value === 'all' }, e.target.value === 'all' ? `${u.name} now sees all leads.` : `${u.name} now sees only leads assigned to them.`)}>
+                        <option value="all">All leads</option><option value="mine">Only assigned</option>
+                      </select>
+                    )}
                   </td>
                   <td>{u.active ? 'Active' : 'Switched off'}</td>
                   <td className="row-actions">
@@ -1311,6 +1321,9 @@ function Staff({ auth, me, staff, reload, signOut }) {
             <select id="staff-role" value={add.role} onChange={(e) => setAdd({ ...add, role: e.target.value })}><option value="staff">Staff</option><option value="admin">Admin</option></select>
           </label>
         </div>
+        {add.role === 'staff' && (
+          <label className="check-line"><input type="checkbox" checked={add.seeAll} onChange={(e) => setAdd({ ...add, seeAll: e.target.checked })} /> Can see all leads (untick to show only leads assigned to them)</label>
+        )}
         <div className="save-bar">
           {msg && <span className={msg.ok ? 'ok-msg' : 'err'} role="status">{msg.text}</span>}
           <button className="btn primary" disabled={busy || !add.name.trim() || !add.username || add.password.length < 8}>Add person</button>
@@ -1385,6 +1398,7 @@ export default function Admin() {
   const [auth, setAuth] = useState(readSaved);
   const [leads, setLeads] = useState(null);
   const [storage, setStorage] = useState('');
+  const [seeAll, setSeeAll] = useState(false); // staff with "Can see all leads"
   const [statuses, setStatuses] = useState(Object.keys(STATUS_COLORS));
   const [waApi, setWaApi] = useState(false);
   const [tab, setTab] = useState('All');
@@ -1421,7 +1435,7 @@ export default function Admin() {
         }
       }
       seen.current = new Set(refs);
-      setLeads(r.leads); setStorage(r.storage); setErr('');
+      setLeads(r.leads); setStorage(r.storage); setErr(''); if (r.viewer) setSeeAll(!!r.viewer.seeAll);
       if (Array.isArray(r.docTypes)) setDocTypes(r.docTypes);
     } catch (e) {
       if (e.status === 401) signOut();
@@ -1661,7 +1675,7 @@ export default function Admin() {
       <main className="page">
         {page === 'calendar' ? (
           <>
-            <div className="head"><div><h1>Token calendar</h1><div className="sub">{isAdmin ? 'Court tokens uploaded on every lead.' : 'Court tokens on the leads assigned to you.'} Click a date to see its tokens.</div></div></div>
+            <div className="head"><div><h1>Token calendar</h1><div className="sub">{isAdmin || seeAll ? 'Court tokens uploaded on every lead.' : 'Court tokens on the leads assigned to you.'} Click a date to see its tokens.</div></div></div>
             <Calendar leads={leads} onOpenToken={onOpenToken} onOpenLead={(ref) => { setSel(ref); setAsk(null); }} />
           </>
         ) : page === 'analytics' ? (
@@ -1695,7 +1709,7 @@ export default function Admin() {
             <button className="btn" onClick={() => { setTab('All'); setQ(''); setSt(''); setFresh([]); }}>Got it</button>
           </div>
         )}
-        {!isAdmin && <div className="sub" style={{ marginBottom: 12 }}>You see the leads assigned to you.</div>}
+        {!isAdmin && <div className="sub" style={{ marginBottom: 12 }}>{seeAll ? 'You see all leads. Customer documents open only on leads assigned to you.' : 'You see the leads assigned to you.'}</div>}
 
         <div className="panel">
           <div className="tabs" role="tablist">
@@ -1749,7 +1763,7 @@ export default function Admin() {
       {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st} lokDates={site?.lokAdalatDates}
         siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend} getPayment={getPayment} isAdminUser={isAdmin}
         docTypes={docTypes} onUploadDoc={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onDocLink={onDocLink}
-        onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken} onTokenChallans={onTokenChallans} onAddVehicles={onAddVehicles}
+        onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken} onTokenChallans={onTokenChallans} onAddVehicles={onAddVehicles} myId={me.uid}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
     </>
   );

@@ -47,10 +47,15 @@ const requireUser = async (req, res, next) => {
   try {
     const u = (await listStaff()).find((x) => x.id === t.uid);
     if (!u?.active || u.tokenVer !== t.ver) return res.status(401).json({ error: 'not_signed_in' });
-    req.user = { uid: u.id, name: u.name, role: u.role };
+    req.user = { uid: u.id, name: u.name, role: u.role, seeAll: u.role === 'staff' && u.seeAll === true };
     next();
   } catch (err) { console.error('[admin] staff read failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
 };
+// Who sees which leads: admins and staff with "Can see all leads" see every lead and can work on it;
+// other staff only their own. Customer documents stay with admins and the assigned staff member.
+const seesAll = (user) => user.role === 'admin' || user.seeAll === true;
+const scopeOf = (user) => (seesAll(user) ? null : user.uid); // onlyFor for updateLead
+const docScopeOf = (user) => (user.role === 'admin' ? null : user.uid);
 const requireAdmin = [requireUser, (req, res, next) => (req.user.role === 'admin' ? next() : res.status(403).json({ error: 'admins_only' }))];
 
 const requireSession = (req, res, next) => {
@@ -275,19 +280,21 @@ app.post('/api/admin/login', limit(10, 15 * 60_000), async (req, res) => {
   try {
     const u = (await listStaff()).find((x) => x.username === username);
     if (!u?.active || !verifyPassword(password, u.passHash)) return res.status(401).json({ error: 'wrong_password' });
-    const user = { uid: u.id, name: u.name, role: u.role };
+    const user = { uid: u.id, name: u.name, role: u.role, seeAll: u.seeAll === true };
     res.json({ token: issueTeamToken({ ...user, ver: u.tokenVer }), user });
   } catch (err) { console.error('[admin] login failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
 });
 
 app.get('/api/admin/me', requireUser, (req, res) => res.json({ user: req.user }));
 
-// Staff only see the leads assigned to them.
+// Staff see the leads assigned to them, or every lead when "Can see all leads" is on (seeAll).
 app.get('/api/admin/leads', requireUser, async (req, res) => {
   try {
     let leads = await listLeads();
-    if (req.user.role !== 'admin') leads = leads.filter((l) => l.agentId === req.user.uid);
-    res.json({ leads, storage: store().name, docTypes: docTypesOf(await getSettings()) });
+    if (!seesAll(req.user)) leads = leads.filter((l) => l.agentId === req.user.uid);
+    // The customer upload link only goes to people who can handle that lead's documents.
+    else if (req.user.role !== 'admin') leads = leads.map((l) => (l.docLink && !canSeeDocs(l, req.user) ? { ...l, docLink: null } : l));
+    res.json({ leads, storage: store().name, docTypes: docTypesOf(await getSettings()), viewer: { uid: req.user.uid, role: req.user.role, seeAll: seesAll(req.user) } });
   } catch (err) { console.error('[admin] list failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
 });
 
@@ -305,7 +312,7 @@ app.put('/api/admin/settings', requireAdmin, async (req, res) => {
 
 // ── Staff accounts (admins manage them) ─────────────────
 const USERNAME_RE = /^[a-z0-9._-]{3,30}$/;
-const publicStaff = (u) => ({ id: u.id, name: u.name, username: u.username, role: u.role, active: u.active, createdAt: u.createdAt });
+const publicStaff = (u) => ({ id: u.id, name: u.name, username: u.username, role: u.role, active: u.active, seeAll: u.seeAll === true, createdAt: u.createdAt });
 
 app.get('/api/admin/staff', requireUser, async (req, res) => {
   try {
@@ -329,13 +336,14 @@ app.post('/api/admin/staff', requireAdmin, async (req, res) => {
     const u = {
       id: 'u' + Math.random().toString(36).slice(2, 10), name, username, passHash: hashPassword(password),
       role: b.role === 'admin' ? 'admin' : 'staff', active: true, tokenVer: 1, createdAt: new Date().toISOString(),
+      seeAll: b.seeAll !== false, // new staff see every lead unless switched off
     };
     await saveStaff([...list, u]);
     res.json({ staff: publicStaff(u) });
   } catch (err) { console.error('[admin] staff save failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
 });
 
-// patch: { name?, role?, active?, password? } — a new password signs that person out everywhere.
+// patch: { name?, role?, active?, seeAll?, password? } — a new password signs that person out everywhere.
 app.patch('/api/admin/staff/:id', requireAdmin, async (req, res) => {
   const b = req.body || {};
   if (b.password !== undefined && String(b.password).length < 8) return res.status(400).json({ error: 'short_password' });
@@ -346,6 +354,7 @@ app.patch('/api/admin/staff/:id', requireAdmin, async (req, res) => {
     if (req.user.uid === u.id && (b.active === false || b.role === 'staff')) return res.status(400).json({ error: 'cannot_demote_self' });
     if (typeof b.name === 'string' && b.name.trim()) u.name = b.name.trim().slice(0, 60);
     if (b.role === 'admin' || b.role === 'staff') u.role = b.role;
+    if (typeof b.seeAll === 'boolean') u.seeAll = b.seeAll;
     if (typeof b.active === 'boolean') { u.active = b.active; if (!b.active) u.tokenVer = (u.tokenVer || 1) + 1; }
     if (b.password !== undefined) { u.passHash = hashPassword(String(b.password)); u.tokenVer = (u.tokenVer || 1) + 1; }
     await saveStaff(list);
@@ -372,7 +381,7 @@ app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
     : `No challans on this vehicle (checked on ${source}).`;
   try {
     const lead = await updateLead(req.params.ref, { challans, challansSource: source, note, ...(ownerName ? { rcOwner: { name: ownerName, source } } : {}) },
-      req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+      req.user.name, scopeOf(req.user));
     if (!lead) return res.status(404).json({ error: 'not_found' });
     res.json({ lead, count: challans.length, total });
   } catch (err) {
@@ -396,7 +405,8 @@ function sniff(buf) {
   if (buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
   return '';
 }
-const canSee = (lead, user) => user.role === 'admin' || lead.agentId === user.uid;
+const canSee = (lead, user) => seesAll(user) || lead.agentId === user.uid;
+const canSeeDocs = (lead, user) => user.role === 'admin' || lead.agentId === user.uid;
 const rawDoc = express.raw({ type: () => true, limit: DOC_MAX });
 
 // Checks and stores one uploaded file on a lead. Returns { lead } or { status, error }.
@@ -428,9 +438,9 @@ app.post('/api/admin/leads/:ref/docs', requireUser, readDoc, async (req, res) =>
   try {
     const lead = await getLead(req.params.ref);
     if (!lead) return res.status(404).json({ error: 'not_found' });
-    if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
+    if (!canSeeDocs(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
     const r = await acceptDoc(lead, req.query.type, Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), req.query.name, req.user.name,
-      { onlyFor: req.user.role === 'admin' ? null : req.user.uid });
+      { onlyFor: docScopeOf(req.user) });
     if (r.error) return res.status(r.status).json({ error: r.error });
     res.json({ lead: r.lead });
   } catch (err) {
@@ -446,7 +456,7 @@ app.post('/api/admin/leads/:ref/doclink', requireUser, async (req, res) => {
   try {
     const link = off ? null : { token: crypto.randomBytes(18).toString('base64url'), expiresAt: new Date(Date.now() + LINK_DAYS * 864e5).toISOString() };
     const lead = await updateLead(req.params.ref, { docLink: link, note: off ? 'Customer upload link switched off.' : `Customer upload link created (works for ${LINK_DAYS} days).` },
-      req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+      req.user.name, docScopeOf(req.user));
     if (!lead) return res.status(404).json({ error: 'not_found' });
     res.json({ lead });
   } catch (err) {
@@ -498,7 +508,7 @@ app.get('/api/admin/leads/:ref/docs/:id', requireUser, async (req, res) => {
     const lead = await getLead(req.params.ref);
     const meta = lead?.docs?.find((d) => d.id === req.params.id);
     if (!meta) return res.status(404).json({ error: 'not_found' });
-    if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
+    if (!canSeeDocs(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
     const doc = await getDoc(meta.id);
     if (!doc) return res.status(404).json({ error: 'not_found' });
     res.set({ 'Content-Type': meta.mime, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
@@ -513,7 +523,7 @@ app.delete('/api/admin/leads/:ref/docs/:id', requireUser, async (req, res) => {
     const meta = lead?.docs?.find((d) => d.id === req.params.id);
     if (!meta) return res.status(404).json({ error: 'not_found' });
     const updated = await updateLead(lead.ref, { removeDoc: meta.id, note: `Removed ${meta.typeName}: ${meta.name}` },
-      req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+      req.user.name, docScopeOf(req.user));
     await removeDoc(meta.id);
     res.json({ lead: updated });
   } catch (err) {
@@ -553,7 +563,7 @@ app.post(tokenUrl, requireUser, readDoc, async (req, res) => {
     let updated;
     try {
       updated = await updateLead(lead.ref, { addToken: { id, date, number, challans: tokenChallans(lead, req.query.challans), name: `${base}.${DOC_KINDS[mime]}`, mime, size: buf.length } },
-        req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+        req.user.name, scopeOf(req.user));
     } catch (err) { await removeDoc(id).catch(() => {}); throw err; }
     if (!updated) { await removeDoc(id).catch(() => {}); return res.status(404).json({ error: 'not_found' }); }
     console.log('[tokens] uploaded', lead.ref, date, buf.length);
@@ -587,7 +597,7 @@ app.patch(`${tokenUrl}/:id`, requireUser, async (req, res) => {
     const challans = tokenChallans(lead, req.body?.challans);
     const updated = await updateLead(lead.ref, { tokenChallans: { id: meta.id, challans },
       note: `Token ${meta.number || meta.date} now covers ${challans.length ? `challans ${challans.join(', ')}` : 'no challans'}.` },
-      req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+      req.user.name, scopeOf(req.user));
     res.json({ lead: updated });
   } catch (err) {
     if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
@@ -601,7 +611,7 @@ app.delete(`${tokenUrl}/:id`, requireUser, async (req, res) => {
     const meta = lead?.tokens?.find((t) => t.id === req.params.id);
     if (!meta) return res.status(404).json({ error: 'not_found' });
     const updated = await updateLead(lead.ref, { removeToken: meta.id, note: `Removed token for ${meta.date}: ${meta.name}` },
-      req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+      req.user.name, scopeOf(req.user));
     await removeDoc(meta.id);
     res.json({ lead: updated });
   } catch (err) {
@@ -687,7 +697,7 @@ app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
         patch.assign = { id: u.id, name: u.name };
       }
     }
-    const lead = await updateLead(req.params.ref, patch, req.user.name, req.user.role === 'admin' ? null : req.user.uid);
+    const lead = await updateLead(req.params.ref, patch, req.user.name, scopeOf(req.user));
     if (!lead) return res.status(404).json({ error: 'not_found' });
     res.json({ lead });
   } catch (err) {
@@ -701,7 +711,7 @@ app.get('/api/admin/leads/:ref/payment', requireUser, async (req, res) => {
   try {
     const lead = (await listLeads()).find((l) => l.ref === req.params.ref);
     if (!lead) return res.status(404).json({ error: 'not_found' });
-    if (req.user.role !== 'admin' && lead.agentId !== req.user.uid) return res.status(403).json({ error: 'not_your_lead' });
+    if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
     const s = await getSettings();
     const pay = s.payment || {};
     if (!pay.upiId) return res.status(409).json({ error: 'payment_not_set' });
@@ -796,7 +806,7 @@ app.post('/api/admin/whatsapp-web', requireUser, limit(120, 60_000), async (req,
     const run = waQueue.then(() => handleWhatsApp({ messages }, { by: req.user.name, assign }));
     waQueue = run.catch(() => {});
     await run;
-    const leads = (await listLeads()).filter((l) => l.phone === phone && (req.user.role === 'admin' || l.agentId === req.user.uid));
+    const leads = (await listLeads()).filter((l) => l.phone === phone && canSee(l, req.user));
     const upiSet = !!(await getSettings()).payment?.upiId;
     res.json({ leads: leads.map((l) => ({ ref: l.ref, name: l.name, plate: l.plate, status: l.status, agent: l.agent, waApproval: l.waApproval?.state || '',
       paymentReady: upiSet && l.waApproval?.state === 'received', paymentSent: !!l.paymentSent })) });
@@ -816,7 +826,7 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
   try {
     const lead = (await listLeads()).find((l) => l.ref === req.params.ref);
     if (!lead) return res.status(404).json({ error: 'not_found' });
-    if (req.user.role !== 'admin' && lead.agentId !== req.user.uid) return res.status(403).json({ error: 'not_your_lead' });
+    if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
     const open = lead.waLastIn && Date.now() - new Date(lead.waLastIn) < WINDOW_MS;
     const to = '91' + lead.phone;
     let id, sentText = text, kind = 'text';
