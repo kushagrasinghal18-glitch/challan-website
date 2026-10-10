@@ -30,3 +30,6 @@ services:
       # Max paid InstantPay lookups per day; raise it as real traffic grows
       - key: MAX_LIVE_LOOKUPS_PER_DAY
         value: "100"
+      # AI replies on the linked WhatsApp number (Settings → Automatic WhatsApp). Typed in Render, never here.
+      - key: GEMINI_API_KEY
+        sync: false

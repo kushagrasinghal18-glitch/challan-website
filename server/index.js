@@ -6,6 +6,7 @@ import { PLATE_RE, normalizePlate } from './plate.js';
 import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, checkAdminPassword, hashPassword, verifyPassword, issueTeamToken, readTeamToken } from './auth.js';
 import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
+import { mountAutopilot } from './autopilot.js';
 import crypto from 'node:crypto';
 import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee,
   getLead, saveDoc, getDoc, removeDoc, docTypesOf, leadByDocToken } from './store.js';
@@ -265,7 +266,8 @@ app.get('/api/settings', async (req, res) => {
 });
 
 // ── Admin panel API ─────────────────────────────────────
-app.get('/api/admin/status', (req, res) => res.json({ enabled: adminEnabled(), storage: store().name, statuses: STATUSES, whatsappApi: waConfigured() }));
+app.get('/api/admin/status', (req, res) => res.json({ enabled: adminEnabled(), storage: store().name, statuses: STATUSES,
+  whatsappApi: waConfigured() || !!autopilot?.isLive(), whatsappLive: !!autopilot?.isLive() }));
 
 // Super admin: username "admin" + ADMIN_PASSWORD. Everyone else: a staff account.
 app.post('/api/admin/login', limit(10, 15 * 60_000), async (req, res) => {
@@ -745,6 +747,8 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
   waQueue = waQueue.then(() => handleWhatsApp(batch)).catch((err) => console.error('[whatsapp] webhook failed', err.message));
 });
 let waQueue = Promise.resolve();
+// Runs fn after every WhatsApp change already queued, so two messages never race on the same lead.
+export const enqueueWa = (fn) => { const run = waQueue.then(fn); waQueue = run.catch(() => {}); return run; };
 
 // Incoming message → find the customer's lead by mobile (or a lead for a new vehicle number in the
 // text), keep the message on it, and mark "I APPROVE" replies. Unknown numbers become new leads.
@@ -795,6 +799,36 @@ export async function handleWhatsApp({ messages = [], statuses = [] }, opts = {}
   return [...touched];
 }
 
+// Vehicle numbers (and the name) a customer gave the WhatsApp AI. A WhatsApp lead with no vehicle yet
+// gets the first one; every other new number becomes its own lead in the same customer group.
+// Returns the plates that were added. Call it inside enqueueWa.
+export async function attachPlates(phone, plates = [], name = '') {
+  let mine = (await listLeads()).filter((l) => l.phone === phone);
+  if (!mine.length) return [];
+  if (name) {
+    for (const l of mine.filter((x) => x.name === 'WhatsApp customer')) await updateLead(l.ref, { name, note: `Name given on WhatsApp: ${name}.` }, 'WhatsApp');
+    mine = (await listLeads()).filter((l) => l.phone === phone);
+  }
+  const fresh = [...new Set(plates)].filter((p) => PLATE_RE.test(p) && !mine.some((l) => l.plate === p)).slice(0, MAX_VEHICLES - mine.length);
+  if (!fresh.length) return [];
+  const first = mine[0];
+  const blank = mine.find((l) => !l.plate);
+  if (blank) await updateLead(blank.ref, { plate: fresh[0], note: `Vehicle ${fresh[0]} received on WhatsApp.` }, 'WhatsApp');
+  const rest = blank ? fresh.slice(1) : fresh;
+  if (!rest.length) return fresh;
+  const groupRef = first.groupRef || first.ref;
+  const vehicles = mine.length + rest.length;
+  for (const plate of rest) {
+    await saveNewLead(CITY_CODES[first.city] || 'GBN', {
+      createdAt: new Date().toISOString(), city: first.city, name: first.name, phone, lang: first.lang, source: 'WhatsApp', status: 'New',
+      agent: first.agent || '', agentId: first.agentId || '', plate, groupRef, vehicles,
+      notes: [{ by: 'WhatsApp', at: new Date().toISOString(), text: `Vehicle ${plate} received on WhatsApp.` }],
+    });
+  }
+  for (const l of mine) await updateLead(l.ref, { group: { groupRef, vehicles } }, 'WhatsApp');
+  return fresh;
+}
+
 // WhatsApp Web add-on: a team member opens a chat and presses "Save chat to Niptao". The visible
 // messages come here; new customers become leads assigned to whoever saved them (staff) or the
 // usual auto-assign (admins). Same matching and "I APPROVE" handling as the API webhook.
@@ -827,7 +861,8 @@ app.post('/api/admin/whatsapp-web', requireUser, limit(120, 60_000), async (req,
 // Send from the admin panel through the API. Free text only inside the 24-hour window that opens
 // when the customer last wrote; outside it, only the approved approval template can be sent.
 app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async (req, res) => {
-  if (!waConfigured()) return res.status(503).json({ error: 'whatsapp_not_set_up' });
+  const viaLive = !!autopilot?.isLive();
+  if (!viaLive && !waConfigured()) return res.status(503).json({ error: 'whatsapp_not_set_up' });
   const b = req.body || {};
   const text = String(b.text || '').trim().slice(0, 4000);
   if (!text) return res.status(400).json({ error: 'empty' });
@@ -837,8 +872,10 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
     if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
     const open = lead.waLastIn && Date.now() - new Date(lead.waLastIn) < WINDOW_MS;
     const to = '91' + lead.phone;
-    let id, sentText = text, kind = 'text';
-    if (open) id = await sendText(to, text);
+    let id, sentText = text, kind = b.approval ? 'approval' : 'text';
+    // Linked number (automatic WhatsApp): no 24-hour window, it's an ordinary chat.
+    if (viaLive) id = await autopilot.send(lead.phone, text);
+    else if (open) id = await sendText(to, text);
     else if (b.approval && process.env.WHATSAPP_APPROVAL_TEMPLATE) {
       const ok = (lead.challans || []).filter((c) => c.approved);
       const total = ok.reduce((n, c) => n + (c.amount || 0), 0);
@@ -854,9 +891,13 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
     res.json({ lead: out });
   } catch (err) {
     console.error('[whatsapp] send failed', err.message);
+    if (['send_limit', 'not_connected'].includes(err.code)) return res.status(503).json({ error: err.code });
     res.status(502).json({ error: 'send_failed', detail: err.message.slice(0, 200) });
   }
 });
+
+// Automatic WhatsApp on the linked number (AI replies, approvals, payment details). See autopilot.js.
+export const autopilot = mountAutopilot(app, { handleWhatsApp, enqueue: enqueueWa, attachPlates, requireUser, requireAdmin, canSee });
 
 if (process.env.NODE_ENV === 'production') {
   const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
@@ -867,4 +908,4 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const port = Number(process.env.PORT) || 8787;
-app.listen(port, () => console.log(`API on http://localhost:${port} · challans: ${providerName()} · otp: ${otpMode()}`));
+export const server = app.listen(port, () => console.log(`API on http://localhost:${port} · challans: ${providerName()} · otp: ${otpMode()}`));

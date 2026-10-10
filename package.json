@@ -11,8 +11,10 @@
     "test": "node --test server/*.test.js"
   },
   "dependencies": {
+    "baileys": "7.0.0-rc14",
     "express": "^4.21.2",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "qrcode": "1.5.4"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",

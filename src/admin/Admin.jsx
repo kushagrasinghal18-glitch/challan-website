@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseChallans } from './parseChallans.js';
 import Analytics from './Analytics.jsx';
 import Calendar from './Calendar.jsx';
+import WhatsAppAuto from './WhatsAppAuto.jsx';
 import { lokPlan, lokLong } from '../../shared/lok.js';
 
 const STATUS_COLORS = {
@@ -690,7 +691,7 @@ function PaymentDialog({ lead, others = [], onCancel, onSave }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans, onAddVehicles, myId, onAskPayment }) {
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans, onAddVehicles, myId, onAskPayment, onBot, onOpenProof }) {
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
@@ -726,9 +727,10 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
   // Opening a lead clears its "new WhatsApp reply" badge.
   useEffect(() => { if (lead.waUnread) onPatch(lead.ref, { waRead: true }); }, [lead.ref, lead.waUnread]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (lead.docsNew) onPatch(lead.ref, { docsSeen: true }); }, [lead.ref, lead.docsNew]); // eslint-disable-line react-hooks/exhaustive-deps
-  const waOpen = !!lead.waLastIn && Date.now() - new Date(lead.waLastIn) < 24 * 3600e3;
+  const waOpen = waApi === 'live' || (!!lead.waLastIn && Date.now() - new Date(lead.waLastIn) < 24 * 3600e3);
   const WA_ERR = { window_closed: 'The customer has not messaged in the last 24 hours, so WhatsApp only allows the approval template. Use "Open in WhatsApp" instead, or ask an admin to add the template.',
-    whatsapp_not_set_up: 'WhatsApp is not connected yet.', not_your_lead: 'This lead is no longer assigned to you.' };
+    whatsapp_not_set_up: 'WhatsApp is not connected yet.', not_your_lead: 'This lead is no longer assigned to you.',
+    not_connected: 'The linked WhatsApp number is offline right now. Check Settings → Automatic WhatsApp.', send_limit: 'The hourly sending limit for the linked number is reached. Try again a bit later, or use "Open in WhatsApp".' };
   const waSend = async (body) => {
     setBusy(true); setWaErr('');
     try { const e = await onWaSend(lead.ref, body); if (e) setWaErr(WA_ERR[e] || 'WhatsApp did not send it. Try again, or use "Open in WhatsApp".'); return !e; }
@@ -937,6 +939,11 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                       ? <div className="ok-line">✓ {inr(lead.payment.amount)} received · confirmed by {lead.payment.by} · {fullDate(lead.payment.at)}
                           {lead.payment.amount !== payable(lead) && <span className="small"> (amount due {inr(payable(lead))})</span>}</div>
                       : <div className="small">When the money reaches your account, record it here. Amount due: {inr(payable(lead))}.</div>}
+                    {lead.paymentClaim && !lead.payment && (
+                      <div className="claim">💰 Customer says they paid · {fullDate(lead.paymentClaim.at)}{lead.paymentClaim.source === 'message' && lead.paymentClaim.text ? ` · "${lead.paymentClaim.text}"` : ''}.
+                        {lead.paymentClaim.proofId ? ' Check the screenshot against your account before marking it received.' : ' Ask for the screenshot or check your account.'}
+                        {lead.paymentClaim.proofId && <button type="button" className="btn ghost edit" onClick={() => onOpenProof(lead.ref)}>View screenshot</button>}</div>
+                    )}
                     <div className="cc-row">
                       <button className={'btn ' + (lead.payment ? 'ghost' : 'primary')} disabled={busy} onClick={() => onAskPayment(lead.ref)}>{lead.payment ? 'Change amount' : '✓ Mark payment received'}</button>
                       {lead.payment && <button className="btn ghost rm-pay" disabled={busy} onClick={() => { if (window.confirm(`Remove the payment of ${inr(lead.payment.amount)} from this lead? Use this if it was recorded by mistake or twice.`)) patch({ paymentRemoved: true }); }}>Remove payment</button>}
@@ -1020,6 +1027,12 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
               <div className="wa-chat">
                 <div className="ch-head"><div className="sec-k">WhatsApp chat{lead.source === 'WhatsApp' ? ' · lead came from WhatsApp' : ''}</div>
                   {lead.waChat?.length > 0 && <button type="button" className="btn ghost edit" onClick={() => setChatBig((v) => !v)}>{chatBig ? 'Collapse' : 'Expand'}</button>}</div>
+                {waApi === 'live' && (
+                  <div className={'bot-row' + (lead.botPaused ? ' paused' : '')}>
+                    <span>{lead.botPaused ? (lead.botPaused.reason === 'handoff' ? '🙋 The AI handed this chat to you. AI replies are paused.' : `AI replies paused by ${lead.botPaused.by}.`) : '🤖 AI replies are on for this chat.'}</span>
+                    <button type="button" className="btn ghost edit" disabled={busy} onClick={async () => { setBusy(true); try { await onBot(lead.ref, !lead.botPaused); } finally { setBusy(false); } }}>{lead.botPaused ? 'Turn AI back on' : 'Pause AI'}</button>
+                  </div>
+                )}
                 {lead.waChat?.length ? (
                   <div className={'wa-msgs' + (chatBig ? ' big' : '')} ref={chatRef}>
                     {lead.waChat.slice(-50).map((m, i) => (
@@ -1280,6 +1293,7 @@ function Settings({ auth, me, staff, reloadStaff, onSaved, signOut }) {
         <button className="btn primary" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
       </div>
     </form>
+    <WhatsAppAuto auth={auth} call={call} signOut={signOut} />
     <Staff auth={auth} me={me} staff={staff} reload={reloadStaff} signOut={signOut} />
     <Addon />
     </div>
@@ -1529,7 +1543,7 @@ export default function Admin() {
   };
 
   useEffect(() => {
-    call('/api/admin/status').then((s) => { if (s.statuses) setStatuses(s.statuses); setWaApi(!!s.whatsappApi); }).catch(() => {});
+    call('/api/admin/status').then((s) => { if (s.statuses) setStatuses(s.statuses); setWaApi(s.whatsappLive ? 'live' : !!s.whatsappApi); }).catch(() => {});
   }, []);
   useEffect(() => {
     load();
@@ -1551,6 +1565,13 @@ export default function Admin() {
       if (e.status === 401) signOut();
       return e.message;
     }
+  };
+  // Pause or resume the WhatsApp AI for a customer (all their vehicles).
+  const onBot = async (ref, paused) => {
+    try {
+      const { leads: changed } = await call(`/api/admin/leads/${encodeURIComponent(ref)}/bot`, auth, { method: 'POST', body: JSON.stringify({ paused }) });
+      setLeads((ls) => ls.map((l) => changed.find((c) => c.ref === l.ref) || l));
+    } catch (e) { if (e.status === 401) signOut(); else setErr('That change was not saved. Try again.'); }
   };
   // Documents: returns '' when done, else the error code.
   const [docTypes, setDocTypes] = useState([]);
@@ -1817,7 +1838,7 @@ export default function Admin() {
                 {shown.map(({ lead: l, cars }) => { const paid = cars.find((c) => c.payment && c.status !== 'Lost'); const many = cars.length > 1; const chs = cars.flatMap((c) => c.challans || []); const total = cars.reduce((n, c) => n + challanTotal(c), 0); const due = cars.reduce((n, c) => n + payable(c), 0); return (
                   <tr key={l.ref} className={'' + (fresh.includes(l.ref) ? ' fresh' : '') + (paid ? ' paid' : '') + (cars.some((c) => c.ref === sel) ? ' sel' : '')}
                     title={paid ? `Payment received: ${inr(cars.reduce((n, c) => n + (c.payment && c.status !== 'Lost' ? c.payment.amount : 0), 0))}` : undefined} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}{many && <span className="multi" title="This customer sent several vehicles together">{cars.length} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{cars.some((c) => c.waUnread > 0) && <span className="multi unread">💬 {cars.reduce((n, c) => n + (c.waUnread || 0), 0)} new</span>}{cars.some((c) => c.docsNew > 0) && <span className="multi unread docs-new" title="The customer uploaded documents">📄 {cars.reduce((n, c) => n + (c.docsNew || 0), 0)} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{many ? (cars.some((c) => c.challans) ? (chs.length ? ` · ${chs.length} challan${chs.length === 1 ? '' : 's'} ₹${total.toLocaleString('en-IN')}` : ' · no challans') : '') : l.challans ? (l.challans.length ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ' · no challans') : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{many ? (due ? ` · payable ${inr(due)}` : '') : approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}{l.docs?.length ? ` · docs ${docsHave(l, docTypes)}` : ''}</div></td>
+                    <td><div className="name">{l.name}{many && <span className="multi" title="This customer sent several vehicles together">{cars.length} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{cars.some((c) => c.waUnread > 0) && <span className="multi unread">💬 {cars.reduce((n, c) => n + (c.waUnread || 0), 0)} new</span>}{cars.some((c) => c.docsNew > 0) && <span className="multi unread docs-new" title="The customer uploaded documents">📄 {cars.reduce((n, c) => n + (c.docsNew || 0), 0)} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}{cars.some((c) => c.paymentClaim && !c.payment) && <span className="multi unread" title="The customer says they paid. Check and mark Payment received.">💰 says paid</span>}{cars.some((c) => c.botPaused?.reason === 'handoff') && <span className="multi warn" title="The WhatsApp AI handed this chat to the team">🙋 needs you</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{many ? (cars.some((c) => c.challans) ? (chs.length ? ` · ${chs.length} challan${chs.length === 1 ? '' : 's'} ₹${total.toLocaleString('en-IN')}` : ' · no challans') : '') : l.challans ? (l.challans.length ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ' · no challans') : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{many ? (due ? ` · payable ${inr(due)}` : '') : approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}{l.docs?.length ? ` · docs ${docsHave(l, docTypes)}` : ''}</div></td>
                     <td className="plates">{cars.filter((c) => c.plate).map((c) => <span key={c.ref} className="plate">{fmtPlate(c.plate)}</span>)}{!cars.some((c) => c.plate) && <span className="small">Not given yet</span>}</td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>
@@ -1843,7 +1864,7 @@ export default function Admin() {
       {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st} lokDates={site?.lokAdalatDates}
         siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend} getPayment={getPayment} isAdminUser={isAdmin}
         docTypes={docTypes} onUploadDoc={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onDocLink={onDocLink}
-        onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken} onTokenChallans={onTokenChallans} onAddVehicles={onAddVehicles} myId={me.uid} onAskPayment={setPayFor}
+        onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken} onTokenChallans={onTokenChallans} onAddVehicles={onAddVehicles} myId={me.uid} onAskPayment={setPayFor} onBot={onBot} onOpenProof={(ref) => openFile(`/api/admin/leads/${encodeURIComponent(ref)}/proof`)}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
       {payFor && all.find((l) => l.ref === payFor) && (
         <PaymentDialog lead={all.find((l) => l.ref === payFor)} others={(() => { const g = all.find((l) => l.ref === payFor).groupRef; return g ? all.filter((l) => l.groupRef === g && l.ref !== payFor) : []; })()} onCancel={() => setPayFor(null)}
