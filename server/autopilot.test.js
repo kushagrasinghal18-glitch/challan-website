@@ -157,6 +157,7 @@ test('AI moves on from a retired model and explains key problems', async (t) => 
   t.after(() => { globalThis.fetch = real; });
   const asked = [];
   globalThis.fetch = async (url) => {
+    if (String(url).includes('/models?')) return new Response(JSON.stringify({ models: [] }), { status: 200 });
     const model = decodeURIComponent(String(url).match(/models\/([^:]+):/)[1]);
     asked.push(model);
     if (model !== 'gemini-2.5-flash') return new Response(JSON.stringify({ error: { message: 'not found' } }), { status: 404 });
@@ -169,4 +170,11 @@ test('AI moves on from a retired model and explains key problems', async (t) => 
   assert.equal(aiModel(), 'gemini-2.5-flash');
   globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'API key not valid. Please pass a valid API key.' } }), { status: 400 });
   await assert.rejects(aiAnswer({ chat: [{ dir: 'in', text: 'hi' }], leads: [], site: {} }, env), /not valid/);
+});
+
+test('model picking prefers the chosen model, then the latest alias, then the newest Flash', async () => {
+  const { pickModel } = await import('./ai.js');
+  assert.equal(pickModel(['gemini-2.0-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite']), 'gemini-3.5-flash');
+  assert.equal(pickModel(['gemini-3.5-flash', 'gemini-flash-latest']), 'gemini-flash-latest');
+  assert.equal(pickModel(['gemini-3.5-flash', 'gemini-2.0-flash'], 'gemini-2.0-flash'), 'gemini-2.0-flash');
 });
