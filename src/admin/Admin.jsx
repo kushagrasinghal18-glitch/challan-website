@@ -1415,7 +1415,7 @@ export default function Admin() {
   const seen = useRef(null);
   const me = auth?.user;
   const isAdmin = me?.role === 'admin';
-  const page = view === 'calendar' || (isAdmin && ['settings', 'analytics'].includes(view)) ? view : 'leads';
+  const page = ['calendar', 'settings'].includes(view) || (isAdmin && view === 'analytics') ? view : 'leads';
   useEffect(() => { history.replaceState(null, '', page === 'leads' ? '#' : `#${page}`); }, [page]);
   useEffect(() => { call('/api/settings').then(setSite).catch(() => {}); }, []);
 
@@ -1660,7 +1660,7 @@ export default function Admin() {
               <button aria-pressed={page === 'leads'} onClick={() => setView('leads')}>Leads</button>
               <button aria-pressed={page === 'calendar'} onClick={() => setView('calendar')}>Calendar</button>
               {isAdmin && <button aria-pressed={page === 'analytics'} onClick={() => setView('analytics')}>Analytics</button>}
-              {isAdmin && <button aria-pressed={page === 'settings'} onClick={() => setView('settings')}>Settings</button>}
+              <button aria-pressed={page === 'settings'} onClick={() => setView('settings')}>Settings</button>
             </nav>
           </div>
           <div className="who">
@@ -1682,6 +1682,11 @@ export default function Admin() {
           <>
             <div className="head"><div><h1>Analytics</h1><div className="sub">Leads, conversions and revenue. Updates every 15 seconds.</div></div></div>
             <Analytics leads={leads} staff={staff} payable={payable} inr={inr} lokDates={site?.lokAdalatDates} />
+          </>
+        ) : page === 'settings' && !isAdmin ? (
+          <>
+            <div className="head"><div><h1>Settings</h1><div className="sub">Tools for your computer. Only admins can change the website settings.</div></div></div>
+            <div className="settings"><Addon /></div>
           </>
         ) : page === 'settings' ? (
           <>
