@@ -36,9 +36,8 @@ function furthest(l) {
   return Math.max(0, ...steps);
 }
 const PAID = FLOW.indexOf('Payment received');
-// When the customer paid: the Payment received stage, else (older leads that skipped it) when it was settled.
-// Only leads that are paid now count: a lead moved back before Payment received, or Lost (refunded), drops out.
-const paidAt = (l) => (FLOW.indexOf(l.status) < PAID ? null : l.payment?.at || reachedAt(l, 'Payment received') || (l.status === 'Settled' ? reachedAt(l, 'Settled') : null));
+// Revenue counts only money the team confirmed with "Mark payment received" (amount entered), on leads that are not Lost.
+const paidAt = (l) => (l.payment && l.status !== 'Lost' ? l.payment.at : null);
 const approvedByCustomer = (l) => l.waApproval?.state === 'received' || (l.challans || []).some((c) => c.approved);
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
@@ -57,12 +56,11 @@ export default function Analytics({ leads, staff, payable, inr, lokDates, onOpen
     const settled = all.filter((l) => inRange(reachedAt(l, 'Settled')) && l.status === 'Settled');
     const lost = all.filter((l) => inRange(reachedAt(l, 'Lost')) && l.status === 'Lost');
     const paid = all.filter((l) => inRange(paidAt(l)));
-    // The amount the team confirmed receiving; older leads without one use the amount due.
-    const got = (l) => (l.payment ? l.payment.amount : payable(l));
+    const got = (l) => l.payment.amount;
     const revenue = paid.reduce((n, l) => n + got(l), 0);
     const paySent = all.filter((l) => inRange(l.paymentSent?.at));
     const open = all.filter((l) => !['Settled', 'Lost'].includes(l.status));
-    const pipeline = open.filter((l) => approvedByCustomer(l) && furthest(l) < PAID).reduce((n, l) => n + payable(l), 0);
+    const pipeline = open.filter((l) => approvedByCustomer(l) && !l.payment).reduce((n, l) => n + payable(l), 0);
     const days = settled.map((l) => (new Date(reachedAt(l, 'Settled')) - new Date(l.createdAt)) / DAY).filter((x) => x >= 0);
     const avgDays = days.length ? days.reduce((n, x) => n + x, 0) / days.length : null;
 
@@ -238,7 +236,7 @@ export default function Analytics({ leads, staff, payable, inr, lokDates, onOpen
         <Table title="By city" rows={d.byCity} />
         <Table title="By staff member" rows={d.byStaff} />
       </div>
-      <p className="small">Revenue is the amount payable by the customer (approved challans × their rate) on leads marked Payment received. Older leads that went straight to Settled count as paid on the day they were settled, and leads from before the stage log count their last change as that day.</p>
+      <p className="small">Revenue is the amount the team entered when confirming "Payment received" on a lead, counted on the day it was confirmed. Leads marked Lost drop out.</p>
     </div>
   );
 }

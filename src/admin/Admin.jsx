@@ -929,7 +929,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                     </div>
                   );
                 })()}
-                {(approvedIn || lead.payment || approvedOf(lead).length > 0) && (
+                {(lead.payment || lead.status !== 'Lost') && (
                   <div className={'wa-appr pay-got' + (lead.payment ? ' done' : '')}>
                     <div className="sec-k">Payment received</div>
                     {lead.payment
@@ -1683,6 +1683,22 @@ export default function Admin() {
     return Object.entries(n).sort((a, b) => b[1] - a[1] || STATES[a[0]].localeCompare(STATES[b[0]]));
   }, [leads, st]);
   const rows = tab === 'All' ? filtered : filtered.filter((l) => l.status === tab);
+  // One row per customer: cars sent together (same groupRef) share a row, opened on the earliest matching car.
+  const byGroup = (list) => {
+    const out = [], at = new Map();
+    for (const l of list) {
+      if (!l.groupRef) { out.push({ lead: l, cars: [l], hits: [l] }); continue; }
+      const g = at.get(l.groupRef);
+      if (g) { g.hits.push(l); continue; }
+      const row = { lead: l, hits: [l], cars: (leads || []).filter((x) => x.groupRef === l.groupRef).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)) || a.ref.localeCompare(b.ref)) };
+      at.set(l.groupRef, row);
+      out.push(row);
+    }
+    for (const g of out) g.lead = [...g.hits].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)) || a.ref.localeCompare(b.ref))[0];
+    return out;
+  };
+  const shown = byGroup(rows);
+  const tabCount = (s) => byGroup(s === 'All' ? filtered : filtered.filter((l) => l.status === s)).length;
 
   if (!auth) return <Login onIn={(a) => { save(a); setAuth(a); setSoundReady(sound.ready()); }} />;
 
@@ -1776,7 +1792,7 @@ export default function Admin() {
           <div className="tabs" role="tablist">
             {['All', ...statuses].map((s) => (
               <button key={s} aria-pressed={tab === s} onClick={() => setTab(s)}>
-                {s}<span className="n">{s === 'All' ? filtered.length : filtered.filter((l) => l.status === s).length}</span>
+                {s}<span className="n">{tabCount(s)}</span>
               </button>
             ))}
           </div>
@@ -1796,11 +1812,11 @@ export default function Admin() {
             <table>
               <thead><tr><th>Lead</th><th>Vehicle</th><th>City</th><th>Assigned to</th><th>Status</th><th>Received</th></tr></thead>
               <tbody>
-                {rows.map((l) => (
-                  <tr key={l.ref} className={(sel === l.ref ? 'sel' : '') + (fresh.includes(l.ref) ? ' fresh' : '') + (l.payment && l.status !== 'Lost' ? ' paid' : '')}
-                    title={l.payment && l.status !== 'Lost' ? `Payment received: ${inr(l.payment.amount)}` : undefined} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}{l.groupRef && <span className="multi" title="This customer sent several vehicles together">{l.vehicles} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{l.waUnread > 0 && <span className="multi unread">💬 {l.waUnread} new</span>}{l.docsNew > 0 && <span className="multi unread docs-new" title="The customer uploaded documents">📄 {l.docsNew} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{l.challans ? (l.challans.length ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ' · no challans') : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}{l.docs?.length ? ` · docs ${docsHave(l, docTypes)}` : ''}</div></td>
-                    <td>{l.plate ? <span className="plate">{fmtPlate(l.plate)}</span> : <span className="small">Not given yet</span>}</td>
+                {shown.map(({ lead: l, cars }) => { const paid = cars.find((c) => c.payment && c.status !== 'Lost'); const many = cars.length > 1; const chs = cars.flatMap((c) => c.challans || []); const total = cars.reduce((n, c) => n + challanTotal(c), 0); const due = cars.reduce((n, c) => n + payable(c), 0); return (
+                  <tr key={l.ref} className={'' + (fresh.includes(l.ref) ? ' fresh' : '') + (paid ? ' paid' : '') + (cars.some((c) => c.ref === sel) ? ' sel' : '')}
+                    title={paid ? `Payment received: ${inr(cars.reduce((n, c) => n + (c.payment && c.status !== 'Lost' ? c.payment.amount : 0), 0))}` : undefined} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
+                    <td><div className="name">{l.name}{many && <span className="multi" title="This customer sent several vehicles together">{cars.length} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{cars.some((c) => c.waUnread > 0) && <span className="multi unread">💬 {cars.reduce((n, c) => n + (c.waUnread || 0), 0)} new</span>}{cars.some((c) => c.docsNew > 0) && <span className="multi unread docs-new" title="The customer uploaded documents">📄 {cars.reduce((n, c) => n + (c.docsNew || 0), 0)} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{many ? (cars.some((c) => c.challans) ? (chs.length ? ` · ${chs.length} challan${chs.length === 1 ? '' : 's'} ₹${total.toLocaleString('en-IN')}` : ' · no challans') : '') : l.challans ? (l.challans.length ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ' · no challans') : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{many ? (due ? ` · payable ${inr(due)}` : '') : approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}{l.docs?.length ? ` · docs ${docsHave(l, docTypes)}` : ''}</div></td>
+                    <td className="plates">{cars.filter((c) => c.plate).map((c) => <span key={c.ref} className="plate">{fmtPlate(c.plate)}</span>)}{!cars.some((c) => c.plate) && <span className="small">Not given yet</span>}</td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>
                     <td onClick={(e) => e.stopPropagation()}>
@@ -1812,7 +1828,7 @@ export default function Admin() {
                     </td>
                     <td title={fullDate(l.createdAt)}>{ago(l.createdAt)}</td>
                   </tr>
-                ))}
+                ); })}
               </tbody>
             </table>
             {leads && !rows.length && <div className="empty">{all.length ? (st ? `No leads with challans in ${STATES[st]}${q ? ' match this search' : ''}.` : 'No leads match this search.') : isAdmin ? 'No leads yet. They appear here as soon as someone submits the form on the website.' : 'No leads are assigned to you yet.'}</div>}
