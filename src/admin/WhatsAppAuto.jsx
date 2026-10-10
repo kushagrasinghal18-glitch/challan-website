@@ -135,6 +135,14 @@ function TryAI({ auth, call, signOut, notes, ready }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [known, setKnown] = useState({ name: '', plates: [] });
+  const [checked, setChecked] = useState(null);
+  const [checking, setChecking] = useState(false);
+  const check = async () => {
+    setChecking(true); setChecked(null);
+    try { setChecked(await call('/api/admin/wa-live/check', auth)); }
+    catch (e) { if (e.status === 401) signOut(); else setChecked({ ok: false, error: `The site did not answer (error ${e.status || ''}). Is the latest version deployed on Render?` }); }
+    finally { setChecking(false); }
+  };
   const boxRef = useRef(null);
   useEffect(() => { const el = boxRef.current; if (el) el.scrollTop = el.scrollHeight; }, [chat.length, busy]);
 
@@ -157,7 +165,8 @@ function TryAI({ auth, call, signOut, notes, ready }) {
       setChat([...next, { dir: 'out', text: a.reply, info }]);
     } catch (e2) {
       if (e2.status === 401) return signOut();
-      setErr(e2.message === 'ai_not_ready' ? 'Add GEMINI_API_KEY in Render → Environment first.' : `The AI did not answer. ${e2.detail || 'Check the GEMINI_API_KEY in Render, then try again.'}`);
+      setErr(e2.message === 'ai_not_ready' ? 'Add GEMINI_API_KEY in Render → Environment first.'
+        : `The AI did not answer. ${e2.detail || `(error ${e2.status || ''} ${e2.message}) Press "Check Gemini" below to see why.`}`);
     } finally { setBusy(false); }
   }
 
@@ -184,6 +193,12 @@ function TryAI({ auth, call, signOut, notes, ready }) {
         <button className="btn wa-btn" disabled={busy || !ready || !draft.trim()}>Send</button>
       </form>
       {err && <div className="err">{err}</div>}
+      <div className="cc-row">
+        <button type="button" className="btn ghost" disabled={checking} onClick={check}>{checking ? 'Checking…' : 'Check Gemini'}</button>
+        {checked && (checked.ok
+          ? <span className="ok-msg">✓ Gemini works. Model: {checked.model}.{checked.wantedMissing ? ` (GEMINI_MODEL "${checked.wanted}" isn't available to this key, so it was skipped.)` : ''}</span>
+          : <span className="err">✗ {checked.error}{checked.models?.length ? ` Available: ${checked.models.join(', ')}` : ''}</span>)}
+      </div>
     </div>
   );
 }

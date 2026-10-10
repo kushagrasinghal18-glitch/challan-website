@@ -9,7 +9,7 @@ import crypto from 'node:crypto';
 import { listLeads, updateLead, getSettings, getKV, setKV, saveDoc, getDoc } from './store.js';
 import { saysApprove } from './whatsapp.js';
 import { paymentMessage, paymentAmounts } from './payment.js';
-import { aiConfigured, aiAnswer } from './ai.js';
+import { aiConfigured, aiAnswer, checkGemini } from './ai.js';
 import * as realLive from './baileys.js';
 
 export const BOT = 'Niptao AI';
@@ -261,6 +261,12 @@ export function mountAutopilot(app, deps) {
       console.log('[wa] automatic WhatsApp switched', on ? 'on' : 'off', 'by', req.user.name);
       res.json(await view());
     } catch (err) { fail(res, err); }
+  });
+
+  // Settings → "Check Gemini": key accepted? which model? does a tiny request work?
+  app.get('/api/admin/wa-live/check', requireAdmin, async (req, res) => {
+    try { res.json(await (deps.checkGemini || checkGemini)()); }
+    catch (err) { res.json({ ok: false, error: err.message }); }
   });
 
   // Settings → "Try the AI": a pretend customer chat. Nothing is sent on WhatsApp and no lead changes.

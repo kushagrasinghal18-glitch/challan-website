@@ -91,12 +91,47 @@ export function parseAnswer(text) {
   return { reply, plates, name: name.length >= 2 ? name : '', paid: j.paid === true, handoff: j.handoff === true };
 }
 
-// Models to try in order. Google retires model names over time (gemini-2.5-flash now answers 404 for
-// many keys), so an unknown model falls through to the next one; the one that works is remembered.
+// Which model to use. Google retires model names over time (gemini-2.5-flash now answers 404 for many
+// keys), so the server asks Google which models this key can use and picks the best Flash model:
+// GEMINI_MODEL if set and available, else gemini-flash-latest, else the newest stable Flash.
 const FALLBACKS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 let working = '';
-export const modelsToTry = (env = process.env) => [...new Set([working, env.GEMINI_MODEL, ...FALLBACKS].filter(Boolean))];
+let listed = { at: 0, names: null };
 export const aiModel = () => working;
+const API = 'https://generativelanguage.googleapis.com/v1beta';
+const keyOf = (env) => String(env.GEMINI_API_KEY || '').trim();
+
+async function gfetch(url, opts, ms) {
+  try { return await fetch(url, { ...opts, signal: AbortSignal.timeout(ms) }); }
+  catch (err) { throw new Error(err.name === 'TimeoutError' ? 'Gemini took too long to answer. Try again.' : `Could not reach Gemini: ${err.message}`); }
+}
+
+// Models this key can call for text, from Google's own list. Throws a plain reason if the key is refused.
+export async function listModels(env = process.env) {
+  if (listed.names && Date.now() - listed.at < 6 * 3600e3) return listed.names;
+  const res = await gfetch(`${API}/models?pageSize=1000`, { headers: { 'x-goog-api-key': keyOf(env) } }, 15_000);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(explainError(res.status, data.error?.message)), { status: res.status });
+  const names = (data.models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent')).map((m) => String(m.name).replace(/^models\//, ''));
+  listed = { at: Date.now(), names };
+  return names;
+}
+
+// Best text model from a list of names: chosen one, then the "latest" alias, then the newest plain Flash.
+export function pickModel(names, wanted = '') {
+  if (wanted && names.includes(wanted)) return wanted;
+  if (names.includes('gemini-flash-latest')) return 'gemini-flash-latest';
+  const ver = (n) => Number((n.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0);
+  const flash = names.filter((n) => /^gemini-[\d.]+-flash(-\d+)?$/.test(n)).sort((a, b) => ver(b) - ver(a));
+  return flash[0] || names.find((n) => /flash/.test(n) && !/(lite|image|tts|live|audio|embedding|thinking)/.test(n)) || '';
+}
+
+export async function modelsToTry(env = process.env) {
+  let best = '';
+  try { best = pickModel(await listModels(env), env.GEMINI_MODEL); }
+  catch (err) { if (err.status) throw err; /* list unreachable: fall back to known names */ }
+  return [...new Set([working, best, env.GEMINI_MODEL, ...FALLBACKS].filter(Boolean))];
+}
 
 // Plain-English reason for a failed call, shown in Settings.
 export function explainError(status, message = '') {
@@ -121,11 +156,10 @@ export async function aiAnswer({ chat, leads, site, notes }, env = process.env) 
     },
   });
   let last = null;
-  for (const model of modelsToTry(env)) {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': String(env.GEMINI_API_KEY || '').trim() }, body,
-      signal: AbortSignal.timeout(45_000),
-    });
+  for (const model of await modelsToTry(env)) {
+    const res = await gfetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': keyOf(env) }, body,
+    }, 25_000);
     const data = await res.json().catch(() => ({}));
     if (res.status === 404) { last = `model ${model} not available`; if (working === model) working = ''; continue; }
     if (!res.ok) throw Object.assign(new Error(explainError(res.status, data.error?.message)), { status: res.status });
@@ -136,4 +170,17 @@ export async function aiAnswer({ chat, leads, site, notes }, env = process.env) 
     return answer;
   }
   throw new Error(`No Gemini model answered (${last}). Set GEMINI_MODEL in Render to a current model name from aistudio.google.com.`);
+}
+
+// Settings → "Check Gemini": is the key accepted, which model will be used, and does a tiny request work?
+export async function checkGemini(env = process.env) {
+  if (!keyOf(env)) return { ok: false, error: 'GEMINI_API_KEY is not set in Render → Environment.' };
+  let names;
+  try { names = await listModels({ ...env }); } catch (err) { return { ok: false, error: err.message }; }
+  const model = pickModel(names, env.GEMINI_MODEL);
+  if (!model) return { ok: false, error: 'This key has no Flash model available. Set GEMINI_MODEL in Render to one of the models listed.', models: names.slice(0, 30) };
+  try {
+    const a = await aiAnswer({ chat: [{ dir: 'in', text: 'Hi' }], leads: [], site: {} }, env);
+    return { ok: true, model: working || model, sample: a?.reply || '', wanted: env.GEMINI_MODEL || '', wantedMissing: !!env.GEMINI_MODEL && !names.includes(env.GEMINI_MODEL) };
+  } catch (err) { return { ok: false, model, error: err.message }; }
 }
