@@ -541,7 +541,47 @@ function Tokens({ lead, onUpload, onOpen, onRemove, onSetChallans }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans }) {
+// Add more vehicles for this customer: each becomes its own lead with the same name, mobile and assignee.
+const VEH_ERR = { invalid_plate: 'Check the vehicle number, e.g. UP16AB1234.', vehicle_already_added: 'That vehicle is already on this customer.',
+  too_many_vehicles: 'This customer already has the most vehicles allowed.', not_your_lead: 'This lead is no longer assigned to you.' };
+function AddVehicles({ lead, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [done, setDone] = useState('');
+  useEffect(() => { setOpen(false); setText(''); setErr(''); setDone(''); }, [lead.ref]);
+  const plates = text.split(/[\s,;]+/).map((p) => p.toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!plates.length) return;
+    setBusy(true); setErr(''); setDone('');
+    try {
+      const r = await onAdd(lead.ref, plates);
+      if (r.error) setErr(VEH_ERR[r.error] || 'The vehicle was not added. Try again.');
+      else { setDone(`Added ${r.refs.length} vehicle${r.refs.length === 1 ? '' : 's'}. Each one is its own lead, linked above.`); setText(''); setOpen(false); }
+    } finally { setBusy(false); }
+  };
+  if (!open) return (
+    <div className="add-veh-row">
+      <button type="button" className="btn ghost" onClick={() => setOpen(true)}>+ Add another vehicle</button>
+      {done && <span className="small ok-msg">{done}</span>}
+    </div>
+  );
+  return (
+    <form className="add-veh" onSubmit={submit}>
+      <div className="small">Vehicle number(s) for {lead.name}. Separate several with a space or comma. Each becomes its own lead with the same customer details{lead.agent ? `, assigned to ${lead.agent}` : ''}.</div>
+      <div className="cc-row">
+        <input className="plate-input" autoFocus value={text} onChange={(e) => { setText(e.target.value.toUpperCase()); setErr(''); }} placeholder="UP16AB1234, DL3CAB5678" aria-label="Vehicle numbers" />
+        <button className="btn primary" disabled={busy || !plates.length}>{busy ? 'Adding…' : `Add${plates.length > 1 ? ` ${plates.length}` : ''}`}</button>
+        <button type="button" className="btn ghost" onClick={() => { setOpen(false); setErr(''); }}>Cancel</button>
+      </div>
+      {err && <div className="err" role="alert">{err}</div>}
+    </form>
+  );
+}
+
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans, onAddVehicles }) {
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
@@ -627,7 +667,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
         </div>
         <div className="drawer-body">
           <div className="col-main">
-            {lead.groupRef && (
+            {lead.groupRef ? (
               <div className="siblings">
                 <div className="sec-k">Same customer · {siblings.length + 1} vehicles</div>
                 <div className="cc-row">
@@ -637,8 +677,9 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                   ))}
                 </div>
                 {siblings.length + 1 < (lead.vehicles || 0) && <div className="small">{lead.vehicles - siblings.length - 1} more vehicle(s) from this request are assigned to someone else or were deleted.</div>}
+                {lead.plate && <AddVehicles lead={lead} onAdd={onAddVehicles} />}
               </div>
-            )}
+            ) : lead.plate ? <AddVehicles lead={lead} onAdd={onAddVehicles} /> : null}
 
             {!lead.plate && (
               <div className="add-plate">
@@ -1396,6 +1437,15 @@ export default function Admin() {
     } catch (e) { if (e.status === 401) signOut(); return e.message; }
   };
   const tokenUrl = (ref, id = '') => `/api/admin/leads/${encodeURIComponent(ref)}/tokens${id ? `/${encodeURIComponent(id)}` : ''}`;
+  // Returns { refs } or { error }.
+  const onAddVehicles = async (ref, plates) => {
+    try {
+      const r = await call(`/api/admin/leads/${encodeURIComponent(ref)}/vehicles`, auth, { method: 'POST', body: JSON.stringify({ plates }) });
+      setLeads((ls) => { const m = new Map(ls.map((l) => [l.ref, l])); r.leads.forEach((l) => m.set(l.ref, l)); return [...m.values()]; });
+      r.refs.forEach((x) => seen.current?.add(x)); // added here, so no new-lead buzz for them
+      return { refs: r.refs };
+    } catch (e) { if (e.status === 401) signOut(); return { error: e.message }; }
+  };
   const onTokenChallans = async (ref, id, challans) => {
     try {
       const { lead } = await call(tokenUrl(ref, id), auth, { method: 'PATCH', body: JSON.stringify({ challans }) });
@@ -1624,7 +1674,7 @@ export default function Admin() {
       {selLead && <Drawer lead={selLead} statuses={statuses} isAdmin={isAdmin} isSuper={me.uid === 'super'} staff={staff} onDelete={onDelete} onClose={() => { setSel(null); setAsk(null); }} onPatch={onPatch} onSaveChallans={onSaveChallans} listState={st} lokDates={site?.lokAdalatDates}
         siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend} getPayment={getPayment} isAdminUser={isAdmin}
         docTypes={docTypes} onUploadDoc={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onDocLink={onDocLink}
-        onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken} onTokenChallans={onTokenChallans}
+        onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken} onTokenChallans={onTokenChallans} onAddVehicles={onAddVehicles}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
     </>
   );

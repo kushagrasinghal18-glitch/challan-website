@@ -609,6 +609,41 @@ app.delete(`${tokenUrl}/:id`, requireUser, async (req, res) => {
   }
 });
 
+// ── More vehicles for the same customer ────────────────
+// { plates: [...] }: each new vehicle becomes its own lead with the customer's details, linked to this
+// lead's group (and assigned to the same person), like a multi-vehicle request from the website.
+app.post('/api/admin/leads/:ref/vehicles', requireUser, async (req, res) => {
+  const plates = [...new Set((Array.isArray(req.body?.plates) ? req.body.plates : []).slice(0, MAX_VEHICLES).map(normalizePlate))];
+  if (!plates.length || plates.some((p) => !PLATE_RE.test(p))) return res.status(400).json({ error: 'invalid_plate' });
+  try {
+    const lead = await getLead(req.params.ref);
+    if (!lead) return res.status(404).json({ error: 'not_found' });
+    if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
+    const groupRef = lead.groupRef || lead.ref;
+    const group = (await listLeads()).filter((l) => l.ref === lead.ref || (l.groupRef && l.groupRef === groupRef));
+    const fresh = plates.filter((p) => !group.some((l) => l.plate === p));
+    if (!fresh.length) return res.status(400).json({ error: 'vehicle_already_added' });
+    if (group.length + fresh.length > MAX_VEHICLES) return res.status(400).json({ error: 'too_many_vehicles' });
+    const vehicles = group.length + fresh.length;
+    const by = req.user.name;
+    const refs = [];
+    for (const plate of fresh) {
+      refs.push(await saveNewLead(lead.ref.split('-')[0], {
+        createdAt: new Date().toISOString(), city: lead.city, name: lead.name, phone: lead.phone, lang: lead.lang, source: lead.source || 'Website',
+        status: 'New', agent: lead.agent || '', agentId: lead.agentId || '', plate, groupRef, vehicles,
+        ...(lead.promoCode ? { promoCode: lead.promoCode } : {}), ...(FEE_RATES.includes(lead.feeRate) ? { feeRate: lead.feeRate } : {}),
+        notes: [{ by, at: new Date().toISOString(), text: `Vehicle added by ${by} from lead ${lead.ref}.` }],
+      }));
+    }
+    for (const l of group) {
+      await updateLead(l.ref, { group: { groupRef, vehicles },
+        ...(l.ref === lead.ref ? { note: `Added vehicle${fresh.length > 1 ? 's' : ''} ${fresh.join(', ')} (${refs.join(', ')}).` } : {}) }, by);
+    }
+    console.log('[leads] vehicles added', lead.ref, refs.join(','));
+    res.json({ refs, leads: (await listLeads()).filter((l) => l.groupRef === groupRef && canSee(l, req.user)) });
+  } catch (err) { console.error('[leads] add vehicle failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
+});
+
 // Permanently delete a lead. Only the super admin (username "admin") can do this.
 app.delete('/api/admin/leads/:ref', requireUser, async (req, res) => {
   if (req.user.uid !== 'super') return res.status(403).json({ error: 'super_admin_only' });

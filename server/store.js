@@ -245,6 +245,8 @@ export function updateLead(ref, patch, by, onlyFor) {
       out.waApproval = null;
     }
     if (typeof patch.plate === 'string' && patch.plate) out.plate = patch.plate;
+    // Vehicles from the same customer are separate leads linked by groupRef; vehicles = how many in the group.
+    if (patch.group) { out.groupRef = patch.group.groupRef; out.vehicles = patch.group.vehicles; }
     // WhatsApp chat kept on the lead (latest 200 messages).
     if (patch.waMsg) {
       if ((lead.waChat || []).some((m) => m.id && m.id === patch.waMsg.id)) return {}; // Meta can resend a webhook
