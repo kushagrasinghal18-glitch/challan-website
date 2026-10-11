@@ -1,0 +1,29 @@
+# Puts the Delhi helper (delhi-proxy/) on Fly.io in Mumbai. Run it from the Actions tab.
+# Needs two repository secrets: FLY_API_TOKEN (from fly.io → Tokens) and DELHI_PROXY_KEY (any long password,
+# the same one typed into Render).
+name: Deploy Delhi helper to Fly.io
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'Fly.io app name (becomes https://<name>.fly.dev)'
+        default: 'niptao-delhi'
+        required: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      APP: ${{ inputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Create the app (first time only)
+        run: flyctl apps list --json | grep -q "\"$APP\"" || flyctl apps create "$APP" --org personal
+      - name: Set the password
+        run: flyctl secrets set DELHI_PROXY_KEY="${{ secrets.DELHI_PROXY_KEY }}" --app "$APP" --stage
+      - name: Deploy to Mumbai
+        working-directory: delhi-proxy
+        run: flyctl deploy --app "$APP" --remote-only --ha=false
+      - name: Address
+        run: echo "Helper address for Render (DELHI_PROXY_URL): https://$APP.fly.dev"

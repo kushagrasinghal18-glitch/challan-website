@@ -30,6 +30,11 @@ services:
       # Max paid InstantPay lookups per day; raise it as real traffic grows
       - key: MAX_LIVE_LOOKUPS_PER_DAY
         value: "100"
+      # India helper on Fly.io (delhi-proxy/, see docs/delhi-helper.md): its address and password
+      - key: DELHI_PROXY_URL
+        sync: false
+      - key: DELHI_PROXY_KEY
+        sync: false
       # AI replies on the linked WhatsApp number (Settings → Automatic WhatsApp). Typed in Render, never here.
       - key: GEMINI_API_KEY
         sync: false
