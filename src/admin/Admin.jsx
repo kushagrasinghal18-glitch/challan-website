@@ -22,6 +22,7 @@ const ADDON_VERSION = '1.7.3';
 const PARKPLUS_URL = 'https://parkplus.io/e-challan';
 const PARIVAHAN_URL = 'https://echallan.parivahan.gov.in/index/accused-challan';
 // Delhi Traffic Police virtual court: token for Delhi challans (Lead Filler add-on 1.7.0+ fills the number).
+const DELHI_NOTICE_URL = 'https://traffic.delhipolice.gov.in/notice/pay-notice';
 const DELHI_COURT_URL = 'https://traffic.delhipolice.gov.in/evecourtddc/#/';
 
 // Saved sign-in is { token, user: { uid, name, role } }; anything older is dropped.
@@ -116,6 +117,24 @@ function updateMessage(l) {
     `Reference: ${l.ref}`,
     'Team Niptao',
   ].join('\n');
+}
+// Asks the Delhi Traffic Police site from our server, to see whether an automatic check can work.
+function DelhiCheck({ plate, onCheck }) {
+  const [r, setR] = useState(null);
+  const [busy, setBusy] = useState(false);
+  if (!plate) return null;
+  const run = async () => { setBusy(true); setR(null); try { setR(await onCheck(plate)); } finally { setBusy(false); } };
+  return (
+    <div className="delhi-check">
+      <button type="button" className="btn ghost edit" disabled={busy} onClick={run}>{busy ? 'Asking Delhi Traffic Police…' : 'Try automatic Delhi check'}</button>
+      {r && (
+        <div className="small">
+          {r.error ? `Could not run the check (${r.error}).` : (r.ok ? '✓ The Delhi Police site answered. ' : '✗ It did not work from our server. ') + (r.steps || []).join(' ')}
+          {r.sample && <details className="guide"><summary>What came back</summary><pre className="wa-msg">{r.sample}</pre></details>}
+        </div>
+      )}
+    </div>
+  );
 }
 // Challans the team marked "cannot be resolved", each with the reason in words the customer understands.
 function cannotBlock(cannot, line) {
@@ -731,7 +750,7 @@ function PaymentDialog({ lead, others = [], onCancel, onSave }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans, onAddVehicles, myId, onAskPayment, onBot, onOpenProof }) {
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans, onAddVehicles, myId, onAskPayment, onBot, onOpenProof, onDelhiCheck }) {
   const [draft, setDraft] = useState('');
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
@@ -859,7 +878,9 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                 <div className="cc-row">
                   <a className="btn primary" href={PARKPLUS_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate}>Open Park+ ↗</a>
                   <a className="btn" href={PARIVAHAN_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Open Parivahan e-Challan ↗</a>
+                  <a className="btn" href={DELHI_NOTICE_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate}>Check Delhi challans ↗</a>
                 </div>
+                <DelhiCheck plate={lead.plate} onCheck={onDelhiCheck} />
                 <button type="button" className="btn ghost instr" aria-expanded={showHelp} onClick={() => setShowHelp((v) => !v)}>{showHelp ? '▾ Hide instructions' : '▸ Instructions'}</button>
                 {showHelp && (<div className="guide">
                   <div className="sec-k">Park+</div>
@@ -870,6 +891,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                     <li>Check each row (number, amount, offence, date, place, status), fix anything wrong, choose Source <b>Park+</b>, and press <b>Save</b>.</li>
                     <li>If the vehicle has no challans, press <b>No challans</b> instead.</li>
                   </ol>
+                  <p className="hint"><b>Delhi challans:</b> click <b>Check Delhi challans</b> (the vehicle number is copied), search on the Delhi Traffic Police page, copy the notices, then paste them in <b>+ Add challan details</b> (or Edit) and press <b>Read challans</b> with Source <b>Delhi Traffic Police</b>. Challans already on the lead are kept and the same number is not added twice.</p>
                   <p className="hint"><b>Parivahan:</b> the vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
                 </div>)}
               </div>
@@ -1932,6 +1954,7 @@ export default function Admin() {
         siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend} getPayment={getPayment} isAdminUser={isAdmin}
         docTypes={docTypes} onUploadDoc={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onDocLink={onDocLink}
         onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken} onTokenChallans={onTokenChallans} onAddVehicles={onAddVehicles} myId={me.uid} onAskPayment={setPayFor} onBot={onBot} onOpenProof={(ref) => openFile(`/api/admin/leads/${encodeURIComponent(ref)}/proof`)}
+        onDelhiCheck={(plate) => call(`/api/admin/delhi-check?plate=${encodeURIComponent(plate)}`, auth).catch((e) => ({ error: e.status === 429 ? 'too many checks, wait a few minutes' : e.message }))}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
       {payFor && all.find((l) => l.ref === payFor) && (
         <PaymentDialog lead={all.find((l) => l.ref === payFor)} others={(() => { const g = all.find((l) => l.ref === payFor).groupRef; return g ? all.filter((l) => l.groupRef === g && l.ref !== payFor) : []; })()} onCancel={() => setPayFor(null)}
