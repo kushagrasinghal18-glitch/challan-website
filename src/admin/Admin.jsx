@@ -4,7 +4,7 @@ import Analytics from './Analytics.jsx';
 import Calendar from './Calendar.jsx';
 import WhatsAppAuto from './WhatsAppAuto.jsx';
 import { lokPlan, lokLong } from '../../shared/lok.js';
-import { NOT_REASONS, notReason, cannotDo } from '../../shared/verdict.js';
+import { NOT_REASONS, notReason, cannotDo, mergeChallans } from '../../shared/verdict.js';
 
 const STATUS_COLORS = {
   New: ['#E8EEF8', '#2F5AA8'], Contacted: ['#F0EAF8', '#6A42A0'], 'Payment received': ['#FBE7EF', '#9A2F5E'], 'Documents received': ['#FFF1D9', '#8A5200'], 'Documents verified': ['#FDF3C4', '#6B5300'],
@@ -292,8 +292,12 @@ function ChallanEditor({ lead, onSave, onCancel }) {
   const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   const read = () => {
     const found = parseChallans(text);
-    setMsg(found.length ? `Found ${found.length} challan${found.length === 1 ? '' : 's'}. Check each row, fix anything wrong, then Save.` : 'No challan numbers found in that text. Add rows by hand instead.');
-    if (found.length) setRows(found);
+    if (!found.length) { setMsg('No challan numbers found in that text. Add rows by hand instead.'); return; }
+    // Added to the rows already here (e.g. Park+ first, then Parivahan); the same challan number is not added twice.
+    const m = mergeChallans(rows, found);
+    setRows(m.challans);
+    setText('');
+    setMsg(`Found ${found.length} challan${found.length === 1 ? '' : 's'}: ${m.added} new${m.matched ? `, ${m.matched} already in the list` : ''}. Check each row, fix anything wrong, then Save.`);
   };
   const save = async (list) => {
     setBusy(true);
@@ -1746,7 +1750,7 @@ export default function Admin() {
 
   const onSaveChallans = async (ref, challans, source) => {
     try {
-      const { lead } = await call(`/api/admin/leads/${encodeURIComponent(ref)}/challans`, auth, { method: 'POST', body: JSON.stringify({ challans, source }) });
+      const { lead } = await call(`/api/admin/leads/${encodeURIComponent(ref)}/challans`, auth, { method: 'POST', body: JSON.stringify({ challans, source, replace: true }) });
       setLeads((ls) => ls.map((l) => (l.ref === ref ? lead : l)));
       return true;
     } catch (e) {

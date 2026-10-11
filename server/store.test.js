@@ -247,3 +247,15 @@ test('new challans start as approved; a re-fetch keeps what the team unticked', 
   l = await updateLead('GBN-8', { challanVerdict: { index: 0, canDo: true } }, 'K');
   assert.equal(l.challans[0].approved, true);
 });
+
+test('challans from a second site are added, matched on the challan number', async () => {
+  const { mergeChallans } = await import('../shared/verdict.js');
+  const parkPlus = [{ challanNo: 'DL123 456', amount: 500, offence: 'Red light', date: '' }, { challanNo: 'UP9', amount: 1000, offence: 'Speed' }];
+  const parivahan = [{ challanNo: 'dl123-456', amount: 0, offence: 'Red light jump', date: '2026-09-01' }, { challanNo: 'HR77', amount: 2000 }];
+  const m = mergeChallans(parkPlus, parivahan);
+  assert.equal(m.added, 1);
+  assert.equal(m.matched, 1);
+  assert.deepEqual(m.challans.map((c) => c.challanNo), ['DL123 456', 'UP9', 'HR77']);
+  assert.equal(m.challans[0].amount, 500, 'a blank amount keeps the old one');
+  assert.equal(m.challans[0].date, '2026-09-01');
+});
