@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getChallans, providerName } from './providers/index.js';
 import { PLATE_RE, normalizePlate } from './plate.js';
-import { NOT_REASONS } from '../shared/verdict.js';
+import { NOT_REASONS, mergeChallans } from '../shared/verdict.js';
 import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, checkAdminPassword, hashPassword, verifyPassword, issueTeamToken, readTeamToken } from './auth.js';
 import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
@@ -408,17 +408,27 @@ app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
     ...(typeof c?.canDo === 'boolean' ? { canDo: c.canDo } : {}), ...(c?.canDo === false && NOT_REASONS[c?.notReason] ? { notReason: c.notReason } : {}),
     amount: Math.max(0, Math.round(Number(String(c?.amount ?? '').replace(/[^\d.]/g, '')) || 0)),
   })).filter((c) => c.challanNo || c.offence || c.amount);
-  const total = challans.reduce((n, c) => n + c.amount, 0);
   const source = clip(req.body.source, 40) || 'Parivahan';
   const ownerName = clip(req.body.ownerName, 120);
-  const note = challans.length
-    ? `Fetched ${challans.length} challan${challans.length === 1 ? '' : 's'} from ${source}` + (total ? `, total ₹${total.toLocaleString('en-IN')}` : '') + '.'
-    : `No challans on this vehicle (checked on ${source}).`;
+  // A fetch from another site adds to what is there (matched on the challan number). replace: true is the
+  // panel's own editor, which sends the whole list as the team edited it.
   try {
-    const lead = await updateLead(req.params.ref, { challans, challansSource: source, note, ...(ownerName ? { rcOwner: { name: ownerName, source } } : {}) },
+    const before = (await listLeads()).find((l) => l.ref === req.params.ref);
+    const prev = before?.challans || [];
+    const merged = prev.length && req.body.replace !== true ? mergeChallans(prev, challans) : null;
+    const saved = merged ? merged.challans : challans;
+    const sources = prev.length && saved.length ? [...new Set([...String(before.challansSource || '').split(', ').filter(Boolean), source])].join(', ') : source;
+    const total = saved.reduce((n, c) => n + (c.amount || 0), 0);
+    const fetched = `${challans.length} challan${challans.length === 1 ? '' : 's'}`;
+    const note = merged
+      ? `Fetched ${fetched} from ${source}: ${merged.added} new, ${merged.matched} already on the lead. Now ${saved.length} challan${saved.length === 1 ? '' : 's'}` + (total ? `, total ₹${total.toLocaleString('en-IN')}` : '') + '.'
+      : saved.length
+        ? `${req.body.replace === true ? 'Saved' : 'Fetched'} ${fetched} from ${source}` + (total ? `, total ₹${total.toLocaleString('en-IN')}` : '') + '.'
+        : `No challans on this vehicle (checked on ${source}).`;
+    const lead = await updateLead(req.params.ref, { challans: saved, challansSource: sources, note, ...(ownerName ? { rcOwner: { name: ownerName, source } } : {}) },
       req.user.name, scopeOf(req.user));
     if (!lead) return res.status(404).json({ error: 'not_found' });
-    res.json({ lead, count: challans.length, total });
+    res.json({ lead, count: saved.length, total });
   } catch (err) {
     if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
     console.error('[admin] challans save failed', err.message); res.status(500).json({ error: 'storage_unavailable' });

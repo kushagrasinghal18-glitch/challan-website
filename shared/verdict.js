@@ -14,3 +14,26 @@ export const NOT_REASONS = {
 };
 export const notReason = (c) => NOT_REASONS[c?.notReason] || NOT_REASONS.area;
 export const cannotDo = (c) => c?.canDo === false;
+// Same challan from two sites (Park+, Parivahan) is matched on its number, ignoring spaces, dashes and case.
+export const challanKey = (c) => String(c?.challanNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+// Adds a new fetch to the challans already on a lead: a known number is updated in place (blank fields
+// keep the old value), a new one is added at the end. Nothing already there is dropped.
+export function mergeChallans(old = [], fresh = []) {
+  const out = old.map((c) => ({ ...c }));
+  const at = new Map(out.map((c, i) => [challanKey(c), i]).filter(([k]) => k));
+  let added = 0, matched = 0;
+  for (const c of fresh) {
+    const k = challanKey(c);
+    const same = k ? at.get(k) : out.findIndex((o) => !challanKey(o) && o.offence === c.offence && o.amount === c.amount && o.date === c.date);
+    if (same !== undefined && same >= 0) {
+      const filled = Object.fromEntries(Object.entries(c).filter(([key, v]) => v !== '' && v !== undefined && v !== null && !(key === 'amount' && !v)));
+      out[same] = { ...out[same], ...filled, challanNo: out[same].challanNo }; // tokens point at the number as first saved
+      matched++;
+    } else {
+      if (k) at.set(k, out.length);
+      out.push({ ...c });
+      added++;
+    }
+  }
+  return { challans: out, added, matched };
+}
