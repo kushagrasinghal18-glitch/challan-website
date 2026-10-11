@@ -1,0 +1,15 @@
+# Niptao's helper in India. Deployed by the "Deploy Delhi helper to Fly.io" GitHub action
+# (.github/workflows/delhi-proxy.yml), which sets the app name.
+primary_region = "bom" # Mumbai
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
