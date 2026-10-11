@@ -891,6 +891,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                     <li>Check each row (number, amount, offence, date, place, status), fix anything wrong, choose Source <b>Park+</b>, and press <b>Save</b>.</li>
                     <li>If the vehicle has no challans, press <b>No challans</b> instead.</li>
                   </ol>
+                  <p className="hint"><b>Delhi challans:</b> click <b>Check Delhi challans</b> (the vehicle number is copied), search on the Delhi Traffic Police page, copy the notices, then paste them in <b>+ Add challan details</b> (or Edit) and press <b>Read challans</b> with Source <b>Delhi Traffic Police</b>. Challans already on the lead are kept and the same number is not added twice.</p>
                   <p className="hint"><b>Parivahan:</b> the vehicle number is copied when you open the site. Choose <b>Vehicle Number</b>, paste it, type the captcha and press Get Detail. No OTP is needed. With the <a href={ADDON_ZIP} download>Niptao Lead Filler add-on</a> in Chrome, the number is filled in for you.</p>
                 </div>)}
               </div>
