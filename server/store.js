@@ -242,7 +242,7 @@ export function updateLead(ref, patch, by, onlyFor) {
       if (c) {
         const next = { ...c };
         delete next.canDo; delete next.notReason;
-        if (canDo === true) next.canDo = true;
+        if (canDo === true) { next.canDo = true; if (c.canDo === false) next.approved = true; }
         if (canDo === false) Object.assign(next, { canDo: false, notReason: reason, approved: false });
         out.challans = list.map((x, i) => (i === index ? next : x));
       }
@@ -344,11 +344,15 @@ export function updateLead(ref, patch, by, onlyFor) {
     if (patch.removeDoc) out.docs = (lead.docs || []).filter((d) => d.id !== patch.removeDoc);
     if (Array.isArray(patch.challans)) {
       // Challans fetched again (e.g. by the add-on): keep the can / cannot marks already made on them.
-      const marked = new Map((lead.challans || []).filter((c) => c.challanNo && typeof c.canDo === 'boolean').map((c) => [c.challanNo, c]));
+      // A new challan starts as "Customer approved" (the team unticks what the customer doesn't want).
+      const before = new Map((lead.challans || []).filter((c) => c.challanNo).map((c) => [c.challanNo, c]));
       out.challans = patch.challans.map((c) => {
-        const old = typeof c.canDo === 'boolean' ? null : marked.get(c.challanNo);
-        if (!old) return c;
-        return old.canDo ? { ...c, canDo: true } : { ...c, canDo: false, notReason: old.notReason, approved: false };
+        const old = before.get(c.challanNo);
+        const next = { ...c };
+        if (typeof next.canDo !== 'boolean' && typeof old?.canDo === 'boolean') Object.assign(next, old.canDo ? { canDo: true } : { canDo: false, notReason: old.notReason });
+        if (typeof next.approved !== 'boolean') next.approved = old ? !!old.approved : true;
+        if (next.canDo === false) next.approved = false;
+        return next;
       });
       out.challansAt = new Date().toISOString();
       out.challansBy = by;

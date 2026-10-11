@@ -234,3 +234,16 @@ test('challans can be marked can / cannot be resolved, and the marks survive a r
   l = await updateLead('GBN-9', { challanVerdict: { index: 0, canDo: null } }, 'K');
   assert.equal('canDo' in l.challans[0], false);
 });
+
+test('new challans start as approved; a re-fetch keeps what the team unticked', async () => {
+  await addLead({ ref: 'GBN-8', createdAt: '2026-10-03T00:00:00Z', name: 'D', plate: 'DL3CAB1235', phone: '9876543218', status: 'New', notes: [] });
+  let l = await updateLead('GBN-8', { challans: [{ challanNo: 'A', amount: 100 }, { challanNo: 'B', amount: 200 }] }, 'K');
+  assert.deepEqual(l.challans.map((c) => c.approved), [true, true]);
+  l = await updateLead('GBN-8', { approved: [0] }, 'K');
+  l = await updateLead('GBN-8', { challans: [{ challanNo: 'A', amount: 100 }, { challanNo: 'B', amount: 200 }, { challanNo: 'C', amount: 5 }] }, 'K');
+  assert.deepEqual(l.challans.map((c) => c.approved), [true, false, true]);
+  l = await updateLead('GBN-8', { challanVerdict: { index: 0, canDo: false, reason: 'court' } }, 'K');
+  assert.equal(l.challans[0].approved, false);
+  l = await updateLead('GBN-8', { challanVerdict: { index: 0, canDo: true } }, 'K');
+  assert.equal(l.challans[0].approved, true);
+});
