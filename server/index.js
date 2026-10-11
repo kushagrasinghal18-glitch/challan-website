@@ -404,7 +404,7 @@ app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
   if (!Array.isArray(list) || list.length > 300) return res.status(400).json({ error: 'invalid_challans' });
   const challans = list.map((c) => ({
     challanNo: clip(c?.challanNo, 60), date: clip(c?.date, 40), offence: clip(c?.offence, 300),
-    location: clip(c?.location, 200), status: clip(c?.status, 80), approved: c?.approved === true && c?.canDo !== false,
+    location: clip(c?.location, 200), status: clip(c?.status, 80), ...(typeof c?.approved === 'boolean' ? { approved: c.approved && c?.canDo !== false } : {}),
     ...(typeof c?.canDo === 'boolean' ? { canDo: c.canDo } : {}), ...(c?.canDo === false && NOT_REASONS[c?.notReason] ? { notReason: c.notReason } : {}),
     amount: Math.max(0, Math.round(Number(String(c?.amount ?? '').replace(/[^\d.]/g, '')) || 0)),
   })).filter((c) => c.challanNo || c.offence || c.amount);

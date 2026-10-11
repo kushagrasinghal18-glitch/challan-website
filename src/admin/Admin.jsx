@@ -97,6 +97,26 @@ function approvalMessage(l, dates) {
     'Team Niptao',
   ].join('\n');
 }
+// Message when nothing is up for approval: no challans, or none we can take up (or none picked yet).
+function updateMessage(l) {
+  const all = l.challans || [];
+  const line = (c, i) => `${i + 1}. Challan ${c.challanNo || '-'}${c.date ? ` (${c.date})` : ''}${c.offence ? ` - ${String(c.offence).slice(0, 70)}` : ''} - ${inr(c.amount || 0)}`;
+  const can = all.filter((c) => !cannotDo(c)), cannot = all.filter(cannotDo);
+  return [
+    `Hi ${l.name},`,
+    '',
+    all.length
+      ? `This is Niptao. We checked your vehicle ${fmtPlate(l.plate)} and found ${all.length} challan${all.length === 1 ? '' : 's'} totalling ${inr(challanTotal(l))}.`
+      : `This is Niptao. We checked your vehicle ${fmtPlate(l.plate)} and there are no pending challans on it right now. 🎉`,
+    ...(can.length ? ['', `*Challans we can settle for you (${can.length})*`, ...can.map(line), 'Reply here if you want us to settle these for you.'] : []),
+    ...cannotBlock(cannot, line),
+    '',
+    all.length && !can.length ? 'We will keep you posted here as soon as we can help with these.' : 'Message us here anytime if you get a new challan.',
+    '',
+    `Reference: ${l.ref}`,
+    'Team Niptao',
+  ].join('\n');
+}
 // Challans the team marked "cannot be resolved", each with the reason in words the customer understands.
 function cannotBlock(cannot, line) {
   if (!cannot.length) return [];
@@ -128,10 +148,12 @@ function groupApprovalMessage(group, dates) {
     `This is Niptao. Here are the challans on your ${group.length} vehicles.`,
     ...blocks.flatMap((b) => ['', ...b]),
     '',
-    `*Total you pay for all vehicles: ${inr(total)}*`,
-    ...(lokLine ? ['', lokLine] : []),
-    '',
-    `Please reply *I APPROVE* to give your written approval for Niptao to settle the challans listed above for ${inr(total)}.`,
+    ...(withOk.length ? [
+      `*Total you pay for all vehicles: ${inr(total)}*`,
+      ...(lokLine ? ['', lokLine] : []),
+      '',
+      `Please reply *I APPROVE* to give your written approval for Niptao to settle the challans listed above for ${inr(total)}.`,
+    ] : ['We will keep you posted here as soon as we can help with these. Message us anytime if you get a new challan.']),
     '',
     `Reference: ${group.map((l) => l.ref).join(', ')}`,
     'Team Niptao',
@@ -154,7 +176,14 @@ function GroupApproval({ group, lokDates, onPatch }) {
   return (
     <div className={'wa-appr group-appr' + (done ? ' done' : '')}>
       <div className="sec-k">Approval for all {group.length} vehicles</div>
-      {!withOk.length ? <div className="small">Tick the challans the customer approved on each vehicle first. Vehicles with no challans are listed as "No challans found".</div> : (<>
+      {!withOk.length ? (<>
+        <div className="small">No challan is ticked as approved on any vehicle. You can still send the customer this update (no challans, or the ones we cannot take up and why).</div>
+        <div className="cc-row">
+          <a className="btn wa-btn" href={`https://wa.me/91${group[0].phone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer"
+            onClick={(e) => { if (busy) { e.preventDefault(); return; } each([group[0]], () => ({ note: `Sent a challan update on WhatsApp for all ${group.length} vehicles (nothing to approve).` })); }}>Send update on WhatsApp</a>
+          <button type="button" className="btn ghost" onClick={() => setOpen(false)}>Close</button>
+        </div>
+      </>) : (<>
         <div className="small">{done ? '✓ The customer approved all vehicles in writing.' : sent.length ? `Sent for ${sent.length} vehicle${sent.length === 1 ? '' : 's'}. Waiting for "I APPROVE".` : `Covers ${withOk.length} vehicle${withOk.length === 1 ? '' : 's'} with approved challans. Total ${inr(withOk.reduce((n, l) => n + payable(l), 0))}.`}</div>
         <div className="cc-row">
           <a className={'btn ' + (!sent.length && !done ? 'wa-btn' : '')} href={`https://wa.me/91${group[0].phone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer"
@@ -893,19 +922,14 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                         {c.offence && <div>{c.offence}</div>}
                         <div className="small">{[STATES[challanState(c)], c.date, c.location, c.status].filter(Boolean).join(' · ')}</div>
                         <div className="verdict">
-                          <select aria-label="Can this challan be resolved?" value={c.canDo === true ? 'yes' : c.canDo === false ? 'no' : ''} disabled={busy}
-                            onChange={(e) => setVerdict(i, e.target.value === 'yes' ? true : e.target.value === 'no' ? false : null, c.notReason)}>
-                            <option value="">Can it be resolved?</option>
-                            <option value="yes">✓ Can be resolved</option>
-                            <option value="no">✗ Cannot be resolved</option>
-                          </select>
+                          <label className="appr-box"><input type="checkbox" checked={!cannotDo(c)} disabled={busy} onChange={() => setVerdict(i, cannotDo(c), c.notReason)} /> Can be resolved</label>
                           {cannotDo(c) && (
                             <select aria-label="Reason it cannot be resolved" value={c.notReason || 'area'} disabled={busy} onChange={(e) => setVerdict(i, false, e.target.value)}>
                               {Object.entries(NOT_REASONS).map(([k, r]) => <option key={k} value={k}>{r.label}</option>)}
                             </select>
                           )}
+                          {!cannotDo(c) && <label className="appr-box"><input type="checkbox" checked={!!c.approved} disabled={busy} onChange={() => toggleApproved(i)} /> Customer approved</label>}
                         </div>
-                        {!cannotDo(c) && <label className="appr-box"><input type="checkbox" checked={!!c.approved} disabled={busy} onChange={() => toggleApproved(i)} /> Customer approved</label>}
                       </div>
                     ))}
                     {chSt && !lead.challans.some((c) => (challanState(c) || '?') === chSt) && <div className="small">No challans from {STATES[chSt] || 'this state'} on this lead.</div>}
@@ -948,6 +972,24 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                         {w?.state === 'sent' && !stale && (
                           <button className="btn primary" disabled={busy} onClick={() => patch({ waApproval: 'received', note: 'Customer gave written approval on WhatsApp.' })}>Customer replied "I APPROVE"</button>
                         )}
+                      </div>
+                      <details className="guide"><summary>See the message</summary><pre className="wa-msg">{msg}</pre></details>
+                    </div>
+                  );
+                })()}
+                {!approvedOf(lead).length && (() => {
+                  const msg = updateMessage(lead);
+                  const link = `https://wa.me/91${lead.phone}?text=${encodeURIComponent(msg)}`;
+                  const note = { note: `Sent a challan update on WhatsApp (${lead.challans.length ? `${lead.challans.filter(cannotDo).length} of ${lead.challans.length} cannot be taken up, nothing approved` : 'no challans'}).` };
+                  return (
+                    <div className="wa-appr">
+                      <div className="sec-k">Update on WhatsApp</div>
+                      <div className="small">{lead.challans.length ? 'No challan is ticked as approved. Send the customer the list, with the reason for each challan we cannot take up.' : 'Tell the customer there are no pending challans on this vehicle.'}</div>
+                      {waErr && !lead.waChat?.length && <div className="stale">{waErr}</div>}
+                      <div className="cc-row">
+                        {waApi && <button className="btn wa-btn" disabled={busy} onClick={async () => { if (await waSend({ text: msg })) patch(note); }}>Send on WhatsApp</button>}
+                        <a className={'btn ' + (!waApi ? 'wa-btn' : '')} href={link} target="_blank" rel="noopener noreferrer"
+                          onClick={(e) => { if (busy) { e.preventDefault(); return; } patch(note); }}>{waApi ? 'Open in WhatsApp' : 'Send on WhatsApp'}</a>
                       </div>
                       <details className="guide"><summary>See the message</summary><pre className="wa-msg">{msg}</pre></details>
                     </div>
