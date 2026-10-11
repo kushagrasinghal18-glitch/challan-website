@@ -545,3 +545,6 @@ td.plates .plate { display: inline-block; margin: 2px 4px 2px 0; }
 .wa-activity { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; font-size: 13px; }
 .wa-activity li { padding: 5px 0; border-bottom: 1px solid #EEE9E0; }
 .wa-activity li.bad { color: #9B1C1C; }
+
+.delhi-check { margin-top: 6px; }
+.delhi-check .small { margin-top: 4px; }

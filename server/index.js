@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { getChallans, providerName } from './providers/index.js';
 import { PLATE_RE, normalizePlate } from './plate.js';
 import { NOT_REASONS, mergeChallans } from '../shared/verdict.js';
+import { tryDelhi } from './delhi.js';
 import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, checkAdminPassword, hashPassword, verifyPassword, issueTeamToken, readTeamToken } from './auth.js';
 import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
@@ -433,6 +434,15 @@ app.post('/api/admin/leads/:ref/challans', requireUser, async (req, res) => {
     if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
     console.error('[admin] challans save failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
   }
+});
+
+// "Try automatic Delhi check": asks the Delhi Traffic Police site from this server and shows what came back.
+app.get('/api/admin/delhi-check', requireUser, limit(20, 10 * 60_000), async (req, res) => {
+  const plate = normalizePlate(req.query.plate);
+  if (!PLATE_RE.test(plate)) return res.status(400).json({ error: 'invalid_plate' });
+  const out = await tryDelhi(plate);
+  console.log('[delhi] check', plate, out.ok ? 'answered' : 'failed', out.steps.join(' | '));
+  res.json(out);
 });
 
 // ── Customer documents ──────────────────────────────────
