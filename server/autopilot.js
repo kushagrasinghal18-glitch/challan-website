@@ -66,6 +66,8 @@ export function mountAutopilot(app, deps) {
   const live = deps.live || realLive;
   const ai = { ready: deps.aiConfigured || aiConfigured, answer: deps.aiAnswer || aiAnswer };
   const debounceMs = deps.debounceMs ?? DEBOUNCE_MS;
+  // Receive only: leads, chats, "I APPROVE" and payment screenshots are still recorded; nothing is sent.
+  const receiveOnly = deps.receiveOnly ?? realLive.RECEIVE_ONLY;
   const byPhone = async (phone) => (await listLeads()).filter((l) => l.phone === phone);
   const lastJid = new Map(); // phone → chat id the customer last wrote from (WhatsApp may use a private id)
   const aiSent = new Map(); // phone → times of AI replies, for the per-chat cap
@@ -145,7 +147,7 @@ export function mountAutopilot(app, deps) {
       const bot = await getBot();
       // "I APPROVE" just marked: send the payment details straight away.
       const approvedNow = leads.filter((l) => l.waApproval?.state === 'received' && before.find((b) => b.ref === l.ref)?.waApproval?.state === 'sent' && !l.paymentSent);
-      if (approvedNow.length && saysApprove(m.text) && bot.autoPayment && live.isLive()) {
+      if (approvedNow.length && saysApprove(m.text) && bot.autoPayment && live.isLive() && !receiveOnly) {
         handled = true;
         await sendPayment(m.phone, approvedNow).catch((err) => console.error('[wa] payment send failed', err.message));
       }
@@ -154,14 +156,14 @@ export function mountAutopilot(app, deps) {
       if (!handled && waiting.length && (m.kind === 'image' || m.kind === 'document')) {
         handled = true;
         await takeProof(m, waiting);
-        if (bot.autoPayment && live.isLive() && !leads.some((l) => l.botPaused)) {
+        if (bot.autoPayment && live.isLive() && !receiveOnly && !leads.some((l) => l.botPaused)) {
           const text = hindi(leads) ? 'धन्यवाद! आपका पेमेंट स्क्रीनशॉट मिल गया है। हमारी टीम जाँच करके यहीं कन्फ़र्म करेगी। 🙏'
             : 'Thank you! We have received your payment screenshot. Our team will check it and confirm here shortly. 🙏';
           await say(m.phone, waiting[0].ref, text, AUTO).catch((err) => console.error('[wa] reply failed', err.message));
         }
       }
     });
-    if (!handled) schedule(m.phone);
+    if (!handled && !receiveOnly) schedule(m.phone);
   }
 
   function schedule(phone) {
@@ -220,7 +222,7 @@ export function mountAutopilot(app, deps) {
   getBot().then((b) => live.startLive(handlers, { connectNow: b.on !== false })).catch((err) => console.error('[wa] start failed', err.message));
 
   // ── Admin routes ──
-  const view = async () => ({ ...live.status(), enabled: live.liveEnabled(), aiReady: ai.ready(), settings: await getBot(), activity });
+  const view = async () => ({ ...live.status(), receiveOnly, enabled: live.liveEnabled(), aiReady: ai.ready(), settings: await getBot(), activity });
   const fail = (res, err) => {
     if (err.code === 'live_off') return res.status(503).json({ error: 'live_off' });
     if (err.code === 'crm_off') return res.status(409).json({ error: 'crm_off' });
@@ -319,5 +321,5 @@ export function mountAutopilot(app, deps) {
     } catch (err) { console.error('[wa] proof read failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
   });
 
-  return { isLive: live.isLive, send: (phone, text) => live.sendText(phone, text, { jid: lastJid.get(phone) }) };
+  return { isLive: live.isLive, receiveOnly, send: (phone, text) => live.sendText(phone, text, { jid: lastJid.get(phone) }) };
 }

@@ -300,7 +300,7 @@ app.get('/api/settings', async (req, res) => {
 
 // ── Admin panel API ─────────────────────────────────────
 app.get('/api/admin/status', (req, res) => res.json({ enabled: adminEnabled(), storage: store().name, statuses: STATUSES,
-  whatsappApi: waConfigured() || !!autopilot?.isLive(), whatsappLive: !!autopilot?.isLive() }));
+  whatsappApi: waConfigured() || (!!autopilot?.isLive() && !autopilot.receiveOnly), whatsappLive: !!autopilot?.isLive() && !autopilot.receiveOnly }));
 
 // Super admin: username "admin" + ADMIN_PASSWORD. Everyone else: a staff account.
 app.post('/api/admin/login', limit(10, 15 * 60_000), async (req, res) => {
@@ -921,7 +921,7 @@ app.post('/api/admin/whatsapp-web', requireUser, limit(120, 60_000), async (req,
 // Send from the admin panel through the API. Free text only inside the 24-hour window that opens
 // when the customer last wrote; outside it, only the approved approval template can be sent.
 app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async (req, res) => {
-  const viaLive = !!autopilot?.isLive();
+  const viaLive = !!autopilot?.isLive() && !autopilot.receiveOnly; // receive only: the panel uses "Open in WhatsApp" instead
   if (!viaLive && !waConfigured()) return res.status(503).json({ error: 'whatsapp_not_set_up' });
   const b = req.body || {};
   const text = String(b.text || '').trim().slice(0, 4000);

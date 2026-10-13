@@ -66,7 +66,7 @@ test('end to end: AI chat → lead with vehicle → approval → payment details
   const app = new Proxy({}, { get: () => (p, ...fns) => { routes[p] = fns[fns.length - 1]; } });
   mountAutopilot(app, {
     handleWhatsApp: index.handleWhatsApp, enqueue: index.enqueueWa, attachPlates: index.attachPlates,
-    requireUser: [], requireAdmin: [], canSee: () => true, live, debounceMs: 10,
+    requireUser: [], requireAdmin: [], canSee: () => true, live, debounceMs: 10, receiveOnly: false,
     aiConfigured: () => true, aiAnswer: async ({ chat }) => answers.shift()?.(chat) ?? null,
   });
   await new Promise((r) => setTimeout(r, 50)); // the connection starts once the saved switch is read
@@ -193,4 +193,39 @@ test('model picking prefers the chosen model, then the latest alias, then the ne
   assert.equal(pickModel(['gemini-2.0-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite']), 'gemini-3.5-flash');
   assert.equal(pickModel(['gemini-3.5-flash', 'gemini-flash-latest']), 'gemini-flash-latest');
   assert.equal(pickModel(['gemini-3.5-flash', 'gemini-2.0-flash'], 'gemini-2.0-flash'), 'gemini-2.0-flash');
+});
+
+test('receive only: incoming chats still become leads and "I APPROVE" is marked, but nothing is sent', async () => {
+  const index = await import('./index.js');
+  const { mountAutopilot } = await import('./autopilot.js');
+  const store = await import('./store.js');
+  const sent = [];
+  let handlers;
+  const live = {
+    liveEnabled: () => true, status: () => ({ state: 'open' }), isLive: () => true, startLive: async (h) => { handlers = h; },
+    sendText: async (phone, text) => { sent.push(text); return 'x'; }, sendImage: async () => { sent.push('img'); return 'y'; }, download: async () => Buffer.alloc(0),
+  };
+  const routes = {};
+  const app = new Proxy({}, { get: () => (p, ...fns) => { routes[p] = fns[fns.length - 1]; } });
+  let asked = 0;
+  await store.setKV('bot', { on: true, ai: true, autoPayment: true, notes: '' });
+  const auto = mountAutopilot(app, {
+    handleWhatsApp: index.handleWhatsApp, enqueue: index.enqueueWa, attachPlates: index.attachPlates,
+    requireUser: [], requireAdmin: [], canSee: () => true, live, debounceMs: 5,
+    aiConfigured: () => true, aiAnswer: async () => { asked++; return { reply: 'no', plates: [], name: '', paid: false, handoff: false }; },
+  });
+  assert.equal(auto.receiveOnly, true);
+  await new Promise((r) => setTimeout(r, 50));
+  const phone = '9876500099';
+  await handlers.onMessage({ id: 'r1', phone, jid: `91${phone}@s.whatsapp.net`, fromMe: false, name: 'Asha', at: new Date().toISOString(), kind: 'text', text: 'My car is DL3CAB9999' });
+  await new Promise((r) => setTimeout(r, 80));
+  const lead = (await store.listLeads()).find((l) => l.phone === phone);
+  assert.equal(lead.plate, 'DL3CAB9999');
+  await store.updateLead(lead.ref, { challans: [{ challanNo: 'Z1', amount: 1000 }] }, 'K');
+  await store.updateLead(lead.ref, { waApproval: 'sent' }, 'K');
+  await handlers.onMessage({ id: 'r2', phone, jid: `91${phone}@s.whatsapp.net`, fromMe: false, name: 'Asha', at: new Date().toISOString(), kind: 'text', text: 'I APPROVE' });
+  await new Promise((r) => setTimeout(r, 80));
+  assert.equal((await store.listLeads()).find((l) => l.ref === lead.ref).waApproval.state, 'received');
+  assert.deepEqual(sent, []);
+  assert.equal(asked, 0, 'the AI is not even asked');
 });
