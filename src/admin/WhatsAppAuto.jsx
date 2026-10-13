@@ -43,6 +43,7 @@ export default function WhatsAppAuto({ auth, call, signOut }) {
   return (
     <section className="panel pad wa-auto">
       <h2>Automatic WhatsApp</h2>
+      {s.receiveOnly && <div className="stale" role="status" style={{ marginBottom: 10 }}><b>Receive only.</b> Nothing is sent from the website on this number: no AI replies, no payment messages, no sends from the leads. Incoming chats still become leads, and "I APPROVE" and payment screenshots are still recorded. Reply from your phone, or with "Open in WhatsApp" on a lead. This stays until the official WhatsApp API is set up.</div>}
       <p className="hint" style={{ marginTop: 0 }}>Link your WhatsApp number once. Then customers who message it get AI replies, their vehicle numbers become leads, "I APPROVE" is marked by itself and the payment details go out straight after. It only ever replies: nobody gets a first message from it.</p>
 
       <label className="toggle power">
@@ -91,13 +92,13 @@ export default function WhatsAppAuto({ auth, call, signOut }) {
       </div>
 
       <label className="toggle">
-        <input type="checkbox" checked={form.ai} disabled={busy} onChange={(e) => toggle('ai', e.target.checked)} />
+        <input type="checkbox" checked={form.ai && !s.receiveOnly} disabled={busy || s.receiveOnly} onChange={(e) => toggle('ai', e.target.checked)} />
         <span><b>AI replies</b><br />
           <span className="hint">Answers questions about Niptao, asks for the vehicle number and name, and adds them to the lead. It goes quiet in a chat for 2 hours after someone from the team writes there, and hands the chat to you when a customer asks for a person.</span>
           {!s.aiReady && <span className="warn" style={{ display: 'block', marginTop: 6 }}>Not active yet: add <code>GEMINI_API_KEY</code> in Render → Environment.</span>}</span>
       </label>
       <label className="toggle">
-        <input type="checkbox" checked={form.autoPayment} disabled={busy} onChange={(e) => toggle('autoPayment', e.target.checked)} />
+        <input type="checkbox" checked={form.autoPayment && !s.receiveOnly} disabled={busy || s.receiveOnly} onChange={(e) => toggle('autoPayment', e.target.checked)} />
         <span><b>Send payment details by itself</b><br />
           <span className="hint">When the customer replies "I APPROVE", the payment message and QR from Payment details go out straight away. A payment screenshot they send is saved on the lead and flagged for you to confirm.</span></span>
       </label>

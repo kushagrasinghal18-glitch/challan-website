@@ -11,6 +11,12 @@ const quiet = { level: 'silent', child() { return quiet; }, trace() {}, debug() 
 
 export const liveEnabled = (env = process.env) => env.WA_BAILEYS !== 'off';
 
+// RECEIVE ONLY (2026-10-13): the number kept getting blocked, so nothing is ever sent from this server
+// (no AI replies, no payment details, no panel sends, no "typing…"). Incoming chats still become leads.
+// Change this only once the official WhatsApp API is in place.
+export const RECEIVE_ONLY = true;
+const noSend = () => Object.assign(new Error('receive only'), { code: 'receive_only' });
+
 // Send caps across the whole number, on top of WhatsApp's own limits. Replies only, never cold messages.
 const PER_HOUR = () => Number(process.env.WA_MAX_PER_HOUR) || 60;
 const PER_DAY = () => Number(process.env.WA_MAX_PER_DAY) || 400;
@@ -191,6 +197,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Sends like a person would: shows "typing…" for a moment first. Returns the message id.
 export async function sendText(phone, text, { jid, typing = true } = {}) {
+  if (RECEIVE_ONLY) throw noSend();
   if (!isLive()) throw Object.assign(new Error('not connected'), { code: 'not_connected' });
   takeSendSlot();
   const to = jid || jidOf(phone);
@@ -206,6 +213,7 @@ export async function sendText(phone, text, { jid, typing = true } = {}) {
 }
 
 export async function sendImage(phone, buffer, caption = '', { jid } = {}) {
+  if (RECEIVE_ONLY) throw noSend();
   if (!isLive()) throw Object.assign(new Error('not connected'), { code: 'not_connected' });
   takeSendSlot();
   const sent = await sock.sendMessage(jid || jidOf(phone), { image: buffer, caption });
