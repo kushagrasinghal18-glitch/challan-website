@@ -56,10 +56,11 @@ test('sends text, templates and images in the MSG91 format', async () => {
   const c = calls.at(-1);
   assert.equal(c.path, '/whatsapp-outbound-message/');
   assert.equal(c.key, 'k-test');
-  assert.deepEqual(c.body, { integrated_number: '919990661629', recipient_number: '919876500011', content_type: 'text', payload: { type: 'text', text: { body: 'Hello' } } });
+  assert.deepEqual(c.body, { integrated_number: '919990661629', recipient_number: '919876500011', content_type: 'text', text: 'Hello' });
   await assert.rejects(live.sendImage('9876500011', Buffer.alloc(1), 'QR'), { code: 'no_link' });
   await live.sendImage('9876500011', null, 'QR', { url: 'https://site/qr' });
-  assert.deepEqual(calls.at(-1).body.payload, { type: 'image', image: { link: 'https://site/qr', caption: 'QR' } });
+  assert.equal(calls.at(-1).body.attachment_url, 'https://site/qr');
+  assert.equal(calls.at(-1).body.caption, 'QR');
   await assert.rejects(live.sendText('0000000000', 'x'), /bad number/);
   assert.equal(live.status().sentLastHour, 2);
 });
@@ -102,7 +103,7 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   const r = await send({ text: 'We will check and revert.' });
   assert.equal(r.status, 200);
   assert.equal(calls.at(-1).body.recipient_number, '91' + phone);
-  assert.equal(calls.at(-1).body.payload.text.body, 'We will check and revert.');
+  assert.equal(calls.at(-1).body.text, 'We will check and revert.');
   // MSG91 reports that same send back: it is not saved twice. A message typed in MSG91 itself is.
   await hook({ uuid: 'echo1', customerNumber: '91' + phone, messageType: 'outbound', text: 'We will check and revert.' });
   await hook({ uuid: 'dash1', customerNumber: '91' + phone, messageType: 'outbound', text: 'Sent from the MSG91 dashboard' });
@@ -124,7 +125,7 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   const n0 = calls.length;
   assert.equal((await send({ text: long, approval: true })).status, 200);
   assert.equal(calls.length, n0 + 2);
-  assert.equal(calls.at(-2).body.payload.text.body, long);
+  assert.equal(calls.at(-2).body.text, long);
   assert.equal(calls.at(-1).body.content_type, 'interactive');
   await hook({ uuid: 'tap1', customerNumber: '91' + phone, contentType: 'interactive', interactive: JSON.stringify({ type: 'button_reply', button_reply: { id: 'approve', title: 'I APPROVE' } }) });
   await settle();
