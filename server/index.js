@@ -9,7 +9,7 @@ import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, check
 import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
 import { mountAutopilot } from './autopilot.js';
-import { msg91Configured, msg91Live, parseMsg91, webhookOk as msg91WebhookOk, sendTemplate as msg91Template } from './msg91.js';
+import { msg91Configured, msg91Live, parseMsg91, webhookOk as msg91WebhookOk, sendTemplate as msg91Template, BUTTON_BODY_MAX } from './msg91.js';
 import crypto from 'node:crypto';
 import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee,
   getLead, saveDoc, getDoc, removeDoc, docTypesOf, leadByDocToken } from './store.js';
@@ -821,7 +821,7 @@ app.post('/api/whatsapp/msg91/:secret', async (req, res) => {
     for (const o of outgoing) {
       // MSG91 also reports the messages this site sent: those are on the lead already.
       const chat = (await listLeads()).filter((l) => l.phone === o.phone).flatMap((l) => l.waChat || []);
-      if (chat.some((c) => c.id === o.id || (c.dir === 'out' && c.text === o.text && Math.abs(new Date(c.at) - new Date(o.at)) < 15 * 60e3))) continue;
+      if (chat.some((c) => c.id === o.id || (c.dir === 'out' && c.text.includes(o.text) && Math.abs(new Date(c.at) - new Date(o.at)) < 15 * 60e3))) continue;
       await autopilot.receive({ ...o, fromMe: true, by: 'MSG91' });
     }
     for (const st of statuses) await autopilot.status(st);
@@ -963,7 +963,20 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
     let id, sentText = text, kind = b.approval ? 'approval' : 'text';
     // Linked number (automatic WhatsApp): no 24-hour window, it's an ordinary chat.
     if (viaLive) id = await autopilot.send(lead.phone, text);
-    else if (open) id = msg91 ? await autopilot.send(lead.phone, text) : await sendText(to, text);
+    else if (open && msg91 && b.approval && autopilot.sendButtons) {
+      // A tap-to-reply "I APPROVE" button under the approval message. A long list goes first as text,
+      // since a button message holds at most 1024 characters.
+      const buttons = [{ id: 'approve', title: 'I APPROVE' }];
+      sentText = text;
+      if (text.length <= BUTTON_BODY_MAX) id = await autopilot.sendButtons(lead.phone, text, buttons);
+      else {
+        const tap = lead.lang === 'hi' ? 'ऊपर दी गई सूची के चालान निपटाने की मंज़ूरी देने के लिए नीचे I APPROVE दबाएँ।' : 'Tap I APPROVE below to approve settling the challans listed above.';
+        await autopilot.send(lead.phone, text);
+        id = await autopilot.sendButtons(lead.phone, tap, buttons);
+        sentText = `${text}\n\n${tap}`;
+      }
+      sentText += '\n[Button: I APPROVE]';
+    } else if (open) id = msg91 ? await autopilot.send(lead.phone, text) : await sendText(to, text);
     else if (b.approval && template) {
       const ok = (lead.challans || []).filter((c) => c.approved);
       const total = ok.reduce((n, c) => n + (c.amount || 0), 0);

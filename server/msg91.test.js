@@ -103,8 +103,25 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   assert.deepEqual(chat.map((m) => [m.dir, m.text]), [['in', 'Challan on UP16AB4321'], ['out', 'We will check and revert.'], ['out', 'Sent from the MSG91 dashboard']]);
   assert.equal(chat[2].by, 'MSG91');
 
-  // More than 24 hours since the customer wrote: free text refused, approval goes as the template.
+  // Inside the window the approval goes with a tap-to-reply "I APPROVE" button; a tap marks it approved.
   await store.updateLead(lead.ref, { challans: [{ challanNo: 'C1', amount: 1000, approved: true }] }, 'test');
+  assert.equal((await send({ text: 'Please approve 1 challan for ₹500.', approval: true })).status, 200);
+  const btn = calls.at(-1).body;
+  assert.equal(btn.content_type, 'interactive');
+  assert.equal(btn.interactive.body.text, 'Please approve 1 challan for ₹500.');
+  assert.deepEqual(btn.interactive.action.buttons, [{ type: 'reply', reply: { id: 'approve', title: 'I APPROVE' } }]);
+  assert.equal((await mine())[0].waApproval.state, 'sent');
+  const long = 'x'.repeat(1100);
+  const n0 = calls.length;
+  assert.equal((await send({ text: long, approval: true })).status, 200);
+  assert.equal(calls.length, n0 + 2);
+  assert.equal(calls.at(-2).body.payload.text.body, long);
+  assert.equal(calls.at(-1).body.content_type, 'interactive');
+  await hook({ uuid: 'tap1', customerNumber: '91' + phone, contentType: 'interactive', interactive: JSON.stringify({ type: 'button_reply', button_reply: { id: 'approve', title: 'I APPROVE' } }) });
+  await settle();
+  assert.equal((await mine())[0].waApproval.state, 'received');
+
+  // More than 24 hours since the customer wrote: free text refused, approval goes as the template.
   const leads = JSON.parse(fs.readFileSync(process.env.LEADS_FILE, 'utf8'));
   const list = Array.isArray(leads) ? leads : leads.leads;
   for (const l of list) if (l.phone === phone) l.waLastIn = new Date(Date.now() - 25 * 3600e3).toISOString();
@@ -117,4 +134,13 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   assert.equal(tpl.payload.template.name, 'approval_request');
   assert.deepEqual(tpl.payload.template.to_and_components[0].to, ['91' + phone]);
   assert.equal(tpl.payload.template.to_and_components[0].components.body_5.value, lead.ref);
+});
+
+test('tapped buttons arrive as their title, also when MSG91 sends them as JSON text', () => {
+  const r = parseMsg91([
+    { uuid: 'b1', customerNumber: '919876500011', contentType: 'interactive', interactive: JSON.stringify({ type: 'button_reply', button_reply: { id: 'approve', title: 'I APPROVE' } }) },
+    { uuid: 'b2', customerNumber: '919876500011', contentType: 'button', button: JSON.stringify({ text: 'I APPROVE', payload: 'I APPROVE' }) },
+    { uuid: 'b3', customerNumber: '919876500011', messages: JSON.stringify([{ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'approve', title: 'I APPROVE' } } }]) },
+  ]);
+  assert.deepEqual(r.messages.map((m) => m.text), ['I APPROVE', 'I APPROVE', 'I APPROVE']);
 });
