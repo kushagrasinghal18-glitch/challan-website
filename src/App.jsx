@@ -334,7 +334,7 @@ export default function App() {
             <div>
               <div className="k">{SITE.brand}</div>
               <a href="/privacy.html">{t('privacy')}</a>
-              <a href="#terms">{t('terms')}</a>
+              <a href="/terms.html">{t('terms')}</a>
               <a href="#lok-adalat">{t('nextEyebrow')}</a>
             </div>
           </div>

@@ -277,6 +277,7 @@ app.get('/sitemap.xml', (req, res) => {
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>${siteUrl(req)}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
   <url><loc>${siteUrl(req)}/privacy.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>${siteUrl(req)}/terms.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
 </urlset>
 `);
 });
