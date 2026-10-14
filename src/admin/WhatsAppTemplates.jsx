@@ -22,6 +22,12 @@ const RECEIPT = {
   footer: 'Team Niptao', buttons: [],
   samples: ['Ravi', 'UP 16 AB 1234', '₹1,200 (40% of the challan amount)', '₹1,000', '14 October 2026', '₹200', 'GBN-1234567'],
 };
+const STARTER = {
+  name: 'conversation_start', category: 'UTILITY', language: 'en', header: 'Pending traffic challans',
+  body: 'Hi {{1}}, your vehicle {{2}} has a total of {{3}} in pending traffic challans.\n\nTo know the details and how Niptao can help you settle them, just tap Know more.',
+  footer: 'Team Niptao', buttons: ['Know more'],
+  samples: ['Ravi', 'UP 16 AB 1234', '₹4,500 (3 challans)'],
+};
 const BLANK = { name: '', category: 'UTILITY', language: 'en', header: '', body: '', footer: '', buttons: [], samples: [] };
 const BADGE = { APPROVED: ['#E7F6EC', '#137A3A', 'Approved'], PENDING: ['#FFF6E5', '#9A5B00', 'Waiting for Meta'], REJECTED: ['#FDECEC', '#B42318', 'Rejected'] };
 const varCount = (body) => Math.max(0, ...[...String(body).matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1])));
@@ -70,6 +76,15 @@ export default function WhatsAppTemplates({ auth, call, signOut }) {
         <span className="hint">Blanks: 1 name, 2 vehicle number, 3 final amount with %, 4 amount received, 5 date, 6 balance pending, 7 reference.</span>
       </label>
 
+      <label className="field"><span>Template to start a conversation (any time)</span>
+        <select value={s.starter || ''} disabled={busy} onChange={(e) => act('/api/admin/wa-templates', 'PUT', { starter: e.target.value }, 'Saved.')}>
+          <option value="">None</option>
+          {approved.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+          {s.starter && !approved.some((t) => t.name === s.starter) && <option value={s.starter}>{s.starter} (not approved yet)</option>}
+        </select>
+        <span className="hint">Sent with "Start conversation" on a lead. Blanks: 1 name, 2 vehicle number, 3 total challan amount.</span>
+      </label>
+
       <div className="ch-head" style={{ marginTop: 14 }}><div className="sec-k">Your templates</div>
         <button type="button" className="btn ghost edit" disabled={busy || !s.configured} onClick={() => act('/api/admin/wa-templates/refresh', 'POST', {}, 'Statuses updated from MSG91.')}>Check status</button></div>
       {!s.list.length ? <div className="small">No templates yet.</div> : (
@@ -78,6 +93,7 @@ export default function WhatsAppTemplates({ auth, call, signOut }) {
             <li key={`${t.name}-${t.language || ''}`}>
               <div className="tpl-top"><b>{t.name}</b><span className="badge" style={{ background: bg, color: fg }}>{label}</span>
                 {s.approval === t.name && <span className="badge" style={{ background: '#EEF3FF', color: '#1F4FB8' }}>Used for approvals</span>}
+                {s.starter === t.name && <span className="badge" style={{ background: '#EEF3FF', color: '#1F4FB8' }}>Starts conversations</span>}
                 {s.receipt === t.name && <span className="badge" style={{ background: '#EEF3FF', color: '#1F4FB8' }}>Used for receipts</span>}</div>
               {t.body && <div className="small tpl-body">{t.body}{t.buttons?.length ? `  [${t.buttons.join('] [')}]` : ''}</div>}
               <div className="small">{t.external ? 'Made in MSG91' : `${t.category?.toLowerCase()} · ${t.language} · added by ${t.by}`}
@@ -91,6 +107,7 @@ export default function WhatsAppTemplates({ auth, call, signOut }) {
       {!form ? (
         <div className="cc-row" style={{ marginTop: 14 }}>
           <button type="button" className="btn primary" disabled={!s.configured} onClick={() => { setMsg(null); setForm({ ...APPROVAL, name: s.list.some((t) => t.name === 'approval_request') ? 'approval_request_2' : 'approval_request' }); }}>Create the approval template</button>
+          <button type="button" className="btn" disabled={!s.configured} onClick={() => { setMsg(null); setForm({ ...STARTER, name: s.list.some((t) => t.name === 'conversation_start') ? 'conversation_start_2' : 'conversation_start' }); }}>Create the conversation starter</button>
           <button type="button" className="btn" disabled={!s.configured} onClick={() => { setMsg(null); setForm({ ...RECEIPT, name: s.list.some((t) => t.name === 'payment_receipt') ? 'payment_receipt_2' : 'payment_receipt' }); }}>Create the payment receipt template</button>
           <button type="button" className="btn" disabled={!s.configured} onClick={() => { setMsg(null); setForm(BLANK); }}>New template</button>
         </div>

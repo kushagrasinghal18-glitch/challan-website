@@ -211,6 +211,23 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   await hook({ uuid: 'other-uuid', requestId: sentId, customerNumber: '91' + phone, direction: 'outbound', status: 'read', text: 'Reply from the new number' });
   await settle();
   assert.equal((await mine()).flatMap((l) => l.waChat).find((m) => m.id === sentId).status, 'read');
+  // Conversation starter: refused until a template is picked, then sent with the challan total.
+  assert.equal((await send({ starter: true })).status, 409);
+  await admin('/api/admin/wa-templates', 'PUT', { starter: 'lok_reminder' });
+  assert.equal((await send({ starter: true })).status, 200);
+  const st = calls.at(-1).body.payload.template;
+  assert.equal(st.name, 'lok_reminder');
+  assert.equal(st.to_and_components[0].components.body_3.value, '₹1,000 (1 challan)');
+  // Their "Know more" tap gets the full challan list, then the approval request with the I APPROVE button.
+  const k0 = calls.length;
+  await hook({ uuid: 'km1', customerNumber: '91' + phone, integratedNumber: '919990661629', contentType: 'button', button: JSON.stringify({ text: 'Know more', payload: 'Know more' }) });
+  await settle(); await settle();
+  const km = calls.slice(k0);
+  assert.equal(km.length, 2);
+  assert.match(km[0].body.text, /Challans we will settle for you \(1\)[\s\S]*C1/);
+  assert.equal(km[1].body.content_type, 'interactive');
+  assert.match(km[1].body.interactive.body.text, /tap \*I APPROVE\*/);
+  assert.equal((await mine()).find((l) => l.ref === lead.ref).waApproval.state, 'sent');
   // A customer who only chatted in the linked-phone days gets the old number; a new one the main number.
   await store.addLead({ ref: 'OLD-1', createdAt: '2026-10-01T00:00:00Z', name: 'Old', plate: 'UP16AB7777', phone: '9876500077', status: 'Contacted', notes: [],
     waChat: [{ id: '3EB0AA', dir: 'in', text: 'hi', at: '2026-10-01T10:00:00Z' }], waLastIn: new Date().toISOString() });

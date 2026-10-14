@@ -7,9 +7,10 @@ import { cannotDo, notReason } from '../shared/verdict.js';
 
 const CATEGORIES = ['UTILITY', 'MARKETING'];
 const LANGS = ['en', 'en_US', 'hi'];
-// { list: [{ name, category, language, header, body, footer, buttons, at, by, status }], approval: name, receipt: name }
-export const getTemplates = async () => ({ list: [], approval: '', receipt: '', ...(await getKV('waTemplates', {})) });
+// { list: [{ name, category, language, header, body, footer, buttons, at, by, status }], approval: name, receipt: name, starter: name }
+export const getTemplates = async () => ({ list: [], approval: '', receipt: '', starter: '', ...(await getKV('waTemplates', {})) });
 export const receiptTemplate = async () => (await getTemplates()).receipt || '';
+export const starterTemplate = async () => (await getTemplates()).starter || '';
 // The approval template: chosen in the panel, else MSG91_APPROVAL_TEMPLATE (the old 5-blank wording).
 // { name, blanks } so the right number of values goes with it.
 export async function approvalTemplate() {
@@ -80,7 +81,7 @@ export function mountTemplates(app, { requireAdmin }) {
     const b = req.body || {};
     try {
       const cur = await getTemplates();
-      for (const k of ['approval', 'receipt']) {
+      for (const k of ['approval', 'receipt', 'starter']) {
         if (typeof b[k] !== 'string') continue;
         if (b[k] && !TEMPLATE_NAME_RE.test(b[k])) return res.status(400).json({ error: 'invalid_name' });
         cur[k] = b[k];
@@ -130,6 +131,39 @@ export function approvalParams(lead) {
 export function legacyParams(lead) {
   const { ok, payable } = paymentAmounts(lead);
   return [lead.name, lead.plate, String(ok.length), inr(payable), lead.ref];
+}
+
+// After "Know more" on the conversation starter: every challan with what we can do, then (separately)
+// the approval request. No approval text when nothing can be settled.
+export function challanListText(lead) {
+  const all = lead.challans || [];
+  const { ok, total, rate, payable } = paymentAmounts(lead);
+  const rest = all.filter((c) => !c.approved && !cannotDo(c)), cannot = all.filter(cannotDo);
+  const line = (c, i) => `${i + 1}. ${c.challanNo || '-'}${c.date ? ` (${c.date})` : ''}${c.offence ? ` - ${String(c.offence).replace(/\s+/g, ' ').slice(0, 70)}` : ''} - ${inr(c.amount)}`;
+  return [
+    `Hi ${lead.name || 'there'}, here are the details. 📋`,
+    '',
+    `Your vehicle ${fmtPlate(lead.plate) || '-'} has ${all.length} challan${all.length === 1 ? '' : 's'} totalling ${inr(all.reduce((n, c) => n + (c.amount || 0), 0))}.`,
+    ...(ok.length ? ['', `*Challans we will settle for you (${ok.length})*`, ...ok.map(line), `Challan amount: ${inr(total)}`, `Amount you pay (${rate}%): *${inr(payable)}*`] : []),
+    ...(rest.length ? ['', `*Not included (${rest.length})*`, ...rest.map(line), 'Tell us if you want us to settle these too.'] : []),
+    ...(cannot.length ? ['', `*We cannot settle these right now (${cannot.length})*`, ...cannot.map((c, i) => `${line(c, i)}\n   Reason: ${notReason(c).label}`)] : []),
+    ...(!ok.length ? ['', 'Our team will message you here about what we can do for these.'] : []),
+    '',
+    `Reference: ${lead.ref}`,
+  ].join('\n');
+}
+export function approvalAskText(lead) {
+  const { ok, payable } = paymentAmounts(lead);
+  return `To go ahead, please tap *I APPROVE* to give your written approval for Niptao to settle the ${ok.length} challan${ok.length === 1 ? '' : 's'} listed under "Challans we will settle for you" for ${inr(payable)}.`;
+}
+
+// Conversation starter (any time, also after 24 hours). Blanks: 1 name, 2 vehicle, 3 total of the
+// challans on the vehicle. null when no challans have been fetched yet.
+export function starterParams(lead) {
+  const list = lead.challans || [];
+  const total = list.reduce((n, c) => n + (c.amount || 0), 0);
+  if (!list.length || !total) return null;
+  return [lead.name || 'there', fmtPlate(lead.plate) || '-', `${inr(total)} (${list.length} challan${list.length === 1 ? '' : 's'})`];
 }
 
 // Payment receipt. Blanks: 1 name, 2 vehicle, 3 final amount (with %), 4 received, 5 date, 6 balance, 7 reference.
