@@ -342,5 +342,6 @@ export function mountAutopilot(app, deps) {
     } catch (err) { console.error('[wa] proof read failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
   });
 
-  return { isLive: live.isLive, receiveOnly, provider: live.provider || 'phone', receive: onMessage, status: handlers.onStatus, send: (phone, text) => live.sendText(phone, text, { jid: lastJid.get(phone) }) };
+  return { isLive: live.isLive, receiveOnly, provider: live.provider || 'phone', receive: onMessage, status: handlers.onStatus,
+    sendButtons: live.sendButtons ? (phone, text, buttons) => live.sendButtons(phone, text, buttons) : null, send: (phone, text) => live.sendText(phone, text, { jid: lastJid.get(phone) }) };
 }

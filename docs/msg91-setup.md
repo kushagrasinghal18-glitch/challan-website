@@ -52,9 +52,10 @@ WhatsApp only allows free text within 24 hours of the customer's last message. A
 
    Hi {{1}}, the challan settlement details for your vehicle {{2}} are ready. We will settle {{3}} challan(s) and you pay {{4}}. Please reply I APPROVE to confirm, or reply to this message to see the full list. Reference: {{5}}
 
-3. When it shows **Approved**, add one more variable in Render: `MSG91_APPROVAL_TEMPLATE` = `approval_request`.
+3. Under **Buttons**, add a **Quick reply** button with the text `I APPROVE`. The customer can then approve with one tap.
+4. When it shows **Approved**, add one more variable in Render: `MSG91_APPROVAL_TEMPLATE` = `approval_request`.
 
-The "Send approval request" button on a lead then uses the template whenever the 24-hour window is closed.
+The "Send approval request" button on a lead then uses the template whenever the 24-hour window is closed. Inside the window it sends the full challan list with an **I APPROVE** button under it (for a very long list, the list comes first and the button in a short message right after). A tap on the button, or typing I APPROVE, marks the lead approved and sends the payment details.
 
 ## How AI replies work on the official API
 

@@ -59,6 +59,20 @@ export function sendImage(phone, link, caption = '', env = process.env) {
   }, env);
 }
 
+// Text with up to three tap-to-reply buttons ({ id, title }; titles up to 20 characters). WhatsApp
+// caps the text of a button message at 1024 characters.
+export const BUTTON_BODY_MAX = 1024;
+export function sendButtons(phone, text, buttons, env = process.env) {
+  if (!msg91Configured(env)) return Promise.reject(Object.assign(new Error('MSG91 not set up'), { code: 'not_connected' }));
+  return post('/whatsapp-outbound-message/', {
+    integrated_number: waNumber(env), recipient_number: to91(phone), content_type: 'interactive',
+    interactive: {
+      type: 'button', body: { text: String(text).slice(0, BUTTON_BODY_MAX) },
+      action: { buttons: buttons.slice(0, 3).map((b) => ({ type: 'reply', reply: { id: String(b.id).slice(0, 256), title: String(b.title).slice(0, 20) } })) },
+    },
+  }, env);
+}
+
 // Template parameters can't hold new lines, tabs or long runs of spaces.
 export function sendTemplate(phone, name, params = [], env = process.env) {
   if (!msg91Configured(env)) return Promise.reject(Object.assign(new Error('MSG91 not set up'), { code: 'not_connected' }));
@@ -95,9 +109,11 @@ export function parseMsg91(body) {
     let raw = null;
     try { raw = typeof p.messages === 'string' ? JSON.parse(p.messages)?.[0] : Array.isArray(p.messages) ? p.messages[0] : null; } catch { raw = null; }
     const kind = String(raw?.type || p.contentType || 'text').toLowerCase();
+    // MSG91 may pass the tapped button as a JSON string.
+    const obj = (v) => { if (v && typeof v === 'object') return v; try { return JSON.parse(v); } catch { return null; } };
+    const inter = obj(p.interactive) || raw?.interactive, btn = obj(p.button) || raw?.button;
     const media = raw?.[kind] && typeof raw[kind] === 'object' ? raw[kind] : null;
-    let text = p.text ?? raw?.text?.body ?? p.button?.text ?? raw?.button?.text
-      ?? raw?.interactive?.button_reply?.title ?? raw?.interactive?.list_reply?.title ?? media?.caption ?? p.caption ?? '';
+    let text = p.text || raw?.text?.body || btn?.text || inter?.button_reply?.title || inter?.list_reply?.title || media?.caption || p.caption || '';
     if (typeof text !== 'string') text = String(text || '');
     if (!text && kind !== 'text') text = `[${kind}]`;
     const at = when(p.requestedAt || p.timestamp || raw?.timestamp || p.date);
@@ -133,6 +149,7 @@ export function msg91Live(env = process.env) {
     link: none,
     logout: none,
     sendText: async (phone, text) => count(await sendText(phone, text, env)),
+    sendButtons: async (phone, text, buttons) => count(await sendButtons(phone, text, buttons, env)),
     sendImage: async (phone, _buf, caption, opts = {}) => {
       if (!opts.url) throw Object.assign(new Error('no public image link'), { code: 'no_link' });
       return count(await sendImage(phone, opts.url, caption, env));
