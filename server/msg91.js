@@ -45,8 +45,9 @@ async function post(path, body, env) {
 export function sendText(phone, text, env = process.env) {
   if (!msg91Configured(env)) return Promise.reject(Object.assign(new Error('MSG91 not set up'), { code: 'not_connected' }));
   return post('/whatsapp-outbound-message/', {
+    // MSG91's session API reads the text from a top-level "text" field.
     integrated_number: waNumber(env), recipient_number: to91(phone), content_type: 'text',
-    payload: { type: 'text', text: { body: String(text).slice(0, 4096) } },
+    text: String(text).slice(0, 4096),
   }, env);
 }
 
@@ -55,7 +56,7 @@ export function sendImage(phone, link, caption = '', env = process.env) {
   if (!msg91Configured(env)) return Promise.reject(Object.assign(new Error('MSG91 not set up'), { code: 'not_connected' }));
   return post('/whatsapp-outbound-message/', {
     integrated_number: waNumber(env), recipient_number: to91(phone), content_type: 'image',
-    payload: { type: 'image', image: { link, ...(caption ? { caption } : {}) } },
+    attachment_url: link, ...(caption ? { caption } : {}),
   }, env);
 }
 
