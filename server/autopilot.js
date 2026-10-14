@@ -225,7 +225,7 @@ export function mountAutopilot(app, deps) {
     onMessage,
     onSkip: (text) => log('', text, true),
     onStatus: (st) => enqueue(async () => {
-      for (const l of await byPhone(st.phone)) if ((l.waChat || []).some((c) => c.id === st.id)) await updateLead(l.ref, { waStatus: st }, 'WhatsApp');
+      for (const l of await byPhone(st.phone)) if ((l.waChat || []).some((c) => (st.ids || [st.id]).includes(c.id))) await updateLead(l.ref, { waStatus: st }, 'WhatsApp');
     }),
   };
   getBot().then((b) => live.startLive(handlers, { connectNow: b.on !== false })).catch((err) => console.error('[wa] start failed', err.message));

@@ -604,3 +604,8 @@ td.plates .plate { display: inline-block; margin: 2px 4px 2px 0; }
 .head-pay { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 2px 0 10px; font-size: 14px; background: #F6F4EF; border-radius: 8px; padding: 8px 12px; }
 .head-pay .due b { color: #B42318; }
 .head-pay .clear b { color: #137A3A; }
+
+.wa-tick { font-weight: 600; }
+.wa-tick.sent, .wa-tick.delivered { color: #667085; }
+.wa-tick.read { color: #1D9BF0; }
+.wa-tick.failed { color: #B42318; }

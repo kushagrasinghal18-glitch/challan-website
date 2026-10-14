@@ -124,6 +124,8 @@ export function parseMsg91(body) {
     if (!phone) continue;
     const dir = String(p.direction || p.messageType || '').toLowerCase();
     const id = String(p.uuid || p.message_uuid || p.requestId || p.request_id || `msg91:${phone}:${Date.now()}`).slice(0, 160);
+    // A delivery report can carry several ids; the one saved when sending may be any of them.
+    const ids = [...new Set([p.uuid, p.message_uuid, p.messageUuid, p.requestId, p.request_id, p.requestID].filter(Boolean).map((v) => String(v).slice(0, 160)))];
     const st = String(p.status || p.eventName || '').toLowerCase();
     let raw = null;
     try { raw = typeof p.messages === 'string' ? JSON.parse(p.messages)?.[0] : Array.isArray(p.messages) ? p.messages[0] : null; } catch { raw = null; }
@@ -137,11 +139,12 @@ export function parseMsg91(body) {
     if (!text && kind !== 'text') text = `[${kind}]`;
     const at = when(p.requestedAt || p.timestamp || raw?.timestamp || p.date);
     if (dir === 'outbound' || dir === 'out') {
-      if (STATUSES.includes(st) && !p.text) statuses.push({ id, phone, status: st, at, error: String(p.reason || p.failureReason || '').slice(0, 200) });
-      else if (text) outgoing.push({ id, phone, text: text.slice(0, 4000), at });
+      // Delivery reports may repeat the message text, so a status always counts as a status.
+      if (STATUSES.includes(st)) statuses.push({ id, ids, phone, status: st, at, error: String(p.reason || p.failureReason || '').slice(0, 200) });
+      if (text && (!STATUSES.includes(st) || st === 'sent')) outgoing.push({ id, phone, text: text.slice(0, 4000), at });
       continue;
     }
-    if (STATUSES.includes(st) && !text) { statuses.push({ id, phone, status: st, at, error: String(p.reason || '').slice(0, 200) }); continue; }
+    if (STATUSES.includes(st) && !text) { statuses.push({ id, ids, phone, status: st, at, error: String(p.reason || '').slice(0, 200) }); continue; }
     if (!text) continue;
     const via = String(p.integratedNumber || p.integrated_number || '').replace(/\D/g, '');
     messages.push({ id, phone, ...(via ? { via } : {}), name: String(p.customerName || '').slice(0, 120), text: text.slice(0, 4000), at,
