@@ -710,14 +710,23 @@ function AddVehicles({ lead, onAdd }) {
 }
 
 // "Are you sure the payment is received?" Needs the amount received and a tick before it saves.
+// "Payment received": the final percentage agreed with the customer, the amount received and its date.
+// The amount payable and the balance pending are worked out as they type. Update saves and (by default)
+// sends the customer a WhatsApp thank-you with the final amount, received amount, balance and date.
 function PaymentDialog({ lead, others = [], onCancel, onSave }) {
-  const due = payable(lead);
+  const total = approvedTotal(lead);
+  const [rate, setRate] = useState(String(lead.payment?.finalRate ?? feeRate(lead)));
   const [amount, setAmount] = useState(lead.payment ? String(lead.payment.amount) : '');
-  const [sure, setSure] = useState(false);
+  const [date, setDate] = useState(lead.payment?.date || todayIST());
+  const [notify, setNotify] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const r = Number(rate);
+  const rateOk = r > 0 && r <= 100;
+  const finalAmount = rateOk ? Math.round((total * r) / 100) : 0;
   const n = Math.round(Number(amount) || 0);
-  const ok = n > 0 && sure && !busy;
+  const pending = Math.max(0, finalAmount - n);
+  const ok = n > 0 && rateOk && !!date && !busy;
   useEffect(() => {
     const esc = (e) => { if (e.key === 'Escape') onCancel(); };
     window.addEventListener('keydown', esc);
@@ -727,25 +736,32 @@ function PaymentDialog({ lead, others = [], onCancel, onSave }) {
     e.preventDefault();
     if (!ok) return;
     setBusy(true); setErr('');
-    try { if (!(await onSave(n))) setErr('Not saved. Check your connection and try again.'); } finally { setBusy(false); }
+    try { if (!(await onSave({ amount: n, finalRate: Math.round(r * 10) / 10, date, notify }))) setErr('Not saved. Check your connection and try again.'); } finally { setBusy(false); }
   };
   return (
-    <div className="scrim pay-scrim" onClick={(e) => e.target === e.currentTarget && onCancel()}>
+    <div className="scrim pay-scrim">
       <form className="pay-dialog" role="dialog" aria-modal="true" aria-labelledby="pay-title" onSubmit={save}>
-        <h3 id="pay-title">Are you sure the payment is received?</h3>
+        <h3 id="pay-title">Payment received</h3>
         <div className="small">{lead.name}{lead.plate ? ` · ${fmtPlate(lead.plate)}` : ''} · {lead.ref}</div>
-        <div className="pay-due">Amount due: <b>{approvedOf(lead).length ? inr(due) : 'no challans approved yet'}</b></div>
-        <label className="field">Amount received (₹)
-          <input inputMode="numeric" autoFocus value={amount} placeholder="e.g. 2500" onChange={(e) => { setAmount(e.target.value.replace(/[^\d]/g, '')); setSure(false); }} />
+        <div className="pay-due">Approved challans: <b>{approvedOf(lead).length ? `${approvedOf(lead).length} · ${inr(total)}` : 'none approved yet'}</b></div>
+        <label className="field">1. Final percentage (%)
+          <input inputMode="decimal" autoFocus value={rate} placeholder="e.g. 50" onChange={(e) => setRate(e.target.value.replace(/[^\d.]/g, '').slice(0, 5))} />
         </label>
+        <div className="pay-calc">Amount payable: <b>{rateOk ? inr(finalAmount) : '–'}</b>{rateOk && total > 0 ? <span className="small"> ({r}% of {inr(total)})</span> : null}</div>
+        <label className="field">2. Amount received (₹)
+          <input inputMode="numeric" value={amount} placeholder={finalAmount ? String(finalAmount) : 'e.g. 2500'} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))} />
+        </label>
+        <label className="field">Date received
+          <input type="date" value={date} max={todayIST()} onChange={(e) => setDate(e.target.value)} />
+        </label>
+        <div className={'pay-calc' + (pending > 0 ? ' due' : ' clear')}>Amount pending: <b>{n > 0 && rateOk ? inr(pending) : '–'}</b>{n > finalAmount && finalAmount > 0 ? <span className="small"> (received is more than payable)</span> : null}</div>
         {others.filter((o) => o.payment && o.status !== 'Lost').map((o) => <div key={o.ref} className="stale">Already recorded on {o.plate ? fmtPlate(o.plate) : o.ref}: {inr(o.payment.amount)}. Don't enter the same money twice.</div>)}
-        {n > 0 && due > 0 && n !== due && <div className="stale">This is {n < due ? 'less' : 'more'} than the amount due ({inr(due)}). Check it before confirming.</div>}
-        <label className="check-line pay-sure"><input type="checkbox" checked={sure} disabled={!(n > 0)} onChange={(e) => setSure(e.target.checked)} />
-          I confirm {n > 0 ? inr(n) : 'the payment'} has been received in our account.</label>
+        <label className="check-line"><input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
+          Send the customer a WhatsApp thank-you with the final amount, received amount, balance and date</label>
         {err && <div className="err" role="alert">{err}</div>}
         <div className="cc-row pay-btns">
           <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
-          <button className="btn primary" disabled={!ok}>{busy ? 'Saving…' : 'Yes, payment received'}</button>
+          <button className="btn primary" disabled={!ok}>{busy ? 'Saving…' : 'Update'}</button>
         </div>
       </form>
     </div>
@@ -1027,8 +1043,10 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                   <div className={'wa-appr pay-got' + (lead.payment ? ' done' : '')}>
                     <div className="sec-k">Payment received</div>
                     {lead.payment
-                      ? <div className="ok-line">✓ {inr(lead.payment.amount)} received · confirmed by {lead.payment.by} · {fullDate(lead.payment.at)}
-                          {lead.payment.amount !== payable(lead) && <span className="small"> (amount due {inr(payable(lead))})</span>}</div>
+                      ? <><div className="ok-line">✓ {inr(lead.payment.amount)} received{lead.payment.date ? ` on ${tokenDay(lead.payment.date)}` : ''} · confirmed by {lead.payment.by}</div>
+                          {lead.payment.finalAmount !== undefined
+                            ? <div className="small">Final {lead.payment.finalRate}%: payable {inr(lead.payment.finalAmount)} · <b style={{ color: lead.payment.pending > 0 ? '#B42318' : '#137A3A' }}>{lead.payment.pending > 0 ? `${inr(lead.payment.pending)} pending` : 'fully paid'}</b></div>
+                            : lead.payment.amount !== payable(lead) && <div className="small">Amount due {inr(payable(lead))}</div>}</>
                       : <div className="small">When the money reaches your account, record it here. Amount due: {inr(payable(lead))}.</div>}
                     {lead.paymentClaim && !lead.payment && (
                       <div className="claim">💰 Customer says they paid · {fullDate(lead.paymentClaim.at)}{lead.paymentClaim.source === 'message' && lead.paymentClaim.text ? ` · "${lead.paymentClaim.text}"` : ''}.
@@ -1036,7 +1054,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                         {lead.paymentClaim.proofId && <button type="button" className="btn ghost edit" onClick={() => onOpenProof(lead.ref)}>View screenshot</button>}</div>
                     )}
                     <div className="cc-row">
-                      <button className={'btn ' + (lead.payment ? 'ghost' : 'primary')} disabled={busy} onClick={() => onAskPayment(lead.ref)}>{lead.payment ? 'Change amount' : '✓ Mark payment received'}</button>
+                      <button className={'btn ' + (lead.payment ? 'ghost' : 'primary')} disabled={busy} onClick={() => onAskPayment(lead.ref)}>{lead.payment ? 'Update payment' : '✓ Mark payment received'}</button>
                       {lead.payment && <button className="btn ghost rm-pay" disabled={busy} onClick={() => { if (window.confirm(`Remove the payment of ${inr(lead.payment.amount)} from this lead? Use this if it was recorded by mistake or twice.`)) patch({ paymentRemoved: true }); }}>Remove payment</button>}
                     </div>
                   </div>
@@ -1159,6 +1177,11 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
   );
 }
 
+const RECEIPT_WHY = {
+  window_closed: 'the customer has not written in the last 24 hours and no receipt template is chosen (Settings → WhatsApp templates).',
+  whatsapp_not_set_up: 'WhatsApp is not connected.',
+  send_failed: 'WhatsApp refused it.',
+};
 const CITY_COURT = { noida: 'District Court, Surajpur', ghaziabad: 'District Court, Ghaziabad', delhi: 'Delhi court complex', gurugram: 'District Court, Gurugram' };
 const todayIST = () => new Date(Date.now() + 5.5 * 36e5).toISOString().slice(0, 10);
 const newId = () => Math.random().toString(36).slice(2, 10);
@@ -1757,6 +1780,7 @@ export default function Admin() {
   // After "Contacted", open the lead and ask which challans the customer approved.
   const [ask, setAsk] = useState(null);
   const [payFor, setPayFor] = useState(null); // lead ref whose payment is being confirmed
+  const [notice, setNotice] = useState(null); // { ok, text, copy?, phone? } after saving a payment
   const changeStatus = async (ref, status) => {
     if (status === 'Payment received') { setPayFor(ref); return; }
     await onPatch(ref, { status });
@@ -1862,6 +1886,13 @@ export default function Admin() {
         </div>
       </header>
       <main className="page">
+        {notice && (
+          <div className={notice.ok ? 'new-banner' : 'warn'} role="status" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ flex: 1, minWidth: 200 }}>{notice.text}</span>
+            {notice.copy && <a className="btn" href={`https://wa.me/91${notice.phone}?text=${encodeURIComponent(notice.copy)}`} target="_blank" rel="noreferrer">Send it from WhatsApp</a>}
+            <button className="btn ghost" onClick={() => setNotice(null)}>OK</button>
+          </div>
+        )}
         {page === 'whatsapp' ? (
           <>
             <div className="head"><div><h1>WhatsApp</h1><div className="sub">{waApi === 'msg91' ? 'Every chat on the official WhatsApp number (MSG91). ' : ''}{isAdmin || seeAll ? 'All customer chats' : 'Chats with the customers assigned to you'}, newest first. Updates every 15 seconds.</div></div></div>
@@ -1933,7 +1964,7 @@ export default function Admin() {
           </div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Lead</th><th>Vehicle</th><th>City</th><th>Assigned to</th><th>Status</th><th>Received</th></tr></thead>
+              <thead><tr><th>Lead</th><th>Vehicle</th><th>City</th><th>Assigned to</th><th>Status</th><th>Pending</th><th>Received</th></tr></thead>
               <tbody>
                 {shown.map(({ lead: l, cars }) => { const paid = cars.find((c) => c.payment && c.status !== 'Lost'); const many = cars.length > 1; const chs = cars.flatMap((c) => c.challans || []); const total = cars.reduce((n, c) => n + challanTotal(c), 0); const due = cars.reduce((n, c) => n + payable(c), 0); return (
                   <tr key={l.ref} className={'' + (fresh.includes(l.ref) ? ' fresh' : '') + (paid ? ' paid' : '') + (cars.some((c) => c.ref === sel) ? ' sel' : '')}
@@ -1949,6 +1980,8 @@ export default function Admin() {
                         {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
+                    <td className="pending-cell">{(() => { const p = cars.filter((c) => c.payment && c.status !== 'Lost'); if (!p.length) return <span className="small">–</span>;
+                      const left = p.reduce((n, c) => n + (c.payment.pending ?? 0), 0); return left > 0 ? <b className="due">{inr(left)}</b> : <span className="paid-ok">Paid</span>; })()}</td>
                     <td title={fullDate(l.createdAt)}>{ago(l.createdAt)}</td>
                   </tr>
                 ); })}
@@ -1969,11 +2002,13 @@ export default function Admin() {
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
       {payFor && all.find((l) => l.ref === payFor) && (
         <PaymentDialog lead={all.find((l) => l.ref === payFor)} others={(() => { const g = all.find((l) => l.ref === payFor).groupRef; return g ? all.filter((l) => l.groupRef === g && l.ref !== payFor) : []; })()} onCancel={() => setPayFor(null)}
-          onSave={async (amount) => {
+          onSave={async (p) => {
             try {
-              const { lead } = await call(`/api/admin/leads/${encodeURIComponent(payFor)}`, auth, { method: 'PATCH', body: JSON.stringify({ paymentReceived: { amount, confirmed: true } }) });
+              const { lead, receipt } = await call(`/api/admin/leads/${encodeURIComponent(payFor)}`, auth, { method: 'PATCH', body: JSON.stringify({ paymentReceived: { ...p, confirmed: true } }) });
               setLeads((ls) => ls.map((l) => (l.ref === payFor ? lead : l)));
               setPayFor(null);
+              if (receipt) setNotice(receipt.sent ? { ok: true, text: `Payment saved and the thank-you message was sent to ${lead.name} on WhatsApp.` }
+                : { ok: false, text: `Payment saved, but the WhatsApp thank-you was not sent: ${RECEIPT_WHY[receipt.reason] || 'WhatsApp did not send it.'}`, copy: receipt.text, phone: lead.phone });
               return true;
             } catch (e) { if (e.status === 401) signOut(); return false; }
           }} />

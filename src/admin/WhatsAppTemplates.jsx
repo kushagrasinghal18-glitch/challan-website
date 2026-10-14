@@ -16,6 +16,12 @@ const APPROVAL = {
   footer: 'Team Niptao', buttons: ['I APPROVE'],
   samples: ['Ravi', 'UP 16 AB 1234', '3 challans worth ₹4,500', '1) UP123 Over speeding ₹2,000: we will settle; 2) UP456 No helmet ₹1,000: we will settle; 3) DL789 Red light ₹1,500: cannot settle now (outside our service area)', '2 challans worth ₹3,000', '₹1,500 (50% of the challan amount)', 'GBN-1234567'],
 };
+const RECEIPT = {
+  name: 'payment_receipt', category: 'UTILITY', language: 'en', header: 'Payment received',
+  body: 'Thank you {{1}}, we have received your payment for vehicle {{2}}.\n\nFinal amount: {{3}}\nAmount received: {{4}}\nDate: {{5}}\nBalance pending: {{6}}\n\nWe will now settle your challans at the Lok Adalat and keep you updated. Reference: {{7}}',
+  footer: 'Team Niptao', buttons: [],
+  samples: ['Ravi', 'UP 16 AB 1234', '₹1,200 (40% of the challan amount)', '₹1,000', '14 October 2026', '₹200', 'GBN-1234567'],
+};
 const BLANK = { name: '', category: 'UTILITY', language: 'en', header: '', body: '', footer: '', buttons: [], samples: [] };
 const BADGE = { APPROVED: ['#E7F6EC', '#137A3A', 'Approved'], PENDING: ['#FFF6E5', '#9A5B00', 'Waiting for Meta'], REJECTED: ['#FDECEC', '#B42318', 'Rejected'] };
 const varCount = (body) => Math.max(0, ...[...String(body).matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1])));
@@ -55,6 +61,15 @@ export default function WhatsAppTemplates({ auth, call, signOut }) {
         <span className="hint">Its blanks are filled in this order: 1 name, 2 vehicle number, 3 all challans (count and amount), 4 every challan with whether we can settle it, 5 what we will settle, 6 amount to pay, 7 reference. Older 5-blank templates still get the short version.</span>
       </label>
 
+      <label className="field"><span>Template for payment receipts (after 24 hours)</span>
+        <select value={s.receipt || ''} disabled={busy} onChange={(e) => act('/api/admin/wa-templates', 'PUT', { receipt: e.target.value }, 'Saved.')}>
+          <option value="">None (the thank-you message needs the customer to have written in the last 24 hours)</option>
+          {approved.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+          {s.receipt && !approved.some((t) => t.name === s.receipt) && <option value={s.receipt}>{s.receipt} (not approved yet)</option>}
+        </select>
+        <span className="hint">Blanks: 1 name, 2 vehicle number, 3 final amount with %, 4 amount received, 5 date, 6 balance pending, 7 reference.</span>
+      </label>
+
       <div className="ch-head" style={{ marginTop: 14 }}><div className="sec-k">Your templates</div>
         <button type="button" className="btn ghost edit" disabled={busy || !s.configured} onClick={() => act('/api/admin/wa-templates/refresh', 'POST', {}, 'Statuses updated from MSG91.')}>Check status</button></div>
       {!s.list.length ? <div className="small">No templates yet.</div> : (
@@ -62,7 +77,8 @@ export default function WhatsAppTemplates({ auth, call, signOut }) {
           {s.list.map((t) => { const [bg, fg, label] = BADGE[t.status] || ['#F2F4F7', '#475467', t.status || 'Unknown']; return (
             <li key={`${t.name}-${t.language || ''}`}>
               <div className="tpl-top"><b>{t.name}</b><span className="badge" style={{ background: bg, color: fg }}>{label}</span>
-                {s.approval === t.name && <span className="badge" style={{ background: '#EEF3FF', color: '#1F4FB8' }}>Used for approvals</span>}</div>
+                {s.approval === t.name && <span className="badge" style={{ background: '#EEF3FF', color: '#1F4FB8' }}>Used for approvals</span>}
+                {s.receipt === t.name && <span className="badge" style={{ background: '#EEF3FF', color: '#1F4FB8' }}>Used for receipts</span>}</div>
               {t.body && <div className="small tpl-body">{t.body}{t.buttons?.length ? `  [${t.buttons.join('] [')}]` : ''}</div>}
               <div className="small">{t.external ? 'Made in MSG91' : `${t.category?.toLowerCase()} · ${t.language} · added by ${t.by}`}
                 {t.status !== 'APPROVED' && <> · <button type="button" className="linkish" disabled={busy} onClick={() => act('/api/admin/wa-templates', 'PUT', { name: t.name, status: 'APPROVED' }, 'Marked approved.')}>Mark approved</button></>}
@@ -75,6 +91,7 @@ export default function WhatsAppTemplates({ auth, call, signOut }) {
       {!form ? (
         <div className="cc-row" style={{ marginTop: 14 }}>
           <button type="button" className="btn primary" disabled={!s.configured} onClick={() => { setMsg(null); setForm({ ...APPROVAL, name: s.list.some((t) => t.name === 'approval_request') ? 'approval_request_2' : 'approval_request' }); }}>Create the approval template</button>
+          <button type="button" className="btn" disabled={!s.configured} onClick={() => { setMsg(null); setForm({ ...RECEIPT, name: s.list.some((t) => t.name === 'payment_receipt') ? 'payment_receipt_2' : 'payment_receipt' }); }}>Create the payment receipt template</button>
           <button type="button" className="btn" disabled={!s.configured} onClick={() => { setMsg(null); setForm(BLANK); }}>New template</button>
         </div>
       ) : (

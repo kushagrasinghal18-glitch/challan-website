@@ -165,6 +165,30 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   await admin('/api/admin/wa-templates', 'PUT', { approval: 'lok_reminder' });
   assert.equal((await send({ text: 'approval', approval: true })).status, 200);
   assert.equal(calls.at(-1).body.payload.template.name, 'lok_reminder');
+
+  // Payment received: final % and amount give the balance, and the customer gets a thank-you with all of it.
+  const pay = (body) => admin(`/api/admin/leads/${lead.ref}`, 'PATCH', { paymentReceived: { confirmed: true, ...body } });
+  assert.equal((await pay({ amount: 500, finalRate: 120 })).status, 400);
+  let pr = await (await pay({ amount: 300, finalRate: 40, date: '2026-10-14' })).json();
+  assert.deepEqual([pr.lead.payment.finalAmount, pr.lead.payment.pending], [400, 100]);
+  assert.equal(pr.receipt.reason, 'window_closed'); // over 24 hours and no receipt template yet
+  assert.match(pr.receipt.text, /Final amount: ₹400 \(40% of the challan amount\)[\s\S]*Amount received: ₹300[\s\S]*14 October 2026[\s\S]*Balance pending: \*₹100\*/);
+  await admin('/api/admin/wa-templates', 'PUT', { receipt: 'lok_reminder' });
+  pr = await (await pay({ amount: 300, finalRate: 40, date: '2026-10-14' })).json();
+  assert.equal(pr.receipt.sent, true);
+  const rc = calls.at(-1).body.payload.template;
+  assert.equal(rc.name, 'lok_reminder');
+  assert.equal(rc.to_and_components[0].components.body_6.value, '₹100');
+  // Inside the window it goes as a normal message; notify:false sends nothing.
+  await hook({ uuid: 'in9', customerNumber: '91' + phone, text: 'paid' });
+  await settle();
+  pr = await (await pay({ amount: 400, finalRate: 40 })).json();
+  assert.equal(pr.receipt.sent, true);
+  assert.match(calls.at(-1).body.text, /Balance pending: ₹0 \(fully paid\)/);
+  const n1 = calls.length;
+  pr = await (await pay({ amount: 400, finalRate: 40, notify: false })).json();
+  assert.equal(pr.receipt, undefined);
+  assert.equal(calls.length, n1);
 });
 
 test('tapped buttons arrive as their title, also when MSG91 sends them as JSON text', () => {
