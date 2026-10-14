@@ -259,3 +259,17 @@ test('challans from a second site are added, matched on the challan number', asy
   assert.equal(m.challans[0].amount, 500, 'a blank amount keeps the old one');
   assert.equal(m.challans[0].date, '2026-09-01');
 });
+
+test('approval template lists every challan with what we can do', async () => {
+  const { approvalParams } = await import('./templates.js');
+  const p = approvalParams({ name: 'Ravi', plate: 'UP16AB1234', ref: 'GBN-1', feeRate: 50, challans: [
+    { challanNo: 'A1', offence: 'Over speeding', amount: 2000, approved: true },
+    { challanNo: 'B2', offence: 'No helmet', amount: 1000, approved: false },
+    { challanNo: 'C3', offence: 'Red light', amount: 1500, canDo: false, notReason: 'court' },
+  ] });
+  assert.deepEqual(p, ['Ravi', 'UP16 AB 1234', '3 challans worth ₹4,500',
+    '1) A1 Over speeding ₹2,000: we will settle; 2) B2 No helmet ₹1,000: not included; 3) C3 Red light ₹1,500: cannot settle now (still not in court)',
+    '1 challan worth ₹2,000', '₹1,000 (50% of the challan amount)', 'GBN-1']);
+  const many = approvalParams({ name: 'X', plate: '', ref: 'R', challans: Array.from({ length: 40 }, (_, i) => ({ challanNo: `N${i}`, offence: 'Over speeding near the school zone', amount: 500 })) });
+  assert.ok(many[3].length < 700 && /and \d+ more$/.test(many[3]));
+});

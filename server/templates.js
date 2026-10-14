@@ -2,13 +2,24 @@
 // approved them, and pick the one used for approval requests after the 24-hour window.
 import { getKV, setKV } from './store.js';
 import { msg91Configured, createTemplate, templateStatuses, TEMPLATE_NAME_RE } from './msg91.js';
+import { paymentAmounts } from './payment.js';
+import { cannotDo, notReason } from '../shared/verdict.js';
 
 const CATEGORIES = ['UTILITY', 'MARKETING'];
 const LANGS = ['en', 'en_US', 'hi'];
 // { list: [{ name, category, language, header, body, footer, buttons, at, by, status }], approval: name }
 export const getTemplates = async () => ({ list: [], approval: '', ...(await getKV('waTemplates', {})) });
-// The approval template: chosen in the panel, else MSG91_APPROVAL_TEMPLATE.
-export const approvalTemplate = async () => (await getTemplates()).approval || process.env.MSG91_APPROVAL_TEMPLATE || '';
+// The approval template: chosen in the panel, else MSG91_APPROVAL_TEMPLATE (the old 5-blank wording).
+// { name, blanks } so the right number of values goes with it.
+export async function approvalTemplate() {
+  const t = await getTemplates();
+  if (t.approval) {
+    const body = t.list.find((x) => x.name === t.approval)?.body || '';
+    const blanks = Math.max(0, ...[...body.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1])));
+    return { name: t.approval, blanks: blanks || 7 };
+  }
+  return process.env.MSG91_APPROVAL_TEMPLATE ? { name: process.env.MSG91_APPROVAL_TEMPLATE, blanks: 5 } : null;
+}
 
 export function mountTemplates(app, { requireAdmin }) {
   const view = async () => ({ ...(await getTemplates()), configured: msg91Configured(), envApproval: process.env.MSG91_APPROVAL_TEMPLATE || '' });
@@ -80,4 +91,41 @@ export function mountTemplates(app, { requireAdmin }) {
       res.json(await view());
     } catch (err) { console.error('[templates] save failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
   });
+}
+
+// The approval template's wording, also used by the "Create the approval template" button (via the panel).
+// Blanks: 1 name, 2 vehicle, 3 all challans (count and amount), 4 every challan with what we can do,
+// 5 what we will settle, 6 amount to pay, 7 reference.
+const inr = (n) => '₹' + Math.round(n || 0).toLocaleString('en-IN');
+const fmtPlate = (p) => (p || '').replace(/^([A-Z]{2}\d{1,2})([A-Z]{0,3})(\d{4})$/, (m, a, b, c) => [a, b, c].filter(Boolean).join(' '));
+const LIST_MAX = 600; // a template blank can't be very long, and has no new lines
+
+export function approvalParams(lead) {
+  const all = lead.challans || [];
+  const { ok, total, rate, payable } = paymentAmounts(lead);
+  const line = (c, i) => {
+    const what = cannotDo(c) ? `cannot settle now (${notReason(c).label.toLowerCase()})` : c.approved ? 'we will settle' : 'not included';
+    return `${i + 1}) ${[c.challanNo, c.offence].filter(Boolean).join(' ')} ${inr(c.amount)}: ${what}`;
+  };
+  let list = '';
+  for (let i = 0; i < all.length; i++) {
+    const next = (list ? list + '; ' : '') + line(all[i], i);
+    if (next.length > LIST_MAX) { list += `; and ${all.length - i} more`; break; }
+    list = next;
+  }
+  return [
+    lead.name || 'there',
+    fmtPlate(lead.plate) || '-',
+    `${all.length} challan${all.length === 1 ? '' : 's'} worth ${inr(all.reduce((n, c) => n + (c.amount || 0), 0))}`,
+    list || 'none found',
+    `${ok.length} challan${ok.length === 1 ? '' : 's'} worth ${inr(total)}`,
+    `${inr(payable)} (${rate}% of the challan amount)`,
+    lead.ref,
+  ];
+}
+
+// Templates made before this wording had 5 blanks: name, vehicle, count, amount to pay, reference.
+export function legacyParams(lead) {
+  const { ok, payable } = paymentAmounts(lead);
+  return [lead.name, lead.plate, String(ok.length), inr(payable), lead.ref];
 }

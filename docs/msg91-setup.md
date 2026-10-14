@@ -47,13 +47,16 @@ Type these only in Render. Never send them in chat or email.
 
 WhatsApp only allows free text within 24 hours of the customer's last message. After that only pre-approved templates can go out.
 
-1. MSG91 → WhatsApp → **Templates** → **Create template**.
-2. Name `approval_request`, category **Utility**, language **English**, body:
+The easiest way: admin panel → **Settings → WhatsApp templates → Create the approval template** → **Send to Meta for review**. When it shows **Approved** (press **Check status**), pick it under "Template for approval requests".
 
-   Hi {{1}}, the challan settlement details for your vehicle {{2}} are ready. We will settle {{3}} challan(s) and you pay {{4}}. Please reply I APPROVE to confirm, or reply to this message to see the full list. Reference: {{5}}
+The ready-made wording lists every challan with whether we can settle it, then asks for approval:
 
-3. Under **Buttons**, add a **Quick reply** button with the text `I APPROVE`. The customer can then approve with one tap.
-4. When it shows **Approved**, add one more variable in Render: `MSG91_APPROVAL_TEMPLATE` = `approval_request`.
+   Hi {{1}}, we have checked the challans on your vehicle {{2}}. It has {{3}} in total.
+   All challans: {{4}}
+   We can settle {{5}} for you. Amount you pay: {{6}}.
+   Please reply I APPROVE to give your written approval for Niptao to settle these challans. Reference: {{7}}
+
+with a **Quick reply** button `I APPROVE`. The blanks are filled from the lead: 1 name, 2 vehicle, 3 all challans (count and amount), 4 each challan with "we will settle", "not included" or "cannot settle now (reason)", 5 what we will settle, 6 amount to pay, 7 reference.
 
 The "Send approval request" button on a lead then uses the template whenever the 24-hour window is closed. Inside the window it sends the full challan list with an **I APPROVE** button under it (for a very long list, the list comes first and the button in a short message right after). A tap on the button, or typing I APPROVE, marks the lead approved and sends the payment details.
 

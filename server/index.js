@@ -9,7 +9,7 @@ import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, check
 import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
 import { mountAutopilot } from './autopilot.js';
-import { mountTemplates, approvalTemplate } from './templates.js';
+import { mountTemplates, approvalTemplate, approvalParams, legacyParams } from './templates.js';
 import { msg91Configured, msg91Live, parseMsg91, webhookOk as msg91WebhookOk, sendTemplate as msg91Template, BUTTON_BODY_MAX } from './msg91.js';
 import crypto from 'node:crypto';
 import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee,
@@ -980,7 +980,7 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
     const lastIn = (await listLeads()).filter((l) => l.phone === lead.phone).map((l) => l.waLastIn || '').sort().pop();
     const open = lastIn && Date.now() - new Date(lastIn) < WINDOW_MS;
     const to = '91' + lead.phone;
-    const template = msg91 ? await approvalTemplate() : process.env.WHATSAPP_APPROVAL_TEMPLATE;
+    const template = msg91 ? await approvalTemplate() : process.env.WHATSAPP_APPROVAL_TEMPLATE ? { name: process.env.WHATSAPP_APPROVAL_TEMPLATE, blanks: 5 } : null;
     let id, sentText = text, kind = b.approval ? 'approval' : 'text';
     // Linked number (automatic WhatsApp): no 24-hour window, it's an ordinary chat.
     if (viaLive) id = await autopilot.send(lead.phone, text);
@@ -999,13 +999,10 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
       sentText += '\n[Button: I APPROVE]';
     } else if (open) id = msg91 ? await autopilot.send(lead.phone, text) : await sendText(to, text);
     else if (b.approval && template) {
-      const ok = (lead.challans || []).filter((c) => c.approved);
-      const total = ok.reduce((n, c) => n + (c.amount || 0), 0);
-      const rate = FEE_RATES.includes(lead.feeRate) ? lead.feeRate : 50;
-      const pay = '₹' + Math.round((total * rate) / 100).toLocaleString('en-IN');
-      const params = [lead.name, lead.plate, String(ok.length), pay, lead.ref];
-      id = msg91 ? await msg91Template(lead.phone, template, params) : await sendTemplate(to, template, params);
-      sentText = `[Approval template] ${lead.name} · ${lead.plate} · ${ok.length} challan(s) · ${pay} · ${lead.ref}`;
+      // Every challan with what we can do, what we will settle and the amount (older templates: the short version).
+      const params = template.blanks >= 7 ? approvalParams(lead) : legacyParams(lead);
+      id = msg91 ? await msg91Template(lead.phone, template.name, params) : await sendTemplate(to, template.name, params);
+      sentText = `[Approval template ${template.name}] ${params.join(' · ')}`;
       kind = 'template';
     } else return res.status(409).json({ error: 'window_closed' });
     let out = await updateLead(lead.ref, { waMsg: { id, dir: 'out', text: sentText, at: new Date().toISOString(), by: req.user.name, status: 'sent', kind } }, req.user.name);
