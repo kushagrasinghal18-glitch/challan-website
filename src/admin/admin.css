@@ -590,3 +590,10 @@ td.plates .plate { display: inline-block; margin: 2px 4px 2px 0; }
 .wa-tpl .linkish { background: none; border: 0; padding: 0; color: #2F5AA8; text-decoration: underline; cursor: pointer; font: inherit; }
 .tpl-form { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid #E6E1D7; padding-top: 14px; }
 .tpl-btn { margin-top: 6px; border-top: 1px solid rgba(0,0,0,.08); padding-top: 6px; text-align: center; color: #1F4FB8; font-weight: 600; font-size: 14px; }
+
+/* Payment received pop-up and the Pending column */
+.pay-calc { font-size: 14px; background: #F6F4EF; border-radius: 8px; padding: 8px 10px; }
+.pay-calc.due b { color: #B42318; }
+.pay-calc.clear b { color: #137A3A; }
+.pending-cell .due { color: #B42318; white-space: nowrap; }
+.pending-cell .paid-ok { color: #137A3A; font-weight: 600; }

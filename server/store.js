@@ -280,7 +280,12 @@ export function updateLead(ref, patch, by, onlyFor) {
     if (patch.waRead) out.waUnread = 0;
     // Money actually received, as entered and confirmed by the team. Moves an early lead to Payment received.
     if (patch.paymentReceived) {
-      out.payment = { amount: patch.paymentReceived.amount, at: new Date().toISOString(), by };
+      // finalRate: the percentage finally agreed; finalAmount = approved challans × finalRate; pending = what is still owed.
+      const total = (out.challans || lead.challans || []).filter((c) => c.approved).reduce((n, c) => n + (c.amount || 0), 0);
+      const finalRate = patch.paymentReceived.finalRate ?? (FEE_RATES.includes(lead.feeRate) ? lead.feeRate : 50);
+      const finalAmount = Math.round((total * finalRate) / 100);
+      out.payment = { amount: patch.paymentReceived.amount, finalRate, finalAmount, pending: Math.max(0, finalAmount - patch.paymentReceived.amount),
+        date: patch.paymentReceived.date || new Date(Date.now() + 5.5 * 36e5).toISOString().slice(0, 10), at: new Date().toISOString(), by };
       if (['New', 'Contacted'].includes(out.status || lead.status)) out.status = 'Payment received';
     }
     if (patch.paymentRemoved && lead.payment) {
@@ -337,7 +342,7 @@ export function updateLead(ref, patch, by, onlyFor) {
     }
     if (patch.removeToken) out.tokens = (lead.tokens || []).filter((t) => t.id !== patch.removeToken);
     if (patch.paymentRemoved && lead.payment) autoNotes.push(`Payment of ₹${lead.payment.amount.toLocaleString('en-IN')} removed (by ${by}).`);
-    if (patch.paymentReceived) autoNotes.push(`Payment received: ₹${patch.paymentReceived.amount.toLocaleString('en-IN')} (confirmed by ${by}).`);
+    if (patch.paymentReceived) autoNotes.push(`Payment received: ₹${patch.paymentReceived.amount.toLocaleString('en-IN')} of ₹${out.payment.finalAmount.toLocaleString('en-IN')} (final ${out.payment.finalRate}%), balance ₹${out.payment.pending.toLocaleString('en-IN')} (confirmed by ${by}).`);
     if (patch.docsSeen) out.docsNew = 0;
     // Private upload link for the customer: { token, expiresAt } or null to switch it off.
     if (patch.docLink !== undefined) out.docLink = patch.docLink ? { ...patch.docLink, at: new Date().toISOString(), by } : null;

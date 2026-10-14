@@ -9,7 +9,7 @@ import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, check
 import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
 import { mountAutopilot } from './autopilot.js';
-import { mountTemplates, approvalTemplate, approvalParams, legacyParams } from './templates.js';
+import { mountTemplates, approvalTemplate, approvalParams, legacyParams, receiptTemplate, receiptParams, receiptText } from './templates.js';
 import { msg91Configured, msg91Live, parseMsg91, webhookOk as msg91WebhookOk, sendTemplate as msg91Template, BUTTON_BODY_MAX } from './msg91.js';
 import crypto from 'node:crypto';
 import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee,
@@ -746,11 +746,16 @@ app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
     if (!Number.isInteger(v.index) || ![true, false, null].includes(v.canDo) || (v.canDo === false && !NOT_REASONS[v.reason])) return res.status(400).json({ error: 'invalid_verdict' });
     patch.challanVerdict = { index: v.index, canDo: v.canDo, reason: v.canDo === false ? v.reason : undefined };
   }
-  // Payment received needs the amount actually received, confirmed in the panel's pop-up.
+  // Payment received needs the amount actually received, confirmed in the panel's pop-up, and the final
+  // percentage agreed with the customer (the amount payable and the balance are worked out from it).
   if (b.paymentReceived !== undefined) {
-    const amount = Math.round(Number(b.paymentReceived?.amount));
-    if (!(amount > 0 && amount <= 10_000_000) || b.paymentReceived?.confirmed !== true) return res.status(400).json({ error: 'payment_amount_required' });
-    patch.paymentReceived = { amount };
+    const pr = b.paymentReceived || {};
+    const amount = Math.round(Number(pr.amount));
+    if (!(amount > 0 && amount <= 10_000_000) || pr.confirmed !== true) return res.status(400).json({ error: 'payment_amount_required' });
+    const finalRate = pr.finalRate === undefined ? undefined : Math.round(Number(pr.finalRate) * 10) / 10;
+    if (finalRate !== undefined && !(finalRate > 0 && finalRate <= 100)) return res.status(400).json({ error: 'invalid_final_rate' });
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(pr.date || '') && !isNaN(new Date(pr.date)) ? pr.date : undefined;
+    patch.paymentReceived = { amount, ...(finalRate !== undefined ? { finalRate } : {}), ...(date ? { date } : {}) };
   } else if (b.status === 'Payment received') return res.status(400).json({ error: 'payment_amount_required' });
   // Undo a payment entered by mistake (for example the same money recorded on two cars).
   if (b.paymentRemoved === true && b.paymentReceived === undefined) patch.paymentRemoved = true;
@@ -779,9 +784,15 @@ app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
         patch.assign = { id: u.id, name: u.name };
       }
     }
-    const lead = await updateLead(req.params.ref, patch, req.user.name, scopeOf(req.user));
+    let lead = await updateLead(req.params.ref, patch, req.user.name, scopeOf(req.user));
     if (!lead) return res.status(404).json({ error: 'not_found' });
-    res.json({ lead });
+    // Thank the customer on WhatsApp with the final amount, what was received and the balance.
+    let receipt;
+    if (patch.paymentReceived && b.paymentReceived?.notify !== false) {
+      receipt = await sendReceipt(lead, req.user.name).catch((err) => { console.error('[payment] receipt failed', err.message); return { sent: false, reason: 'send_failed', detail: err.message.slice(0, 200) }; });
+      lead = (await listLeads()).find((l) => l.ref === lead.ref) || lead;
+    }
+    res.json({ lead, ...(receipt ? { receipt } : {}) });
   } catch (err) {
     if (err.code === 'forbidden') return res.status(403).json({ error: 'not_your_lead' });
     console.error('[admin] update failed', err.message); res.status(500).json({ error: 'storage_unavailable' });
@@ -1014,6 +1025,29 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
     res.status(502).json({ error: 'send_failed', detail: err.message.slice(0, 200) });
   }
 });
+
+// Payment receipt to the customer. Free text inside the 24-hour window (or on the linked phone); outside it,
+// the receipt template chosen in Settings → WhatsApp templates. Returns { sent, reason?, text }.
+async function sendReceipt(lead, by) {
+  const text = receiptText(lead);
+  const msg91 = autopilot?.provider === 'msg91' && autopilot.isLive();
+  const viaLive = !msg91 && !!autopilot?.isLive() && !autopilot.receiveOnly;
+  if (!msg91 && !viaLive && !waConfigured()) return { sent: false, reason: 'whatsapp_not_set_up', text };
+  const lastIn = (await listLeads()).filter((l) => l.phone === lead.phone).map((l) => l.waLastIn || '').sort().pop();
+  const open = lastIn && Date.now() - new Date(lastIn) < WINDOW_MS;
+  let id, sentText = text, kind = 'receipt';
+  if (viaLive || (open && msg91)) id = await autopilot.send(lead.phone, text);
+  else if (open) id = await sendText('91' + lead.phone, text);
+  else {
+    const tpl = msg91 ? await receiptTemplate() : null;
+    if (!tpl) return { sent: false, reason: 'window_closed', text };
+    const params = receiptParams(lead);
+    id = await msg91Template(lead.phone, tpl, params);
+    sentText = `[Receipt template ${tpl}] ${params.join(' · ')}`;
+  }
+  await updateLead(lead.ref, { waMsg: { id, dir: 'out', text: sentText, at: new Date().toISOString(), by, status: 'sent', kind }, note: 'Payment receipt sent to the customer on WhatsApp.' }, by);
+  return { sent: true, text };
+}
 
 // Automatic WhatsApp on the linked number (AI replies, approvals, payment details). See autopilot.js.
 mountTemplates(app, { requireAdmin });

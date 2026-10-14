@@ -7,8 +7,9 @@ import { cannotDo, notReason } from '../shared/verdict.js';
 
 const CATEGORIES = ['UTILITY', 'MARKETING'];
 const LANGS = ['en', 'en_US', 'hi'];
-// { list: [{ name, category, language, header, body, footer, buttons, at, by, status }], approval: name }
-export const getTemplates = async () => ({ list: [], approval: '', ...(await getKV('waTemplates', {})) });
+// { list: [{ name, category, language, header, body, footer, buttons, at, by, status }], approval: name, receipt: name }
+export const getTemplates = async () => ({ list: [], approval: '', receipt: '', ...(await getKV('waTemplates', {})) });
+export const receiptTemplate = async () => (await getTemplates()).receipt || '';
 // The approval template: chosen in the panel, else MSG91_APPROVAL_TEMPLATE (the old 5-blank wording).
 // { name, blanks } so the right number of values goes with it.
 export async function approvalTemplate() {
@@ -79,9 +80,10 @@ export function mountTemplates(app, { requireAdmin }) {
     const b = req.body || {};
     try {
       const cur = await getTemplates();
-      if (typeof b.approval === 'string') {
-        if (b.approval && !TEMPLATE_NAME_RE.test(b.approval)) return res.status(400).json({ error: 'invalid_name' });
-        cur.approval = b.approval;
+      for (const k of ['approval', 'receipt']) {
+        if (typeof b[k] !== 'string') continue;
+        if (b[k] && !TEMPLATE_NAME_RE.test(b[k])) return res.status(400).json({ error: 'invalid_name' });
+        cur[k] = b[k];
       }
       if (typeof b.name === 'string' && ['APPROVED', 'PENDING', 'REJECTED'].includes(b.status)) {
         cur.list = cur.list.map((x) => (x.name === b.name ? { ...x, status: b.status } : x));
@@ -128,4 +130,23 @@ export function approvalParams(lead) {
 export function legacyParams(lead) {
   const { ok, payable } = paymentAmounts(lead);
   return [lead.name, lead.plate, String(ok.length), inr(payable), lead.ref];
+}
+
+// Payment receipt. Blanks: 1 name, 2 vehicle, 3 final amount (with %), 4 received, 5 date, 6 balance, 7 reference.
+const longDate = (d) => new Date(`${d}T00:00:00+05:30`).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
+export function receiptParams(lead) {
+  const p = lead.payment;
+  return [lead.name || 'there', fmtPlate(lead.plate) || '-', `${inr(p.finalAmount)} (${p.finalRate}% of the challan amount)`, inr(p.amount), longDate(p.date),
+    p.pending > 0 ? inr(p.pending) : '₹0 (fully paid)', lead.ref];
+}
+export function receiptText(lead) {
+  const p = lead.payment;
+  if (lead.lang === 'hi') {
+    return [`धन्यवाद ${lead.name}! 🙏 आपका पेमेंट मिल गया है।`, '', `वाहन: ${fmtPlate(lead.plate) || '-'}`, `कुल देय राशि: ${inr(p.finalAmount)} (चालान राशि का ${p.finalRate}%)`,
+      `प्राप्त राशि: ${inr(p.amount)}`, `तारीख: ${longDate(p.date)}`, p.pending > 0 ? `बकाया: *${inr(p.pending)}*` : 'बकाया: ₹0 (पूरा भुगतान हो गया)', '',
+      'हम अब लोक अदालत में आपके चालान निपटाएँगे और आपको यहीं अपडेट देंगे।', `रेफ़रेंस: ${lead.ref}`, 'टीम निपटाओ'].join('\n');
+  }
+  return [`Thank you, ${lead.name}! 🙏 We have received your payment.`, '', `Vehicle: ${fmtPlate(lead.plate) || '-'}`, `Final amount: ${inr(p.finalAmount)} (${p.finalRate}% of the challan amount)`,
+    `Amount received: ${inr(p.amount)}`, `Date: ${longDate(p.date)}`, p.pending > 0 ? `Balance pending: *${inr(p.pending)}*` : 'Balance pending: ₹0 (fully paid)', '',
+    'We will now settle your challans at the Lok Adalat and keep you updated here.', `Reference: ${lead.ref}`, 'Team Niptao'].join('\n');
 }
