@@ -169,8 +169,9 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   // Payment received: final % and amount give the balance, and the customer gets a thank-you with all of it.
   const pay = (body) => admin(`/api/admin/leads/${lead.ref}`, 'PATCH', { paymentReceived: { confirmed: true, ...body } });
   assert.equal((await pay({ amount: 500, finalRate: 120 })).status, 400);
-  let pr = await (await pay({ amount: 300, finalRate: 40, date: '2026-10-14' })).json();
-  assert.deepEqual([pr.lead.payment.finalAmount, pr.lead.payment.pending], [400, 100]);
+  assert.equal((await pay({ amount: 300, finalRate: 40, mode: 'cheque' })).status, 400);
+  let pr = await (await pay({ amount: 300, finalRate: 40, date: '2026-10-14', mode: 'cash' })).json();
+  assert.deepEqual([pr.lead.payment.finalAmount, pr.lead.payment.pending, pr.lead.payment.mode], [400, 100, 'cash']);
   assert.equal(pr.receipt.reason, 'window_closed'); // over 24 hours and no receipt template yet
   assert.match(pr.receipt.text, /Final amount: ₹400 \(40% of the challan amount\)[\s\S]*Amount received: ₹300[\s\S]*14 October 2026[\s\S]*Balance pending: \*₹100\*/);
   await admin('/api/admin/wa-templates', 'PUT', { receipt: 'lok_reminder' });

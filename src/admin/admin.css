@@ -597,3 +597,10 @@ td.plates .plate { display: inline-block; margin: 2px 4px 2px 0; }
 .pay-calc.clear b { color: #137A3A; }
 .pending-cell .due { color: #B42318; white-space: nowrap; }
 .pending-cell .paid-ok { color: #137A3A; font-weight: 600; }
+
+.pay-mode { display: flex; gap: 8px; margin-top: 6px; }
+.pay-mode .btn { flex: 1; }
+.pay-mode .btn.on { background: var(--ink, #0E1B36); border-color: var(--ink, #0E1B36); color: #fff; }
+.head-pay { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 2px 0 10px; font-size: 14px; background: #F6F4EF; border-radius: 8px; padding: 8px 12px; }
+.head-pay .due b { color: #B42318; }
+.head-pay .clear b { color: #137A3A; }

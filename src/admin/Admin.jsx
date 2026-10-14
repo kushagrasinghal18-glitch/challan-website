@@ -719,6 +719,7 @@ function PaymentDialog({ lead, others = [], onCancel, onSave }) {
   const [amount, setAmount] = useState(lead.payment ? String(lead.payment.amount) : '');
   const [date, setDate] = useState(lead.payment?.date || todayIST());
   const [notify, setNotify] = useState(true);
+  const [mode, setMode] = useState(lead.payment?.mode || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const r = Number(rate);
@@ -726,7 +727,7 @@ function PaymentDialog({ lead, others = [], onCancel, onSave }) {
   const finalAmount = rateOk ? Math.round((total * r) / 100) : 0;
   const n = Math.round(Number(amount) || 0);
   const pending = Math.max(0, finalAmount - n);
-  const ok = n > 0 && rateOk && !!date && !busy;
+  const ok = n > 0 && rateOk && !!date && !!mode && !busy;
   useEffect(() => {
     const esc = (e) => { if (e.key === 'Escape') onCancel(); };
     window.addEventListener('keydown', esc);
@@ -736,7 +737,7 @@ function PaymentDialog({ lead, others = [], onCancel, onSave }) {
     e.preventDefault();
     if (!ok) return;
     setBusy(true); setErr('');
-    try { if (!(await onSave({ amount: n, finalRate: Math.round(r * 10) / 10, date, notify }))) setErr('Not saved. Check your connection and try again.'); } finally { setBusy(false); }
+    try { if (!(await onSave({ amount: n, finalRate: Math.round(r * 10) / 10, date, mode, notify }))) setErr('Not saved. Check your connection and try again.'); } finally { setBusy(false); }
   };
   return (
     <div className="scrim pay-scrim">
@@ -751,6 +752,13 @@ function PaymentDialog({ lead, others = [], onCancel, onSave }) {
         <label className="field">2. Amount received (₹)
           <input inputMode="numeric" value={amount} placeholder={finalAmount ? String(finalAmount) : 'e.g. 2500'} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))} />
         </label>
+        <div className="field">3. Mode of payment
+          <div className="pay-mode" role="radiogroup" aria-label="Mode of payment">
+            {[['cash', 'Cash'], ['online', 'Online']].map(([v, l]) => (
+              <button type="button" key={v} role="radio" aria-checked={mode === v} className={'btn' + (mode === v ? ' on' : '')} onClick={() => setMode(v)}>{l}</button>
+            ))}
+          </div>
+        </div>
         <label className="field">Date received
           <input type="date" value={date} max={todayIST()} onChange={(e) => setDate(e.target.value)} />
         </label>
@@ -843,6 +851,16 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
             <div className="meta">{lead.ref} · {fullDate(lead.createdAt)}</div>
             <h2>{lead.name}{lead.plate && <span className="plate head-plate">{fmtPlate(lead.plate)}</span>}</h2>
             <StageDots status={lead.status} />
+            {lead.payment && (() => {
+              const p = lead.payment, total = p.finalAmount ?? payable(lead), due = p.pending ?? Math.max(0, total - p.amount);
+              return (
+                <div className="head-pay">
+                  <span>Total amount: <b>{inr(total)}</b></span>
+                  <span>Amount received: <b>{inr(p.amount)}</b>{p.mode ? ` (${p.mode === 'cash' ? 'Cash' : 'Online'})` : ''}</span>
+                  <span className={due > 0 ? 'due' : 'clear'}>Pending amount: <b>{due > 0 ? inr(due) : '₹0 · fully paid'}</b></span>
+                </div>
+              );
+            })()}
             <div className="status-btns head-status" role="group" aria-label="Stage">
               {statuses.map((s) => {
                 const on = lead.status === s, [, fg] = STATUS_COLORS[s] || STATUS_COLORS.New;
@@ -1043,7 +1061,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                   <div className={'wa-appr pay-got' + (lead.payment ? ' done' : '')}>
                     <div className="sec-k">Payment received</div>
                     {lead.payment
-                      ? <><div className="ok-line">✓ {inr(lead.payment.amount)} received{lead.payment.date ? ` on ${tokenDay(lead.payment.date)}` : ''} · confirmed by {lead.payment.by}</div>
+                      ? <><div className="ok-line">✓ {inr(lead.payment.amount)} received{lead.payment.mode ? ` (${lead.payment.mode === 'cash' ? 'cash' : 'online'})` : ''}{lead.payment.date ? ` on ${tokenDay(lead.payment.date)}` : ''} · confirmed by {lead.payment.by}</div>
                           {lead.payment.finalAmount !== undefined
                             ? <div className="small">Final {lead.payment.finalRate}%: payable {inr(lead.payment.finalAmount)} · <b style={{ color: lead.payment.pending > 0 ? '#B42318' : '#137A3A' }}>{lead.payment.pending > 0 ? `${inr(lead.payment.pending)} pending` : 'fully paid'}</b></div>
                             : lead.payment.amount !== payable(lead) && <div className="small">Amount due {inr(payable(lead))}</div>}</>

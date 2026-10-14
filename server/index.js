@@ -755,7 +755,8 @@ app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
     const finalRate = pr.finalRate === undefined ? undefined : Math.round(Number(pr.finalRate) * 10) / 10;
     if (finalRate !== undefined && !(finalRate > 0 && finalRate <= 100)) return res.status(400).json({ error: 'invalid_final_rate' });
     const date = /^\d{4}-\d{2}-\d{2}$/.test(pr.date || '') && !isNaN(new Date(pr.date)) ? pr.date : undefined;
-    patch.paymentReceived = { amount, ...(finalRate !== undefined ? { finalRate } : {}), ...(date ? { date } : {}) };
+    if (pr.mode !== undefined && !['cash', 'online'].includes(pr.mode)) return res.status(400).json({ error: 'invalid_payment_mode' });
+    patch.paymentReceived = { amount, ...(finalRate !== undefined ? { finalRate } : {}), ...(date ? { date } : {}), ...(pr.mode ? { mode: pr.mode } : {}) };
   } else if (b.status === 'Payment received') return res.status(400).json({ error: 'payment_amount_required' });
   // Undo a payment entered by mistake (for example the same money recorded on two cars).
   if (b.paymentRemoved === true && b.paymentReceived === undefined) patch.paymentRemoved = true;
