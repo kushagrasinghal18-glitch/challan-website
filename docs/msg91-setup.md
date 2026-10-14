@@ -60,6 +60,19 @@ with a **Quick reply** button `I APPROVE`. The blanks are filled from the lead: 
 
 The "Send approval request" button on a lead then uses the template whenever the 24-hour window is closed. Inside the window it sends the full challan list with an **I APPROVE** button under it (for a very long list, the list comes first and the button in a short message right after). A tap on the button, or typing I APPROVE, marks the lead approved and sends the payment details.
 
+## 6. A second number (the old number)
+
+1. Connect the number in MSG91 (WhatsApp → Numbers shows it as **Connected**).
+2. Render → **niptao-challan-site** → **Environment** → **Add Environment Variable**: key `MSG91_OLD_NUMBER`, value the old number with 91 in front, e.g. `919812345678`. Save. Keep `MSG91_WA_NUMBER` as it is.
+3. In MSG91, set the same inbound webhook address on the old number as on the new one.
+4. Settings → Automatic WhatsApp then shows both numbers.
+
+How replies are routed:
+- Each customer is answered from the number they last wrote to, automatically.
+- Customers who only ever chatted with the old number (the linked-phone days) are answered from the old number.
+- Brand-new customers who have not written yet get the main number (`MSG91_WA_NUMBER`).
+- Templates made in Settings are sent to Meta for both numbers.
+
 ## How AI replies work on the official API
 
 - Meta allows an AI assistant that answers questions about your own business. Niptao's AI only talks about challan settlement, asks for vehicle numbers and names, and shares status, which fits.

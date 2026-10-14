@@ -10,10 +10,10 @@ import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, se
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
 import { mountAutopilot } from './autopilot.js';
 import { mountTemplates, approvalTemplate, approvalParams, legacyParams, receiptTemplate, receiptParams, receiptText } from './templates.js';
-import { msg91Configured, msg91Live, parseMsg91, webhookOk as msg91WebhookOk, sendTemplate as msg91Template, BUTTON_BODY_MAX } from './msg91.js';
+import { msg91Configured, msg91Live, parseMsg91, webhookOk as msg91WebhookOk, sendTemplate as msg91Template, BUTTON_BODY_MAX, useSender, oldNumber } from './msg91.js';
 import crypto from 'node:crypto';
 import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee,
-  getLead, saveDoc, getDoc, removeDoc, docTypesOf, leadByDocToken } from './store.js';
+  getLead, saveDoc, getDoc, removeDoc, docTypesOf, leadByDocToken, getKV, setKV } from './store.js';
 
 try { process.loadEnvFile(); } catch { /* no .env file: use defaults */ }
 
@@ -850,7 +850,7 @@ app.post('/api/whatsapp/msg91/:secret', async (req, res) => {
     autopilot.note(`MSG91 sent something the site could not read (fields: ${keys}).`, true);
   } else if (messages.length) autopilot.note(`MSG91 delivered ${messages.length} incoming message${messages.length === 1 ? '' : 's'}.`);
   try {
-    for (const m of messages) await autopilot.receive(m);
+    for (const m of messages) { if (m.via) await rememberRoute(m.phone, m.via); await autopilot.receive(m); }
     for (const o of outgoing) {
       // MSG91 also reports the messages this site sent: those are on the lead already.
       const chat = (await listLeads()).filter((l) => l.phone === o.phone).flatMap((l) => l.waChat || []);
@@ -860,6 +860,28 @@ app.post('/api/whatsapp/msg91/:secret', async (req, res) => {
     for (const st of statuses) await autopilot.status(st);
   } catch (err) { console.error('[msg91] webhook failed', err.message); }
 });
+
+// Two MSG91 numbers: each customer is answered from the number they last wrote to (KV waRoutes,
+// phone → number). Customers not seen on MSG91 yet: if they only ever wrote before MSG91 went live
+// (the linked-phone days), that was the old number, so they get the old number.
+let routes = null;
+const getRoutes = async () => (routes ??= await getKV('waRoutes', {}).catch(() => ({})));
+async function rememberRoute(phone, via) {
+  const r = await getRoutes();
+  if (r[phone] === via) return;
+  r[phone] = via;
+  await setKV('waRoutes', r).catch((err) => console.error('[msg91] saving the number for a chat failed', err.message));
+}
+const MSG91_SINCE = process.env.MSG91_SINCE || '2026-10-14T09:00:00Z'; // when MSG91 took over from the linked phone
+export async function senderFor(phone) {
+  const r = await getRoutes();
+  if (r[phone]) return r[phone];
+  const old = oldNumber();
+  if (!old) return '';
+  const ins = (await listLeads()).filter((l) => l.phone === phone).flatMap((l) => l.waChat || []).filter((m) => m.dir === 'in');
+  return ins.length && !ins.some((m) => new Date(m.at) >= new Date(MSG91_SINCE)) ? old : '';
+}
+useSender(senderFor);
 
 let waQueue = Promise.resolve();
 // Runs fn after every WhatsApp change already queued, so two messages never race on the same lead.

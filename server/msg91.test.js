@@ -22,7 +22,7 @@ await new Promise((r) => fake.listen(0, r));
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'niptao-msg91-'));
 Object.assign(process.env, {
   LEADS_FILE: path.join(dir, 'leads.json'), PORT: String(20000 + Math.floor(Math.random() * 20000)), ADMIN_PASSWORD: 'test-pass-123',
-  MSG91_AUTH_KEY: 'k-test', MSG91_WA_NUMBER: '9990661629', MSG91_WEBHOOK_SECRET: 'secret-for-tests-123',
+  MSG91_AUTH_KEY: 'k-test', MSG91_WA_NUMBER: '9990661629', MSG91_OLD_NUMBER: '9811100022', MSG91_WEBHOOK_SECRET: 'secret-for-tests-123',
   MSG91_BASE_URL: `http://127.0.0.1:${fake.address().port}`, MSG91_APPROVAL_TEMPLATE: 'approval_request',
 });
 delete process.env.DATABASE_URL;
@@ -151,8 +151,10 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   assert.equal((await admin('/api/admin/wa-templates', 'POST', { name: 'gap_vars', body: 'Hi {{1}} {{3}}' })).status, 400);
   const made = await admin('/api/admin/wa-templates', 'POST', { name: 'lok_reminder', category: 'UTILITY', language: 'en', header: 'Reminder 🙂', body: 'Hi {{1}}, your date is {{2}}.', samples: ['Ravi', '10 Nov'], buttons: ['OK', ''] });
   assert.equal(made.status, 200);
-  const sent = calls.at(-1);
-  assert.equal(sent.path, '/client-panel-template/');
+  // Made on both numbers (each may sit in its own Meta account).
+  const made2 = calls.slice(-2);
+  assert.deepEqual(made2.map((c) => [c.path, c.body.integrated_number]), [['/client-panel-template/', '919990661629'], ['/client-panel-template/', '919811100022']]);
+  const sent = made2[0];
   assert.equal(sent.body.template_name, 'lok_reminder');
   assert.deepEqual(sent.body.components, [
     { type: 'HEADER', format: 'TEXT', text: 'Reminder' },
@@ -190,6 +192,22 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   pr = await (await pay({ amount: 400, finalRate: 40, notify: false })).json();
   assert.equal(pr.receipt, undefined);
   assert.equal(calls.length, n1);
+
+  // Two numbers: replies go from the number the customer wrote to.
+  assert.equal(calls.at(-3).body.integrated_number, '919990661629');
+  await hook({ uuid: 'old1', customerNumber: '91' + phone, integratedNumber: '919811100022', text: 'writing to the old number' });
+  await settle();
+  assert.equal((await send({ text: 'Reply from the old number' })).status, 200);
+  assert.equal(calls.at(-1).body.integrated_number, '919811100022');
+  await hook({ uuid: 'new1', customerNumber: '91' + phone, integratedNumber: '919990661629', text: 'now the new one' });
+  await settle();
+  await send({ text: 'Reply from the new number' });
+  assert.equal(calls.at(-1).body.integrated_number, '919990661629');
+  // A customer who only chatted in the linked-phone days gets the old number; a new one the main number.
+  await store.addLead({ ref: 'OLD-1', createdAt: '2026-10-01T00:00:00Z', name: 'Old', plate: 'UP16AB7777', phone: '9876500077', status: 'Contacted', notes: [],
+    waChat: [{ id: '3EB0AA', dir: 'in', text: 'hi', at: '2026-10-01T10:00:00Z' }], waLastIn: new Date().toISOString() });
+  assert.equal(await index.senderFor('9876500077'), '919811100022');
+  assert.equal(await index.senderFor('9876500099'), '');
 });
 
 test('tapped buttons arrive as their title, also when MSG91 sends them as JSON text', () => {

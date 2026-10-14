@@ -58,7 +58,8 @@ export default function WhatsAppAuto({ auth, call, signOut }) {
       {on && (<>
       <div className={'wa-link ' + (linked ? 'on' : '')}>
         {s.provider === 'msg91' ? (<>
-          <div className="ok-line">✓ Official WhatsApp API through MSG91{s.me ? ` on ${fmt(s.me)}` : ''}.</div>
+          <div className="ok-line">✓ Official WhatsApp API through MSG91{s.numbers?.length ? ` on ${s.numbers.map(fmt).join(' and ')}` : s.me ? ` on ${fmt(s.me)}` : ''}.</div>
+          {s.numbers?.length > 1 && <div className="hint">Each customer gets replies from the number they last wrote to. Customers who only chatted on the old number before are answered from {fmt(s.numbers[1])}.</div>}
           <div className="hint">{s.sentLastHour} message{s.sentLastHour === 1 ? '' : 's'} sent in the last hour. Nothing to link here: the number is managed in MSG91. Free-text replies (yours and the AI's) go out only within 24 hours of the customer's last message; after that, only approved templates. All chats are in the WhatsApp tab.</div>
         </>) : linked ? (<>
           <div className="ok-line">✓ Linked{s.me ? ` to ${fmt(s.me)}` : ''}. Working.</div>
