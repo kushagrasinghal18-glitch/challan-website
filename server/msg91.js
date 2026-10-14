@@ -45,9 +45,11 @@ async function post(path, body, env) {
 export function sendText(phone, text, env = process.env) {
   if (!msg91Configured(env)) return Promise.reject(Object.assign(new Error('MSG91 not set up'), { code: 'not_connected' }));
   return post('/whatsapp-outbound-message/', {
-    // MSG91's session API reads the text from a top-level "text" field.
+    // The Kraya format (payload.text.body) got "text not found in request", so the text also goes in
+    // a top-level "text" field; both are sent so either reading works.
     integrated_number: waNumber(env), recipient_number: to91(phone), content_type: 'text',
     text: String(text).slice(0, 4096),
+    payload: { type: 'text', text: { body: String(text).slice(0, 4096) } },
   }, env);
 }
 
@@ -57,6 +59,7 @@ export function sendImage(phone, link, caption = '', env = process.env) {
   return post('/whatsapp-outbound-message/', {
     integrated_number: waNumber(env), recipient_number: to91(phone), content_type: 'image',
     attachment_url: link, ...(caption ? { caption } : {}),
+    payload: { type: 'image', image: { link, ...(caption ? { caption } : {}) } },
   }, env);
 }
 

@@ -56,7 +56,7 @@ test('sends text, templates and images in the MSG91 format', async () => {
   const c = calls.at(-1);
   assert.equal(c.path, '/whatsapp-outbound-message/');
   assert.equal(c.key, 'k-test');
-  assert.deepEqual(c.body, { integrated_number: '919990661629', recipient_number: '919876500011', content_type: 'text', text: 'Hello' });
+  assert.deepEqual(c.body, { integrated_number: '919990661629', recipient_number: '919876500011', content_type: 'text', text: 'Hello', payload: { type: 'text', text: { body: 'Hello' } } });
   await assert.rejects(live.sendImage('9876500011', Buffer.alloc(1), 'QR'), { code: 'no_link' });
   await live.sendImage('9876500011', null, 'QR', { url: 'https://site/qr' });
   assert.equal(calls.at(-1).body.attachment_url, 'https://site/qr');
