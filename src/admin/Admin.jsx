@@ -56,18 +56,18 @@ const STATES = { AN: 'Andaman & Nicobar', AP: 'Andhra Pradesh', AR: 'Arunachal P
   JK: 'Jammu & Kashmir', KA: 'Karnataka', KL: 'Kerala', LA: 'Ladakh', LD: 'Lakshadweep', MH: 'Maharashtra', ML: 'Meghalaya', MN: 'Manipur',
   MP: 'Madhya Pradesh', MZ: 'Mizoram', NL: 'Nagaland', OD: 'Odisha', OR: 'Odisha', PB: 'Punjab', PY: 'Puducherry', RJ: 'Rajasthan', SK: 'Sikkim',
   TN: 'Tamil Nadu', TR: 'Tripura', TS: 'Telangana', TG: 'Telangana', UK: 'Uttarakhand', UA: 'Uttarakhand', UP: 'Uttar Pradesh', WB: 'West Bengal' };
+// The state a challan was issued in (never the vehicle's registration state): the challan number's
+// prefix, an all-digit number (Delhi Traffic Police notices), or else the place named in its location.
+const PLACES = [[/\bdelhi\b/i, 'DL'], [/noida|ghaziabad|lucknow|uttar pradesh/i, 'UP'], [/gurugram|gurgaon|faridabad|haryana/i, 'HR'],
+  [/mumbai|pune|maharashtra/i, 'MH'], [/bengaluru|bangalore|karnataka/i, 'KA'], [/jaipur|rajasthan/i, 'RJ'], [/chandigarh/i, 'CH']];
 const challanState = (c) => {
   const no = String(c.challanNo || '').toUpperCase().replace(/\s/g, '');
   if (/^\d{6,}$/.test(no)) return 'DL';
   const st = no.slice(0, 2);
-  return STATES[st] ? st : '';
+  if (STATES[st]) return st;
+  return (PLACES.find(([re]) => re.test(c.location || '')) || [])[1] || '';
 };
-const plateState = (l) => (STATES[(l.plate || '').slice(0, 2)] ? l.plate.slice(0, 2) : '');
-const leadStates = (l) => {
-  const set = new Set((l.challans || []).map(challanState).filter(Boolean));
-  if (!set.size && !l.challans?.length && plateState(l)) set.add(plateState(l));
-  return [...set];
-};
+const leadStates = (l) => [...new Set((l.challans || []).map(challanState).filter(Boolean))];
 // Pre-written message asking the customer to approve, in writing, the challans they agreed to on the call.
 // Next Lok Adalat for each state the approved challans were issued in (dates arrive already filtered to
 // upcoming). No court name: the court is only known once the token is generated.
