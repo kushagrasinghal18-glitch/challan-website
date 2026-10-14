@@ -2,6 +2,9 @@
 // environment (Render → Environment), never in code:
 //   MSG91_AUTH_KEY          MSG91 → Settings → Authkey
 //   MSG91_WA_NUMBER         the WhatsApp number connected in MSG91, with country code (91XXXXXXXXXX)
+//   MSG91_OLD_NUMBER        (optional) a second number in MSG91: the one that used to be linked to the panel.
+//                           Customers get replies from the number they last wrote to; customers who only
+//                           ever chatted with the old number (linked-phone days) are answered from it too.
 //   MSG91_WEBHOOK_SECRET    any long secret phrase; it is part of the webhook URL pasted in MSG91
 //   MSG91_APPROVAL_TEMPLATE (optional) approved template for the approval request outside the 24-hour window
 //   MSG91_TEMPLATE_LANG     (optional) template language code, default en
@@ -13,7 +16,19 @@ import { localPhone } from './whatsapp.js';
 // MSG91_BASE_URL only for local testing against a stand-in server.
 const base = (env) => env.MSG91_BASE_URL || 'https://api.msg91.com/api/v5/whatsapp';
 export const msg91Configured = (env = process.env) => !!(env.MSG91_AUTH_KEY && env.MSG91_WA_NUMBER);
-const waNumber = (env) => String(env.MSG91_WA_NUMBER || '').replace(/\D/g, '').replace(/^(?=[6-9]\d{9}$)/, '91');
+const norm = (v) => String(v || '').replace(/\D/g, '').replace(/^(?=[6-9]\d{9}$)/, '91');
+const waNumber = (env) => norm(env.MSG91_WA_NUMBER);
+// Every number connected in MSG91 that this site uses; the first is the main one.
+export const msg91Numbers = (env = process.env) => [...new Set([waNumber(env), norm(env.MSG91_OLD_NUMBER)].filter(Boolean))];
+export const oldNumber = (env = process.env) => { const n = norm(env.MSG91_OLD_NUMBER); return n && n !== waNumber(env) ? n : ''; };
+// Which of our numbers to send to a customer from: set by index.js (it knows the chats). Anything that is
+// not one of our numbers falls back to the main one.
+let senderFor = null;
+export const useSender = (fn) => { senderFor = fn; };
+const from = async (env, phone) => {
+  const r = senderFor ? norm(await senderFor(String(phone || '').replace(/\D/g, '').slice(-10))) : '';
+  return msg91Numbers(env).includes(r) ? r : waNumber(env);
+};
 const to91 = (phone) => { const d = String(phone || '').replace(/\D/g, ''); return d.length === 10 ? '91' + d : d; };
 
 // The webhook URL carries the secret, since MSG91 does not sign its calls.
@@ -42,22 +57,22 @@ async function post(path, body, env) {
   throw Object.assign(new Error(msg.slice(0, 300)), { code: 'send_failed' });
 }
 
-export function sendText(phone, text, env = process.env) {
+export async function sendText(phone, text, env = process.env) {
   if (!msg91Configured(env)) return Promise.reject(Object.assign(new Error('MSG91 not set up'), { code: 'not_connected' }));
   return post('/whatsapp-outbound-message/', {
     // The Kraya format (payload.text.body) got "text not found in request", so the text also goes in
     // a top-level "text" field; both are sent so either reading works.
-    integrated_number: waNumber(env), recipient_number: to91(phone), content_type: 'text',
+    integrated_number: await from(env, phone), recipient_number: to91(phone), content_type: 'text',
     text: String(text).slice(0, 4096),
     payload: { type: 'text', text: { body: String(text).slice(0, 4096) } },
   }, env);
 }
 
 // An image at a public link (WhatsApp fetches it from there).
-export function sendImage(phone, link, caption = '', env = process.env) {
+export async function sendImage(phone, link, caption = '', env = process.env) {
   if (!msg91Configured(env)) return Promise.reject(Object.assign(new Error('MSG91 not set up'), { code: 'not_connected' }));
   return post('/whatsapp-outbound-message/', {
-    integrated_number: waNumber(env), recipient_number: to91(phone), content_type: 'image',
+    integrated_number: await from(env, phone), recipient_number: to91(phone), content_type: 'image',
     attachment_url: link, ...(caption ? { caption } : {}),
     payload: { type: 'image', image: { link, ...(caption ? { caption } : {}) } },
   }, env);
@@ -66,10 +81,10 @@ export function sendImage(phone, link, caption = '', env = process.env) {
 // Text with up to three tap-to-reply buttons ({ id, title }; titles up to 20 characters). WhatsApp
 // caps the text of a button message at 1024 characters.
 export const BUTTON_BODY_MAX = 1024;
-export function sendButtons(phone, text, buttons, env = process.env) {
+export async function sendButtons(phone, text, buttons, env = process.env) {
   if (!msg91Configured(env)) return Promise.reject(Object.assign(new Error('MSG91 not set up'), { code: 'not_connected' }));
   return post('/whatsapp-outbound-message/', {
-    integrated_number: waNumber(env), recipient_number: to91(phone), content_type: 'interactive',
+    integrated_number: await from(env, phone), recipient_number: to91(phone), content_type: 'interactive',
     interactive: {
       type: 'button', body: { text: String(text).slice(0, BUTTON_BODY_MAX) },
       action: { buttons: buttons.slice(0, 3).map((b) => ({ type: 'reply', reply: { id: String(b.id).slice(0, 256), title: String(b.title).slice(0, 20) } })) },
@@ -78,12 +93,12 @@ export function sendButtons(phone, text, buttons, env = process.env) {
 }
 
 // Template parameters can't hold new lines, tabs or long runs of spaces.
-export function sendTemplate(phone, name, params = [], env = process.env) {
+export async function sendTemplate(phone, name, params = [], env = process.env) {
   if (!msg91Configured(env)) return Promise.reject(Object.assign(new Error('MSG91 not set up'), { code: 'not_connected' }));
   const components = {};
   params.forEach((p, i) => { components[`body_${i + 1}`] = { type: 'text', value: String(p).replace(/\s+/g, ' ').trim().slice(0, 300) || '-' }; });
   return post('/whatsapp-outbound-message/bulk/', {
-    integrated_number: waNumber(env), content_type: 'template',
+    integrated_number: await from(env, phone), content_type: 'template',
     payload: {
       messaging_product: 'whatsapp', type: 'template',
       template: { name, language: { code: env.MSG91_TEMPLATE_LANG || 'en', policy: 'deterministic' }, to_and_components: [{ to: [to91(phone)], components }] },
@@ -128,7 +143,8 @@ export function parseMsg91(body) {
     }
     if (STATUSES.includes(st) && !text) { statuses.push({ id, phone, status: st, at, error: String(p.reason || '').slice(0, 200) }); continue; }
     if (!text) continue;
-    messages.push({ id, phone, name: String(p.customerName || '').slice(0, 120), text: text.slice(0, 4000), at,
+    const via = String(p.integratedNumber || p.integrated_number || '').replace(/\D/g, '');
+    messages.push({ id, phone, ...(via ? { via } : {}), name: String(p.customerName || '').slice(0, 120), text: text.slice(0, 4000), at,
       kind: ['image', 'document'].includes(kind) ? kind : 'text', raw: media ? { url: media.url || media.link || '', mime: media.mime_type || '' } : null });
   }
   return { messages, outgoing, statuses };
@@ -145,7 +161,7 @@ export function msg91Live(env = process.env) {
     provider: 'msg91',
     isLive: () => msg91Configured(env),
     liveEnabled: () => true,
-    status: () => ({ state: msg91Configured(env) ? 'open' : 'off', provider: 'msg91', me: localPhone(waNumber(env)), qr: null, pairCode: null, error: null,
+    status: () => ({ state: msg91Configured(env) ? 'open' : 'off', provider: 'msg91', me: localPhone(waNumber(env)), numbers: msg91Numbers(env).map(localPhone), qr: null, pairCode: null, error: null,
       sentLastHour: sentAt.filter((t) => t > Date.now() - 3600e3).length }),
     startLive: async () => {},
     pause: async () => {},
@@ -191,16 +207,24 @@ export async function createTemplate(t, env = process.env) {
   components.push({ type: 'BODY', text: t.body, ...(samples.length ? { example: { body_text: [samples] } } : {}) });
   if (t.footer) components.push({ type: 'FOOTER', text: t.footer });
   if (t.buttons?.length) components.push({ type: 'BUTTONS', buttons: t.buttons.map((text) => ({ type: 'QUICK_REPLY', text })) });
-  const res = await fetch(base(env) + '/client-panel-template/', {
-    method: 'POST',
-    headers: { authkey: env.MSG91_AUTH_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ integrated_number: waNumber(env), template_name: t.name, category: t.category, language: t.language, button_url: false, components }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (data.type === 'success' || data.status === 'success' || data.hasError === false || data.id || data.template_id) return { id: String(data.id || data.template_id || data.data?.id || '') };
-  const msg = typeof data.message === 'string' ? data.message : typeof data.msg === 'string' ? data.msg : data.errors ? JSON.stringify(data.errors) : `HTTP ${res.status}`;
-  throw Object.assign(new Error(msg.slice(0, 300)), { code: 'msg91_refused' });
+  // Made for every number, since a number may sit in its own Meta account. Only the main number's answer
+  // counts; on the others "already exists" (numbers sharing an account) is fine.
+  let first = null;
+  for (const number of msg91Numbers(env)) {
+    const res = await fetch(base(env) + '/client-panel-template/', {
+      method: 'POST',
+      headers: { authkey: env.MSG91_AUTH_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ integrated_number: number, template_name: t.name, category: t.category, language: t.language, button_url: false, components }),
+      signal: AbortSignal.timeout(20_000),
+    }).catch((err) => ({ json: async () => ({ message: err.message }), status: 0 }));
+    const data = await res.json().catch(() => ({}));
+    const ok = data.type === 'success' || data.status === 'success' || data.hasError === false || data.id || data.template_id;
+    const msg = typeof data.message === 'string' ? data.message : typeof data.msg === 'string' ? data.msg : data.errors ? JSON.stringify(data.errors) : `HTTP ${res.status}`;
+    if (first) { if (!ok) console.warn(`[msg91] template ${t.name} on ${number}: ${msg.slice(0, 200)}`); continue; }
+    if (!ok) throw Object.assign(new Error(msg.slice(0, 300)), { code: 'msg91_refused' });
+    first = { id: String(data.id || data.template_id || data.data?.id || '') };
+  }
+  return first;
 }
 
 // Templates of this number with Meta's status, as { name: 'APPROVED' | 'PENDING' | 'REJECTED' … }.
