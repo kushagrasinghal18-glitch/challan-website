@@ -3,6 +3,7 @@ import { parseChallans } from './parseChallans.js';
 import Analytics from './Analytics.jsx';
 import Calendar from './Calendar.jsx';
 import WhatsAppAuto from './WhatsAppAuto.jsx';
+import WhatsAppInbox from './WhatsAppInbox.jsx';
 import { lokPlan, lokLong } from '../../shared/lok.js';
 import { NOT_REASONS, notReason, cannotDo, mergeChallans } from '../../shared/verdict.js';
 
@@ -1116,7 +1117,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
               <div className="wa-chat">
                 <div className="ch-head"><div className="sec-k">WhatsApp chat{lead.source === 'WhatsApp' ? ' · lead came from WhatsApp' : ''}</div>
                   {lead.waChat?.length > 0 && <button type="button" className="btn ghost edit" onClick={() => setChatBig((v) => !v)}>{chatBig ? 'Collapse' : 'Expand'}</button>}</div>
-                {waApi === 'live' && (
+                {(waApi === 'live' || waApi === 'msg91') && (
                   <div className={'bot-row' + (lead.botPaused ? ' paused' : '')}>
                     <span>{lead.botPaused ? (lead.botPaused.reason === 'handoff' ? '🙋 The AI handed this chat to you. AI replies are paused.' : `AI replies paused by ${lead.botPaused.by}.`) : '🤖 AI replies are on for this chat.'}</span>
                     <button type="button" className="btn ghost edit" disabled={busy} onClick={async () => { setBusy(true); try { await onBot(lead.ref, !lead.botPaused); } finally { setBusy(false); } }}>{lead.botPaused ? 'Turn AI back on' : 'Pause AI'}</button>
@@ -1565,7 +1566,7 @@ export default function Admin() {
   const [st, setSt] = useState('');
   const [sel, setSel] = useState(null);
   const [err, setErr] = useState('');
-  const [view, setView] = useState(() => ({ '#settings': 'settings', '#analytics': 'analytics', '#calendar': 'calendar' })[location.hash] || 'leads');
+  const [view, setView] = useState(() => ({ '#settings': 'settings', '#analytics': 'analytics', '#calendar': 'calendar', '#whatsapp': 'whatsapp' })[location.hash] || 'leads');
   const [site, setSite] = useState(null);
   const [staff, setStaff] = useState([]);
   const [soundOn, setSoundOn] = useState(readSound);
@@ -1574,7 +1575,7 @@ export default function Admin() {
   const seen = useRef(null);
   const me = auth?.user;
   const isAdmin = me?.role === 'admin';
-  const page = ['calendar', 'settings'].includes(view) || (isAdmin && view === 'analytics') ? view : 'leads';
+  const page = ['calendar', 'settings', 'whatsapp'].includes(view) || (isAdmin && view === 'analytics') ? view : 'leads';
   useEffect(() => { history.replaceState(null, '', page === 'leads' ? '#' : `#${page}`); }, [page]);
   useEffect(() => { call('/api/settings').then(setSite).catch(() => {}); }, []);
 
@@ -1632,7 +1633,7 @@ export default function Admin() {
   };
 
   useEffect(() => {
-    call('/api/admin/status').then((s) => { if (s.statuses) setStatuses(s.statuses); setWaApi(s.whatsappLive ? 'live' : !!s.whatsappApi); }).catch(() => {});
+    call('/api/admin/status').then((s) => { if (s.statuses) setStatuses(s.statuses); setWaApi(s.whatsappLive ? 'live' : s.whatsappProvider === 'msg91' ? 'msg91' : !!s.whatsappApi); }).catch(() => {});
   }, []);
   useEffect(() => {
     load();
@@ -1815,6 +1816,7 @@ export default function Admin() {
   if (!auth) return <Login onIn={(a) => { save(a); setAuth(a); setSoundReady(sound.ready()); }} />;
 
   const all = leads || [];
+  const waUnreadChats = new Set(all.filter((l) => l.waUnread > 0).map((l) => l.phone)).size;
   const weekAgo = Date.now() - 7 * 864e5;
   const kpis = [
     isAdmin ? ['New, unassigned', all.filter((l) => l.status === 'New' && !l.agent).length] : ['New', all.filter((l) => l.status === 'New').length],
@@ -1842,6 +1844,7 @@ export default function Admin() {
             <div style={{ display: 'flex', alignItems: 'center' }}><Logo /><span className="tag">ADMIN</span></div>
             <nav className="nav">
               <button aria-pressed={page === 'leads'} onClick={() => setView('leads')}>Leads</button>
+              <button aria-pressed={page === 'whatsapp'} onClick={() => setView('whatsapp')}>WhatsApp{waUnreadChats > 0 && <span className="nav-n">{waUnreadChats}</span>}</button>
               <button aria-pressed={page === 'calendar'} onClick={() => setView('calendar')}>Calendar</button>
               {isAdmin && <button aria-pressed={page === 'analytics'} onClick={() => setView('analytics')}>Analytics</button>}
               <button aria-pressed={page === 'settings'} onClick={() => setView('settings')}>Settings</button>
@@ -1857,7 +1860,13 @@ export default function Admin() {
         </div>
       </header>
       <main className="page">
-        {page === 'calendar' ? (
+        {page === 'whatsapp' ? (
+          <>
+            <div className="head"><div><h1>WhatsApp</h1><div className="sub">{waApi === 'msg91' ? 'Every chat on the official WhatsApp number (MSG91). ' : ''}{isAdmin || seeAll ? 'All customer chats' : 'Chats with the customers assigned to you'}, newest first. Updates every 15 seconds.</div></div></div>
+            <WhatsAppInbox leads={leads ? all : null} waApi={waApi} onSend={onWaSend} onBot={onBot} onOpenLead={(ref) => { setSel(ref); setAsk(null); }}
+              onRead={(refs) => refs.forEach((r) => onPatch(r, { waRead: true }))} />
+          </>
+        ) : page === 'calendar' ? (
           <>
             <div className="head"><div><h1>Token calendar</h1><div className="sub">{isAdmin || seeAll ? 'Court tokens uploaded on every lead.' : 'Court tokens on the leads assigned to you.'} Click a date to see its tokens.</div></div></div>
             <Calendar leads={leads} onOpenToken={onOpenToken} onOpenLead={(ref) => { setSel(ref); setAsk(null); }} />

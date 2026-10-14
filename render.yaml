@@ -38,3 +38,12 @@ services:
       # AI replies on the linked WhatsApp number (Settings → Automatic WhatsApp). Typed in Render, never here.
       - key: GEMINI_API_KEY
         sync: false
+      # Official WhatsApp API through MSG91 (docs/msg91-setup.md). Typed in Render, never here.
+      - key: MSG91_AUTH_KEY
+        sync: false
+      - key: MSG91_WA_NUMBER
+        sync: false
+      - key: MSG91_WEBHOOK_SECRET
+        sync: false
+      - key: MSG91_APPROVAL_TEMPLATE
+        sync: false
