@@ -9,6 +9,7 @@ import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, check
 import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
 import { mountAutopilot } from './autopilot.js';
+import { mountTemplates, approvalTemplate } from './templates.js';
 import { msg91Configured, msg91Live, parseMsg91, webhookOk as msg91WebhookOk, sendTemplate as msg91Template, BUTTON_BODY_MAX } from './msg91.js';
 import crypto from 'node:crypto';
 import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee,
@@ -979,7 +980,7 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
     const lastIn = (await listLeads()).filter((l) => l.phone === lead.phone).map((l) => l.waLastIn || '').sort().pop();
     const open = lastIn && Date.now() - new Date(lastIn) < WINDOW_MS;
     const to = '91' + lead.phone;
-    const template = msg91 ? process.env.MSG91_APPROVAL_TEMPLATE : process.env.WHATSAPP_APPROVAL_TEMPLATE;
+    const template = msg91 ? await approvalTemplate() : process.env.WHATSAPP_APPROVAL_TEMPLATE;
     let id, sentText = text, kind = b.approval ? 'approval' : 'text';
     // Linked number (automatic WhatsApp): no 24-hour window, it's an ordinary chat.
     if (viaLive) id = await autopilot.send(lead.phone, text);
@@ -1018,6 +1019,8 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
 });
 
 // Automatic WhatsApp on the linked number (AI replies, approvals, payment details). See autopilot.js.
+mountTemplates(app, { requireAdmin });
+
 // With MSG91 set up, the official API takes the place of the linked phone.
 export const autopilot = mountAutopilot(app, { ...(msg91Configured() ? { live: msg91Live() } : {}), handleWhatsApp, enqueue: enqueueWa, attachPlates, requireUser, requireAdmin, canSee });
 

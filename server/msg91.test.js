@@ -144,6 +144,27 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   assert.equal(tpl.payload.template.name, 'approval_request');
   assert.deepEqual(tpl.payload.template.to_and_components[0].to, ['91' + phone]);
   assert.equal(tpl.payload.template.to_and_components[0].components.body_5.value, lead.ref);
+
+  // Templates made in Settings: sent to MSG91, listed, and one picked for approvals replaces the Render one.
+  const admin = (path, method, body) => fetch(`${base}${path}`, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: body && JSON.stringify(body) });
+  assert.equal((await admin('/api/admin/wa-templates', 'POST', { name: 'Bad Name', body: 'x' })).status, 400);
+  assert.equal((await admin('/api/admin/wa-templates', 'POST', { name: 'gap_vars', body: 'Hi {{1}} {{3}}' })).status, 400);
+  const made = await admin('/api/admin/wa-templates', 'POST', { name: 'lok_reminder', category: 'UTILITY', language: 'en', header: 'Reminder 🙂', body: 'Hi {{1}}, your date is {{2}}.', samples: ['Ravi', '10 Nov'], buttons: ['OK', ''] });
+  assert.equal(made.status, 200);
+  const sent = calls.at(-1);
+  assert.equal(sent.path, '/client-panel-template/');
+  assert.equal(sent.body.template_name, 'lok_reminder');
+  assert.deepEqual(sent.body.components, [
+    { type: 'HEADER', format: 'TEXT', text: 'Reminder' },
+    { type: 'BODY', text: 'Hi {{1}}, your date is {{2}}.', example: { body_text: [['Ravi', '10 Nov']] } },
+    { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'OK' }] },
+  ]);
+  const listed = await made.json();
+  assert.equal(listed.list[0].status, 'PENDING');
+  assert.equal((await admin('/api/admin/wa-templates', 'POST', { name: 'lok_reminder', body: 'again' })).status, 409);
+  await admin('/api/admin/wa-templates', 'PUT', { approval: 'lok_reminder' });
+  assert.equal((await send({ text: 'approval', approval: true })).status, 200);
+  assert.equal(calls.at(-1).body.payload.template.name, 'lok_reminder');
 });
 
 test('tapped buttons arrive as their title, also when MSG91 sends them as JSON text', () => {
