@@ -814,6 +814,8 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
   useEffect(() => { if (lead.docsNew) onPatch(lead.ref, { docsSeen: true }); }, [lead.ref, lead.docsNew]); // eslint-disable-line react-hooks/exhaustive-deps
   const waOpen = waApi === 'live' || (!!lead.waLastIn && Date.now() - new Date(lead.waLastIn) < 24 * 3600e3);
   const WA_ERR = { window_closed: 'The customer has not messaged in the last 24 hours, so WhatsApp only allows the approval template. Use "Open in WhatsApp" instead, or ask an admin to add the template.',
+    no_starter_template: 'No conversation starter template is chosen yet. An admin can create and pick it in Settings → WhatsApp templates.',
+    no_challans: 'Fetch the challans first: the starter message tells the customer their total challan amount.',
     whatsapp_not_set_up: 'WhatsApp is not connected yet.', not_your_lead: 'This lead is no longer assigned to you.',
     not_connected: 'The linked WhatsApp number is offline right now. Check Settings → Automatic WhatsApp.', send_limit: 'The hourly sending limit for the linked number is reached. Try again a bit later, or use "Open in WhatsApp".' };
   const waSend = async (body) => {
@@ -1175,7 +1177,10 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                     <textarea rows={2} value={waDraft} onChange={(e) => setWaDraft(e.target.value)} placeholder="Reply on WhatsApp" aria-label="WhatsApp reply" />
                     <button className="btn wa-btn" disabled={busy || !waDraft.trim()}>Send</button>
                   </form>
-                ) : <div className="small">You can reply here for 24 hours after the customer's last message. Until they write again, use "Open in WhatsApp" or the approval request below.</div>)}
+                ) : <div className="small">You can reply here for 24 hours after the customer's last message. Until they write again, use "Open in WhatsApp" or the approval request below.
+                  {waApi === 'msg91' && <div className="cc-row" style={{ marginTop: 6 }}>
+                    <button type="button" className="btn wa-btn" disabled={busy} onClick={() => waSend({ starter: true })}>Start conversation</button>
+                    <span>Sends the starter template: their total challan amount with a Know more button.</span></div>}</div>)}
                 {waErr && <div className="stale">{waErr}</div>}
               </div>
             )}

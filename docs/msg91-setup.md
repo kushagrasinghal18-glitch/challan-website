@@ -60,6 +60,14 @@ with a **Quick reply** button `I APPROVE`. The blanks are filled from the lead: 
 
 The "Send approval request" button on a lead then uses the template whenever the 24-hour window is closed. Inside the window it sends the full challan list with an **I APPROVE** button under it (for a very long list, the list comes first and the button in a short message right after). A tap on the button, or typing I APPROVE, marks the lead approved and sends the payment details.
 
+## Conversation starter
+
+To message a customer who hasn't written in the last 24 hours (for example a website lead):
+1. Settings → WhatsApp templates → **Create the conversation starter** → **Send to Meta for review**.
+2. When it shows Approved, pick it under "Template to start a conversation".
+3. On a lead with challans fetched, press **Start conversation** under the WhatsApp chat. The customer gets: "Hi Ravi, your vehicle UP 16 AB 1234 has a total of ₹4,500 (3 challans) in pending traffic challans. To know the details and how Niptao can help you settle them, just tap Know more." with a **Know more** button.
+4. Their tap opens the 24-hour window, so you (or the AI) can reply with the details and send the approval request.
+
 ## 6. A second number (the old number)
 
 1. Connect the number in MSG91 (WhatsApp → Numbers shows it as **Connected**).

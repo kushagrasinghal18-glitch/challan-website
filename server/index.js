@@ -9,7 +9,7 @@ import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, check
 import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
 import { mountAutopilot } from './autopilot.js';
-import { mountTemplates, approvalTemplate, approvalParams, legacyParams, receiptTemplate, receiptParams, receiptText } from './templates.js';
+import { mountTemplates, approvalTemplate, approvalParams, legacyParams, receiptTemplate, receiptParams, receiptText, starterTemplate, starterParams } from './templates.js';
 import { msg91Configured, msg91Live, parseMsg91, webhookOk as msg91WebhookOk, sendTemplate as msg91Template, BUTTON_BODY_MAX, useSender, oldNumber } from './msg91.js';
 import crypto from 'node:crypto';
 import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee,
@@ -1005,7 +1005,7 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
   if (!viaLive && !msg91 && !waConfigured()) return res.status(503).json({ error: 'whatsapp_not_set_up' });
   const b = req.body || {};
   const text = String(b.text || '').trim().slice(0, 4000);
-  if (!text) return res.status(400).json({ error: 'empty' });
+  if (!text && !b.starter) return res.status(400).json({ error: 'empty' });
   try {
     const lead = (await listLeads()).find((l) => l.ref === req.params.ref);
     if (!lead) return res.status(404).json({ error: 'not_found' });
@@ -1016,6 +1016,17 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
     const to = '91' + lead.phone;
     const template = msg91 ? await approvalTemplate() : process.env.WHATSAPP_APPROVAL_TEMPLATE ? { name: process.env.WHATSAPP_APPROVAL_TEMPLATE, blanks: 5 } : null;
     let id, sentText = text, kind = b.approval ? 'approval' : 'text';
+    // Conversation starter: the template chosen in Settings, allowed at any time.
+    if (b.starter) {
+      const tpl = msg91 ? await starterTemplate() : '';
+      if (!tpl) return res.status(409).json({ error: 'no_starter_template' });
+      const params = starterParams(lead);
+      if (!params) return res.status(409).json({ error: 'no_challans' });
+      id = await msg91Template(lead.phone, tpl, params);
+      const out = await updateLead(lead.ref, { waMsg: { id, dir: 'out', text: `[Starter template ${tpl}] ${params.join(' · ')}`, at: new Date().toISOString(), by: req.user.name, status: 'sent', kind: 'template' },
+        note: 'Sent the conversation starter on WhatsApp.' }, req.user.name);
+      return res.json({ lead: out });
+    }
     // Linked number (automatic WhatsApp): no 24-hour window, it's an ordinary chat.
     if (viaLive) id = await autopilot.send(lead.phone, text);
     else if (open && msg91 && b.approval && autopilot.sendButtons) {
