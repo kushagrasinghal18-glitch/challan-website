@@ -1,0 +1,80 @@
+{
+  "manifest_version": 3,
+  "name": "Niptao Lead Filler",
+  "version": "1.7.3",
+  "description": "Fills a Niptao lead's details into Parivahan and token forms (you type the captcha and OTP), and saves WhatsApp Web chats to the admin panel.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://www.niptao.co.in/*",
+    "https://niptao.co.in/*",
+    "https://niptao-challan-site.onrender.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Niptao Lead Filler",
+    "default_icon": "icon.png"
+  },
+  "icons": {
+    "128": "icon.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.niptao.co.in/admin*",
+        "https://niptao.co.in/admin*",
+        "https://niptao-challan-site.onrender.com/admin*"
+      ],
+      "js": [
+        "admin-click.js"
+      ]
+    },
+    {
+      "matches": [
+        "https://echallan.parivahan.gov.in/*"
+      ],
+      "js": [
+        "parivahan-autofill.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://traffic.delhipolice.gov.in/*"
+      ],
+      "js": [
+        "delhi-autofill.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "js": [
+        "whatsapp.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "fill.js"
+      ],
+      "matches": [
+        "https://echallan.parivahan.gov.in/*",
+        "https://traffic.delhipolice.gov.in/*"
+      ]
+    }
+  ]
+}
