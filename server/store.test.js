@@ -205,10 +205,10 @@ test('tokens: uploading one moves an open lead to Scheduled', async () => {
 test('payment received: records the amount and moves an early lead on', async () => {
   await addLead({ ref: 'PAY-1', createdAt: '2026-10-10T00:00:00Z', name: 'Kiran', plate: 'UP16AB3333', phone: '9876500003', status: 'Contacted', notes: [] });
   await updateLead('PAY-1', { challans: [{ challanNo: 'A1', amount: 2000 }, { challanNo: 'A2', amount: 1000 }] }, 'Priya');
-  let l = await updateLead('PAY-1', { paymentReceived: { amount: 1000, finalRate: 40, date: '2026-10-14' } }, 'Priya');
+  let l = await updateLead('PAY-1', { paymentReceived: { amount: 1000, finalRate: 40, date: '2026-10-14', mode: 'online' } }, 'Priya');
   assert.equal(l.status, 'Payment received');
   assert.deepEqual([l.payment.amount, l.payment.finalRate, l.payment.finalAmount, l.payment.pending, l.payment.date, l.payment.by], [1000, 40, 1200, 200, '2026-10-14', 'Priya']);
-  assert.match(l.notes[0].text, /Payment received: ₹1,000 of ₹1,200 \(final 40%\), balance ₹200 \(confirmed by Priya\)/);
+  assert.match(l.notes[0].text, /Payment received: ₹1,000 of ₹1,200 \(final 40%\), balance ₹200, online \(confirmed by Priya\)/);
   // Paying more than the final amount leaves nothing pending.
   l = await updateLead('PAY-1', { paymentReceived: { amount: 1500, finalRate: 40 } }, 'Priya');
   assert.equal(l.payment.pending, 0);
