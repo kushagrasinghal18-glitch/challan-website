@@ -4,6 +4,7 @@ import Analytics from './Analytics.jsx';
 import Calendar from './Calendar.jsx';
 import WhatsAppAuto from './WhatsAppAuto.jsx';
 import WhatsAppInbox from './WhatsAppInbox.jsx';
+import WhatsAppTemplates from './WhatsAppTemplates.jsx';
 import { lokPlan, lokLong } from '../../shared/lok.js';
 import { NOT_REASONS, notReason, cannotDo, mergeChallans } from '../../shared/verdict.js';
 
@@ -1384,6 +1385,7 @@ function Settings({ auth, me, staff, reloadStaff, onSaved, signOut }) {
       </div>
     </form>
     <WhatsAppAuto auth={auth} call={call} signOut={signOut} />
+    <WhatsAppTemplates auth={auth} call={call} signOut={signOut} />
     <Staff auth={auth} me={me} staff={staff} reload={reloadStaff} signOut={signOut} />
     <Addon />
     </div>

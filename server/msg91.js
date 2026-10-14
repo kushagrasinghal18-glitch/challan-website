@@ -167,3 +167,52 @@ export function msg91Live(env = process.env) {
     },
   };
 }
+
+// ── Templates ───────────────────────────────────────────
+// Meta only allows lowercase letters, digits and underscores in a template name.
+export const TEMPLATE_NAME_RE = /^[a-z0-9_]{1,100}$/;
+const getJson = async (path, env) => {
+  const res = await fetch(base(env) + path, { headers: { authkey: env.MSG91_AUTH_KEY, accept: 'application/json' }, signal: AbortSignal.timeout(15_000) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.status === 'fail' || data.hasError === true) throw new Error(typeof data.message === 'string' ? data.message : data.errors ? JSON.stringify(data.errors) : `HTTP ${res.status}`);
+  return data;
+};
+
+// Submit a template to Meta through MSG91. { name, category, language, header?, body, footer?, buttons?: [text], samples?: [..] }
+// The body uses {{1}}, {{2}} …; samples give Meta an example value for each.
+export async function createTemplate(t, env = process.env) {
+  if (!msg91Configured(env)) throw Object.assign(new Error('MSG91 not set up'), { code: 'not_connected' });
+  const vars = Math.max(0, ...[...String(t.body).matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1])));
+  const samples = Array.from({ length: vars }, (_, i) => String(t.samples?.[i] || `value${i + 1}`));
+  const components = [];
+  // Meta refuses headers with emoji, asterisks or new lines.
+  const header = String(t.header || '').replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}‍*\n\r]/gu, '').trim();
+  if (header) components.push({ type: 'HEADER', format: 'TEXT', text: header });
+  components.push({ type: 'BODY', text: t.body, ...(samples.length ? { example: { body_text: [samples] } } : {}) });
+  if (t.footer) components.push({ type: 'FOOTER', text: t.footer });
+  if (t.buttons?.length) components.push({ type: 'BUTTONS', buttons: t.buttons.map((text) => ({ type: 'QUICK_REPLY', text })) });
+  const res = await fetch(base(env) + '/client-panel-template/', {
+    method: 'POST',
+    headers: { authkey: env.MSG91_AUTH_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ integrated_number: waNumber(env), template_name: t.name, category: t.category, language: t.language, button_url: false, components }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data.type === 'success' || data.status === 'success' || data.hasError === false || data.id || data.template_id) return { id: String(data.id || data.template_id || data.data?.id || '') };
+  const msg = typeof data.message === 'string' ? data.message : typeof data.msg === 'string' ? data.msg : data.errors ? JSON.stringify(data.errors) : `HTTP ${res.status}`;
+  throw Object.assign(new Error(msg.slice(0, 300)), { code: 'msg91_refused' });
+}
+
+// Templates of this number with Meta's status, as { name: 'APPROVED' | 'PENDING' | 'REJECTED' … }.
+// MSG91 has changed this address before, so callers treat a failure as "unknown".
+export async function templateStatuses(env = process.env) {
+  const data = await getJson(`/get-template-client/${waNumber(env)}`, env);
+  const list = Array.isArray(data.data) ? data.data : Array.isArray(data.templates) ? data.templates : Array.isArray(data) ? data : [];
+  const out = {};
+  for (const t of list) {
+    const name = t.name || t.template_name;
+    const st = t.status || t.languages?.[0]?.status || '';
+    if (name) out[name] = String(st).toUpperCase();
+  }
+  return out;
+}

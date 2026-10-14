@@ -580,3 +580,13 @@ td.plates .plate { display: inline-block; margin: 2px 4px 2px 0; }
   .inbox-head .back { display: inline-flex; }
   .inbox-list { border-right: 0; }
 }
+
+/* Settings → WhatsApp templates */
+.tpl-list { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.tpl-list li { border: 1px solid #E6E1D7; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.tpl-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tpl-body { white-space: pre-wrap; color: #3A4256; }
+.wa-tpl .badge { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 8px; }
+.wa-tpl .linkish { background: none; border: 0; padding: 0; color: #2F5AA8; text-decoration: underline; cursor: pointer; font: inherit; }
+.tpl-form { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid #E6E1D7; padding-top: 14px; }
+.tpl-btn { margin-top: 6px; border-top: 1px solid rgba(0,0,0,.08); padding-top: 6px; text-align: center; color: #1F4FB8; font-weight: 600; font-size: 14px; }
