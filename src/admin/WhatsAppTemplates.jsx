@@ -12,8 +12,9 @@ const ERR = {
 };
 const APPROVAL = {
   name: 'approval_request', category: 'UTILITY', language: 'en', header: 'Challan settlement approval',
-  body: 'Hi {{1}}, the challan settlement details for your vehicle {{2}} are ready. We will settle {{3}} challan(s) and you pay {{4}}. Please reply I APPROVE to confirm, or reply to this message to see the full list. Reference: {{5}}',
-  footer: 'Niptao', buttons: ['I APPROVE'], samples: ['Ravi', 'UP16AB1234', '3', '₹1,500', 'GBN-1234567'],
+  body: 'Hi {{1}}, we have checked the challans on your vehicle {{2}}. It has {{3}} in total.\n\nAll challans: {{4}}\n\nWe can settle {{5}} for you. Amount you pay: {{6}}.\n\nPlease reply I APPROVE to give your written approval for Niptao to settle these challans. Reference: {{7}}',
+  footer: 'Team Niptao', buttons: ['I APPROVE'],
+  samples: ['Ravi', 'UP 16 AB 1234', '3 challans worth ₹4,500', '1) UP123 Over speeding ₹2,000: we will settle; 2) UP456 No helmet ₹1,000: we will settle; 3) DL789 Red light ₹1,500: cannot settle now (outside our service area)', '2 challans worth ₹3,000', '₹1,500 (50% of the challan amount)', 'GBN-1234567'],
 };
 const BLANK = { name: '', category: 'UTILITY', language: 'en', header: '', body: '', footer: '', buttons: [], samples: [] };
 const BADGE = { APPROVED: ['#E7F6EC', '#137A3A', 'Approved'], PENDING: ['#FFF6E5', '#9A5B00', 'Waiting for Meta'], REJECTED: ['#FDECEC', '#B42318', 'Rejected'] };
@@ -51,7 +52,7 @@ export default function WhatsAppTemplates({ auth, call, signOut }) {
           {approved.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
           {s.approval && !approved.some((t) => t.name === s.approval) && <option value={s.approval}>{s.approval} (not approved yet)</option>}
         </select>
-        <span className="hint">Its blanks are filled in this order: 1 name, 2 vehicle number, 3 number of challans, 4 amount to pay, 5 reference.</span>
+        <span className="hint">Its blanks are filled in this order: 1 name, 2 vehicle number, 3 all challans (count and amount), 4 every challan with whether we can settle it, 5 what we will settle, 6 amount to pay, 7 reference. Older 5-blank templates still get the short version.</span>
       </label>
 
       <div className="ch-head" style={{ marginTop: 14 }}><div className="sec-k">Your templates</div>
