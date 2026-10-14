@@ -9,6 +9,7 @@ import crypto from 'node:crypto';
 import { listLeads, updateLead, getSettings, getKV, setKV, saveDoc, getDoc } from './store.js';
 import { saysApprove } from './whatsapp.js';
 import { paymentMessage, paymentAmounts } from './payment.js';
+import { challanListText, approvalAskText } from './templates.js';
 import { aiConfigured, aiAnswer, checkGemini } from './ai.js';
 import * as realLive from './baileys.js';
 
@@ -169,6 +170,21 @@ export function mountAutopilot(app, deps) {
           const text = hindi(leads) ? 'धन्यवाद! आपका पेमेंट स्क्रीनशॉट मिल गया है। हमारी टीम जाँच करके यहीं कन्फ़र्म करेगी। 🙏'
             : 'Thank you! We have received your payment screenshot. Our team will check it and confirm here shortly. 🙏';
           await say(m.phone, waiting[0].ref, text, AUTO).catch((err) => console.error('[wa] reply failed', err.message));
+        }
+      }
+      // "Know more" tapped on the conversation starter: the full challan list, then the approval request.
+      if (!handled && /^know\s*more\W*$/i.test(m.text.trim()) && live.isLive() && !receiveOnly) {
+        const open = leads.filter((l) => l.challans?.length && !['Settled', 'Lost'].includes(l.status));
+        if (open.length) handled = true;
+        for (const l of open) {
+          try {
+            await say(m.phone, l.ref, challanListText(l), AUTO);
+            if (!paymentAmounts(l).ok.length) continue;
+            const ask = approvalAskText(l);
+            const id = live.sendButtons ? await live.sendButtons(m.phone, ask, [{ id: 'approve', title: 'I APPROVE' }]) : await live.sendText(m.phone, ask);
+            await updateLead(l.ref, { waMsg: { id, dir: 'out', text: `${ask}${live.sendButtons ? '\n[Button: I APPROVE]' : ''}`, at: new Date().toISOString(), by: AUTO, status: 'sent', kind: 'approval' } }, AUTO);
+            await updateLead(l.ref, { waApproval: 'sent', note: 'Customer tapped Know more: sent the challan list and the approval request on WhatsApp.' }, AUTO);
+          } catch (err) { log(m.phone, `Know more reply failed: ${err.message}`, true); }
         }
       }
     });

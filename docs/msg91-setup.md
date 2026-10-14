@@ -66,7 +66,7 @@ To message a customer who hasn't written in the last 24 hours (for example a web
 1. Settings → WhatsApp templates → **Create the conversation starter** → **Send to Meta for review**.
 2. When it shows Approved, pick it under "Template to start a conversation".
 3. On a lead with challans fetched, press **Start conversation** under the WhatsApp chat. The customer gets: "Hi Ravi, your vehicle UP 16 AB 1234 has a total of ₹4,500 (3 challans) in pending traffic challans. To know the details and how Niptao can help you settle them, just tap Know more." with a **Know more** button.
-4. Their tap opens the 24-hour window, so you (or the AI) can reply with the details and send the approval request.
+4. When they tap **Know more**, the site at once sends them every challan (what we will settle, what is not included, what we cannot settle and why), then the approval request with an **I APPROVE** button. Their tap on I APPROVE then sends the payment details as usual.
 
 ## 6. A second number (the old number)
 
