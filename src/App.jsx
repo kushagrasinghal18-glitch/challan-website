@@ -338,7 +338,7 @@ export default function App() {
               <a href="#lok-adalat">{t('nextEyebrow')}</a>
             </div>
           </div>
-          <div className="copyright">© {new Date().getFullYear()} {SITE.brand}</div>
+          <div className="copyright">© {new Date().getFullYear()} {SITE.brand}. {t('rights')}</div>
         </div>
       </footer>
 
