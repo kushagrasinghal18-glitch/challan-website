@@ -23,7 +23,15 @@ if (tp) app.set('trust proxy', tp === 'true' ? true : /^\d+$/.test(tp) ? Number(
 const jsonSmall = express.json({ limit: '20kb' }), jsonBig = express.json({ limit: '300kb' });
 // The WhatsApp webhook keeps the raw body so Meta's signature can be checked.
 const jsonWebhook = express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } });
-app.use((req, res, next) => (req.path === '/api/whatsapp/webhook' ? jsonWebhook : req.path.endsWith('/challans') || req.path === '/api/admin/whatsapp-web' || req.path === '/api/admin/settings' || req.path.startsWith('/api/whatsapp/msg91/') ? jsonBig : jsonSmall)(req, res, next));
+// MSG91 may post JSON under any content type, or a form: read the text and take whichever it is.
+const msg91Body = [express.text({ type: '*/*', limit: '300kb' }), (req, res, next) => {
+  const raw = typeof req.body === 'string' ? req.body.trim() : '';
+  if (!raw) { req.body = {}; return next(); }
+  try { req.body = JSON.parse(raw); } catch { req.body = Object.fromEntries(new URLSearchParams(raw)); }
+  next();
+}];
+app.use('/api/whatsapp/msg91', ...msg91Body);
+app.use((req, res, next) => (req.path.startsWith('/api/whatsapp/msg91/') ? next() : req.path === '/api/whatsapp/webhook' ? jsonWebhook : req.path.endsWith('/challans') || req.path === '/api/admin/whatsapp-web' || req.path === '/api/admin/settings' ? jsonBig : jsonSmall)(req, res, next));
 
 const PHONE_RE = /^[6-9]\d{9}$/;
 const CITY_CODES = { noida: 'GBN', ghaziabad: 'GZB', delhi: 'DEL', gurugram: 'GGN' };
@@ -811,11 +819,23 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
 });
 // MSG91 (official API) posts every incoming message, our own sends and delivery updates here. The secret
 // in the address is MSG91_WEBHOOK_SECRET, since MSG91 does not sign its calls.
+// Opening the same address in a browser says whether the secret matches (a quick setup check).
+app.get('/api/whatsapp/msg91/:secret', (req, res) => {
+  if (!msg91WebhookOk(req.params.secret)) return res.status(404).type('text/plain').send('Not found: the secret at the end of this address does not match MSG91_WEBHOOK_SECRET in Render.');
+  res.type('text/plain').send(autopilot?.provider === 'msg91' ? 'Webhook OK. Paste this exact address in MSG91 as the inbound webhook.' : 'Secret OK, but MSG91 is not switched on: check MSG91_AUTH_KEY and MSG91_WA_NUMBER in Render.');
+});
 app.post('/api/whatsapp/msg91/:secret', async (req, res) => {
-  if (!msg91WebhookOk(req.params.secret)) return res.sendStatus(404);
+  if (!msg91WebhookOk(req.params.secret)) { console.warn('[msg91] webhook call with a wrong secret'); return res.sendStatus(404); }
   res.sendStatus(200); // answer MSG91 at once; work continues below
   if (autopilot?.provider !== 'msg91') return;
   const { messages, outgoing, statuses } = parseMsg91(req.body);
+  // Shown in Settings → Automatic WhatsApp → Recent activity, so a setup problem is visible.
+  const first = Array.isArray(req.body) ? req.body[0] : req.body;
+  if (!messages.length && !outgoing.length && !statuses.length) {
+    const keys = Object.keys(first || {}).slice(0, 15).join(', ') || 'empty';
+    console.log('[msg91] webhook not understood, fields:', keys);
+    autopilot.note(`MSG91 sent something the site could not read (fields: ${keys}).`, true);
+  } else if (messages.length) autopilot.note(`MSG91 delivered ${messages.length} incoming message${messages.length === 1 ? '' : 's'}.`);
   try {
     for (const m of messages) await autopilot.receive(m);
     for (const o of outgoing) {
