@@ -76,6 +76,15 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   const mine = async () => (await store.listLeads()).filter((l) => l.phone === phone);
 
   assert.equal((await hook({ customerNumber: '91' + phone, text: 'x' }, 'wrong-secret-xxxx')).status, 404);
+  assert.match(await (await fetch(`${base}/api/whatsapp/msg91/secret-for-tests-123`)).text(), /Webhook OK/);
+  assert.equal((await fetch(`${base}/api/whatsapp/msg91/nope-nope-nope-nope`)).status, 404);
+  // A form post, and JSON sent as plain text, are read too.
+  await fetch(`${base}/api/whatsapp/msg91/secret-for-tests-123`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ uuid: 'f1', customerNumber: '919876500033', text: 'form hello' }) });
+  await fetch(`${base}/api/whatsapp/msg91/secret-for-tests-123`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ uuid: 't1', customerNumber: '919876500044', text: 'text hello' }) });
+  await settle();
+  const all = await store.listLeads();
+  assert.ok(all.some((l) => l.phone === '9876500033' && l.waChat?.[0]?.text === 'form hello'));
+  assert.ok(all.some((l) => l.phone === '9876500044' && l.waChat?.[0]?.text === 'text hello'));
   assert.equal((await hook({ uuid: 'in1', customerNumber: '91' + phone, customerName: 'Meena', text: 'Challan on UP16AB4321', contentType: 'text' })).status, 200);
   await settle();
   const [lead] = await mine();
