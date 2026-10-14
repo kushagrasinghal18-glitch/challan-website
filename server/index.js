@@ -9,6 +9,7 @@ import { sendOtp, verifyOtp, issueToken, readToken, otpMode, adminEnabled, check
 import { waConfigured, validSignature, parseWebhook, localPhone, saysApprove, sendText, sendTemplate, WINDOW_MS } from './whatsapp.js';
 import { UPI_RE, paymentMessage, paymentAmounts, upiLink } from './payment.js';
 import { mountAutopilot } from './autopilot.js';
+import { msg91Configured, msg91Live, parseMsg91, webhookOk as msg91WebhookOk, sendTemplate as msg91Template } from './msg91.js';
 import crypto from 'node:crypto';
 import { FEE_RATES, addLead, listLeads, updateLead, deleteLead, store, STATUSES, getSettings, saveSettings, listStaff, saveStaff, nextAssignee,
   getLead, saveDoc, getDoc, removeDoc, docTypesOf, leadByDocToken } from './store.js';
@@ -22,7 +23,7 @@ if (tp) app.set('trust proxy', tp === 'true' ? true : /^\d+$/.test(tp) ? Number(
 const jsonSmall = express.json({ limit: '20kb' }), jsonBig = express.json({ limit: '300kb' });
 // The WhatsApp webhook keeps the raw body so Meta's signature can be checked.
 const jsonWebhook = express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } });
-app.use((req, res, next) => (req.path === '/api/whatsapp/webhook' ? jsonWebhook : req.path.endsWith('/challans') || req.path === '/api/admin/whatsapp-web' || req.path === '/api/admin/settings' ? jsonBig : jsonSmall)(req, res, next));
+app.use((req, res, next) => (req.path === '/api/whatsapp/webhook' ? jsonWebhook : req.path.endsWith('/challans') || req.path === '/api/admin/whatsapp-web' || req.path === '/api/admin/settings' || req.path.startsWith('/api/whatsapp/msg91/') ? jsonBig : jsonSmall)(req, res, next));
 
 const PHONE_RE = /^[6-9]\d{9}$/;
 const CITY_CODES = { noida: 'GBN', ghaziabad: 'GZB', delhi: 'DEL', gurugram: 'GGN' };
@@ -301,7 +302,10 @@ app.get('/api/settings', async (req, res) => {
 
 // ── Admin panel API ─────────────────────────────────────
 app.get('/api/admin/status', (req, res) => res.json({ enabled: adminEnabled(), storage: store().name, statuses: STATUSES,
-  whatsappApi: waConfigured() || (!!autopilot?.isLive() && !autopilot.receiveOnly), whatsappLive: !!autopilot?.isLive() && !autopilot.receiveOnly }));
+  whatsappApi: waConfigured() || (!!autopilot?.isLive() && !autopilot.receiveOnly),
+  // MSG91 is the official API: the 24-hour reply window applies, so it is not "live" like the linked phone.
+  whatsappLive: !!autopilot?.isLive() && !autopilot.receiveOnly && autopilot.provider !== 'msg91',
+  whatsappProvider: autopilot?.provider === 'msg91' && autopilot.isLive() ? 'msg91' : waConfigured() ? 'meta' : autopilot?.isLive() ? 'phone' : '' }));
 
 // Super admin: username "admin" + ADMIN_PASSWORD. Everyone else: a staff account.
 app.post('/api/admin/login', limit(10, 15 * 60_000), async (req, res) => {
@@ -805,6 +809,25 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
   const batch = parseWebhook(req.body);
   waQueue = waQueue.then(() => handleWhatsApp(batch)).catch((err) => console.error('[whatsapp] webhook failed', err.message));
 });
+// MSG91 (official API) posts every incoming message, our own sends and delivery updates here. The secret
+// in the address is MSG91_WEBHOOK_SECRET, since MSG91 does not sign its calls.
+app.post('/api/whatsapp/msg91/:secret', async (req, res) => {
+  if (!msg91WebhookOk(req.params.secret)) return res.sendStatus(404);
+  res.sendStatus(200); // answer MSG91 at once; work continues below
+  if (autopilot?.provider !== 'msg91') return;
+  const { messages, outgoing, statuses } = parseMsg91(req.body);
+  try {
+    for (const m of messages) await autopilot.receive(m);
+    for (const o of outgoing) {
+      // MSG91 also reports the messages this site sent: those are on the lead already.
+      const chat = (await listLeads()).filter((l) => l.phone === o.phone).flatMap((l) => l.waChat || []);
+      if (chat.some((c) => c.id === o.id || (c.dir === 'out' && c.text === o.text && Math.abs(new Date(c.at) - new Date(o.at)) < 15 * 60e3))) continue;
+      await autopilot.receive({ ...o, fromMe: true, by: 'MSG91' });
+    }
+    for (const st of statuses) await autopilot.status(st);
+  } catch (err) { console.error('[msg91] webhook failed', err.message); }
+});
+
 let waQueue = Promise.resolve();
 // Runs fn after every WhatsApp change already queued, so two messages never race on the same lead.
 export const enqueueWa = (fn) => { const run = waQueue.then(fn); waQueue = run.catch(() => {}); return run; };
@@ -922,8 +945,9 @@ app.post('/api/admin/whatsapp-web', requireUser, limit(120, 60_000), async (req,
 // Send from the admin panel through the API. Free text only inside the 24-hour window that opens
 // when the customer last wrote; outside it, only the approved approval template can be sent.
 app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async (req, res) => {
-  const viaLive = !!autopilot?.isLive() && !autopilot.receiveOnly; // receive only: the panel uses "Open in WhatsApp" instead
-  if (!viaLive && !waConfigured()) return res.status(503).json({ error: 'whatsapp_not_set_up' });
+  const msg91 = autopilot?.provider === 'msg91' && autopilot.isLive();
+  const viaLive = !msg91 && !!autopilot?.isLive() && !autopilot.receiveOnly; // receive only: the panel uses "Open in WhatsApp" instead
+  if (!viaLive && !msg91 && !waConfigured()) return res.status(503).json({ error: 'whatsapp_not_set_up' });
   const b = req.body || {};
   const text = String(b.text || '').trim().slice(0, 4000);
   if (!text) return res.status(400).json({ error: 'empty' });
@@ -931,19 +955,22 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
     const lead = (await listLeads()).find((l) => l.ref === req.params.ref);
     if (!lead) return res.status(404).json({ error: 'not_found' });
     if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
-    const open = lead.waLastIn && Date.now() - new Date(lead.waLastIn) < WINDOW_MS;
+    // The window is per customer, so their other vehicles' chats count too.
+    const lastIn = (await listLeads()).filter((l) => l.phone === lead.phone).map((l) => l.waLastIn || '').sort().pop();
+    const open = lastIn && Date.now() - new Date(lastIn) < WINDOW_MS;
     const to = '91' + lead.phone;
+    const template = msg91 ? process.env.MSG91_APPROVAL_TEMPLATE : process.env.WHATSAPP_APPROVAL_TEMPLATE;
     let id, sentText = text, kind = b.approval ? 'approval' : 'text';
     // Linked number (automatic WhatsApp): no 24-hour window, it's an ordinary chat.
     if (viaLive) id = await autopilot.send(lead.phone, text);
-    else if (open) id = await sendText(to, text);
-    else if (b.approval && process.env.WHATSAPP_APPROVAL_TEMPLATE) {
+    else if (open) id = msg91 ? await autopilot.send(lead.phone, text) : await sendText(to, text);
+    else if (b.approval && template) {
       const ok = (lead.challans || []).filter((c) => c.approved);
       const total = ok.reduce((n, c) => n + (c.amount || 0), 0);
       const rate = FEE_RATES.includes(lead.feeRate) ? lead.feeRate : 50;
       const pay = '₹' + Math.round((total * rate) / 100).toLocaleString('en-IN');
       const params = [lead.name, lead.plate, String(ok.length), pay, lead.ref];
-      id = await sendTemplate(to, process.env.WHATSAPP_APPROVAL_TEMPLATE, params);
+      id = msg91 ? await msg91Template(lead.phone, template, params) : await sendTemplate(to, template, params);
       sentText = `[Approval template] ${lead.name} · ${lead.plate} · ${ok.length} challan(s) · ${pay} · ${lead.ref}`;
       kind = 'template';
     } else return res.status(409).json({ error: 'window_closed' });
@@ -958,7 +985,8 @@ app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async
 });
 
 // Automatic WhatsApp on the linked number (AI replies, approvals, payment details). See autopilot.js.
-export const autopilot = mountAutopilot(app, { handleWhatsApp, enqueue: enqueueWa, attachPlates, requireUser, requireAdmin, canSee });
+// With MSG91 set up, the official API takes the place of the linked phone.
+export const autopilot = mountAutopilot(app, { ...(msg91Configured() ? { live: msg91Live() } : {}), handleWhatsApp, enqueue: enqueueWa, attachPlates, requireUser, requireAdmin, canSee });
 
 if (process.env.NODE_ENV === 'production') {
   const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');

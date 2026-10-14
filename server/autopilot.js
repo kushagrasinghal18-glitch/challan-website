@@ -67,7 +67,12 @@ export function mountAutopilot(app, deps) {
   const ai = { ready: deps.aiConfigured || aiConfigured, answer: deps.aiAnswer || aiAnswer };
   const debounceMs = deps.debounceMs ?? DEBOUNCE_MS;
   // Receive only: leads, chats, "I APPROVE" and payment screenshots are still recorded; nothing is sent.
-  const receiveOnly = deps.receiveOnly ?? realLive.RECEIVE_ONLY;
+  const receiveOnly = deps.receiveOnly ?? live.RECEIVE_ONLY ?? realLive.RECEIVE_ONLY;
+  // MSG91 (official API): messages arrive by webhook even with the master switch off, so they are still saved.
+  const viaWebhook = live.provider === 'msg91';
+  // MSG91 sends images by link: the payment QR is served at an address only known from its own content.
+  const qrKey = (qr) => crypto.createHash('sha256').update(qr).digest('hex').slice(0, 32);
+  const siteUrl = () => (process.env.SITE_URL || 'https://www.niptao.co.in').replace(/\/$/, '');
   const byPhone = async (phone) => (await listLeads()).filter((l) => l.phone === phone);
   const lastJid = new Map(); // phone → chat id the customer last wrote from (WhatsApp may use a private id)
   const aiSent = new Map(); // phone → times of AI replies, for the per-chat cap
@@ -110,8 +115,9 @@ export function mountAutopilot(app, deps) {
     }
     if (sent && pay.qr) {
       const buf = Buffer.from(pay.qr.split(',')[1] || '', 'base64');
-      const id = await live.sendImage(phone, buf, 'Scan to pay with any UPI app', { jid: lastJid.get(phone) });
-      await updateLead(leads[0].ref, { waMsg: { id, dir: 'out', text: '[QR code] Scan to pay with any UPI app', at: new Date().toISOString(), by: AUTO, status: 'sent', kind: 'payment' } }, AUTO);
+      const id = await live.sendImage(phone, buf, 'Scan to pay with any UPI app', { jid: lastJid.get(phone), url: `${siteUrl()}/api/wa-qr/${qrKey(pay.qr)}` })
+        .catch((err) => { console.error('[wa] QR send failed', err.message); return null; });
+      if (id) await updateLead(leads[0].ref, { waMsg: { id, dir: 'out', text: '[QR code] Scan to pay with any UPI app', at: new Date().toISOString(), by: AUTO, status: 'sent', kind: 'payment' } }, AUTO);
     }
     return sent > 0;
   }
@@ -133,11 +139,14 @@ export function mountAutopilot(app, deps) {
   }
 
   async function onMessage(m) {
-    if ((await getBot()).on === false) return; // switched off: the connection is closed anyway
-    if (m.jid) lastJid.set(m.phone, m.jid);
     const msg = { id: m.id, from: `91${m.phone}`, name: m.name, text: m.text, at: m.at, ...(m.fromMe ? { dir: 'out' } : {}) };
+    if ((await getBot()).on === false) { // switched off: the linked phone is disconnected; MSG91 still delivers, so only save
+      if (viaWebhook) return enqueue(() => handleWhatsApp({ messages: [msg] }, m.fromMe ? { by: m.by || 'Team' } : {}));
+      return;
+    }
+    if (m.jid) lastJid.set(m.phone, m.jid);
     // Typed on the phone (or WhatsApp Web) by the team: keep it on the lead; the AI then stays quiet a while.
-    if (m.fromMe) { log(m.phone, 'Team message typed on the phone. The AI stays quiet in this chat for 2 hours.'); return enqueue(() => handleWhatsApp({ messages: [msg] }, { by: 'Phone' })); }
+    if (m.fromMe) { log(m.phone, 'Team message typed on the phone. The AI stays quiet in this chat for 2 hours.'); return enqueue(() => handleWhatsApp({ messages: [msg] }, { by: m.by || 'Phone' })); }
     log(m.phone, `Message received: "${m.text.slice(0, 60)}"`);
     let handled = false;
     await enqueue(async () => {
@@ -220,6 +229,18 @@ export function mountAutopilot(app, deps) {
     }),
   };
   getBot().then((b) => live.startLive(handlers, { connectNow: b.on !== false })).catch((err) => console.error('[wa] start failed', err.message));
+
+  // The payment QR for MSG91 to fetch. Public on purpose (it is the same QR every customer gets),
+  // but only reachable with a key made from the QR itself.
+  app.get('/api/wa-qr/:key', async (req, res) => {
+    try {
+      const qr = (await getSettings()).payment?.qr || '';
+      if (!qr || req.params.key !== qrKey(qr)) return res.sendStatus(404);
+      const [, mime = 'image/png', b64 = ''] = qr.match(/^data:([^;]+);base64,(.*)$/) || [];
+      res.set({ 'Content-Type': mime, 'Cache-Control': 'public, max-age=3600', 'X-Robots-Tag': 'noindex' });
+      res.send(Buffer.from(b64, 'base64'));
+    } catch { res.sendStatus(500); }
+  });
 
   // ── Admin routes ──
   const view = async () => ({ ...live.status(), receiveOnly, enabled: live.liveEnabled(), aiReady: ai.ready(), settings: await getBot(), activity });
@@ -321,5 +342,5 @@ export function mountAutopilot(app, deps) {
     } catch (err) { console.error('[wa] proof read failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
   });
 
-  return { isLive: live.isLive, receiveOnly, send: (phone, text) => live.sendText(phone, text, { jid: lastJid.get(phone) }) };
+  return { isLive: live.isLive, receiveOnly, provider: live.provider || 'phone', receive: onMessage, status: handlers.onStatus, send: (phone, text) => live.sendText(phone, text, { jid: lastJid.get(phone) }) };
 }
