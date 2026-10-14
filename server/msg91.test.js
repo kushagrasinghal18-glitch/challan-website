@@ -41,12 +41,15 @@ test('parses incoming, our own and delivery events', () => {
     { uuid: 'u2', customerNumber: '919876500011', contentType: 'image', messages: JSON.stringify([{ type: 'image', image: { caption: 'paid', url: 'https://x/y', mime_type: 'image/png' } }]) },
     { uuid: 'u3', customerNumber: '919876500011', messageType: 'outbound', text: 'Typed in MSG91' },
     { uuid: 'u4', customerNumber: '919876500011', direction: 'outbound', status: 'read' },
+    // A delivery report that repeats the text, matched by the request id saved at send time.
+    { uuid: 'u5', requestId: 'r77', customerNumber: '919876500011', direction: 'outbound', status: 'delivered', text: 'Our reply' },
     { customerNumber: 'abc', text: 'ignored' },
   ]);
   assert.deepEqual(r.messages.map((m) => [m.id, m.phone, m.text, m.kind]), [['u1', '9876500011', 'Hi', 'text'], ['u2', '9876500011', 'paid', 'image']]);
   assert.equal(r.messages[1].raw.url, 'https://x/y');
   assert.deepEqual(r.outgoing.map((o) => o.text), ['Typed in MSG91']);
-  assert.deepEqual(r.statuses.map((s) => [s.id, s.status]), [['u4', 'read']]);
+  assert.deepEqual(r.statuses.map((s) => [s.id, s.status]), [['u4', 'read'], ['u5', 'delivered']]);
+  assert.deepEqual(r.statuses[1].ids, ['u5', 'r77']);
 });
 
 test('sends text, templates and images in the MSG91 format', async () => {
@@ -203,6 +206,11 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   await settle();
   await send({ text: 'Reply from the new number' });
   assert.equal(calls.at(-1).body.integrated_number, '919990661629');
+  // Delivery reports find the message by any of their ids.
+  const sentId = `r${calls.length}`;
+  await hook({ uuid: 'other-uuid', requestId: sentId, customerNumber: '91' + phone, direction: 'outbound', status: 'read', text: 'Reply from the new number' });
+  await settle();
+  assert.equal((await mine()).flatMap((l) => l.waChat).find((m) => m.id === sentId).status, 'read');
   // A customer who only chatted in the linked-phone days gets the old number; a new one the main number.
   await store.addLead({ ref: 'OLD-1', createdAt: '2026-10-01T00:00:00Z', name: 'Old', plate: 'UP16AB7777', phone: '9876500077', status: 'Contacted', notes: [],
     waChat: [{ id: '3EB0AA', dir: 'in', text: 'hi', at: '2026-10-01T10:00:00Z' }], waLastIn: new Date().toISOString() });

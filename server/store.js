@@ -274,7 +274,8 @@ export function updateLead(ref, patch, by, onlyFor) {
     }
     if (patch.waStatus && Array.isArray(lead.waChat)) {
       const rank = { sent: 1, delivered: 2, read: 3, failed: 4 };
-      out.waChat = lead.waChat.map((m) => (m.id === patch.waStatus.id && (rank[patch.waStatus.status] || 0) > (rank[m.status] || 0)
+      const ids = patch.waStatus.ids || [patch.waStatus.id];
+      out.waChat = lead.waChat.map((m) => (ids.includes(m.id) && (rank[patch.waStatus.status] || 0) > (rank[m.status] || 0)
         ? { ...m, status: patch.waStatus.status, ...(patch.waStatus.error ? { error: patch.waStatus.error } : {}) } : m));
     }
     if (patch.waRead) out.waUnread = 0;

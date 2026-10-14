@@ -3,7 +3,7 @@ import { parseChallans } from './parseChallans.js';
 import Analytics from './Analytics.jsx';
 import Calendar from './Calendar.jsx';
 import WhatsAppAuto from './WhatsAppAuto.jsx';
-import WhatsAppInbox from './WhatsAppInbox.jsx';
+import WhatsAppInbox, { tick } from './WhatsAppInbox.jsx';
 import WhatsAppTemplates from './WhatsAppTemplates.jsx';
 import { lokPlan, lokLong } from '../../shared/lok.js';
 import { NOT_REASONS, notReason, cannotDo, mergeChallans } from '../../shared/verdict.js';
@@ -1165,7 +1165,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                     {lead.waChat.slice(-50).map((m, i) => (
                       <div key={m.id || i} className={'wa-bub ' + m.dir}>
                         <div className="t">{m.text}</div>
-                        <div className="m">{m.dir === 'out' ? `${m.by} · ` : ''}{fullDate(m.at)}{m.dir === 'out' && m.status ? ` · ${m.status === 'read' ? '✓✓ read' : m.status === 'delivered' ? '✓✓ delivered' : m.status === 'failed' ? `failed${m.error ? `: ${m.error}` : ''}` : '✓ sent'}` : ''}</div>
+                        <div className="m">{m.dir === 'out' ? `${m.by} · ` : ''}{fullDate(m.at)}{tick(m)}</div>
                       </div>
                     ))}
                   </div>

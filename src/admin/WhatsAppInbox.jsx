@@ -16,7 +16,9 @@ const when = (iso) => {
 };
 const full = (iso) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 const fmtPhone = (p) => (p ? `${p.slice(0, 5)} ${p.slice(5)}` : '');
-const tick = (m) => (m.dir !== 'out' || !m.status ? '' : m.status === 'read' ? ' · ✓✓ read' : m.status === 'delivered' ? ' · ✓✓ delivered' : m.status === 'failed' ? ` · failed${m.error ? `: ${m.error}` : ''}` : ' · ✓ sent');
+// WhatsApp's own colours: grey ✓ sent, grey ✓✓ delivered, blue ✓✓ read, red failed.
+export const tick = (m) => (m.dir !== 'out' || !m.status ? null : <> · <span className={'wa-tick ' + (['read', 'delivered', 'failed'].includes(m.status) ? m.status : 'sent')}>
+  {m.status === 'read' ? '✓✓ read' : m.status === 'delivered' ? '✓✓ delivered' : m.status === 'failed' ? `✕ failed${m.error ? `: ${m.error}` : ''}` : '✓ sent'}</span></>);
 
 export function conversations(leads) {
   const by = new Map();
