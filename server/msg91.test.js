@@ -228,6 +228,15 @@ test('webhook → lead and chat; panel replies go through MSG91; template outsid
   assert.equal(km[1].body.content_type, 'interactive');
   assert.match(km[1].body.interactive.body.text, /tap \*I APPROVE\*/);
   assert.equal((await mine()).find((l) => l.ref === lead.ref).waApproval.state, 'sent');
+  // Approved on a call: marked by the team, then the payment details go out (UPI ID needed first).
+  let ap = await (await admin(`/api/admin/leads/${lead.ref}/approve`, 'POST', { how: 'call' })).json();
+  assert.deepEqual([ap.lead.waApproval.state, ap.lead.waApproval.manual, ap.payment.reason], ['received', 'call', 'payment_not_set']);
+  await store.saveSettings({ ...(await store.getSettings()), payment: { upiId: 'niptao@upi', payeeName: 'Niptao' } });
+  const a0 = calls.length;
+  ap = await (await admin(`/api/admin/leads/${lead.ref}/approve`, 'POST', { how: 'call' })).json();
+  assert.equal(ap.payment.sent, true);
+  assert.match(calls[a0].body.text, /niptao@upi/);
+  assert.ok(ap.lead.paymentSent);
   // A customer who only chatted in the linked-phone days gets the old number; a new one the main number.
   await store.addLead({ ref: 'OLD-1', createdAt: '2026-10-01T00:00:00Z', name: 'Old', plate: 'UP16AB7777', phone: '9876500077', status: 'Contacted', notes: [],
     waChat: [{ id: '3EB0AA', dir: 'in', text: 'hi', at: '2026-10-01T10:00:00Z' }], waLastIn: new Date().toISOString() });

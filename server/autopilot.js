@@ -359,6 +359,6 @@ export function mountAutopilot(app, deps) {
   });
 
   return { isLive: live.isLive, receiveOnly, provider: live.provider || 'phone', receive: onMessage, status: handlers.onStatus,
-    note: (text, bad = false) => log('', text, bad),
+    note: (text, bad = false) => log('', text, bad), sendPayment,
     sendButtons: live.sendButtons ? (phone, text, buttons) => live.sendButtons(phone, text, buttons) : null, send: (phone, text) => live.sendText(phone, text, { jid: lastJid.get(phone) }) };
 }
