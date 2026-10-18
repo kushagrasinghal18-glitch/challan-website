@@ -101,7 +101,7 @@ export default function Analytics({ leads, staff, payable, inr, lokDates, onOpen
     return {
       received, settled, lost, paid, revenue, got, paySent, pipeline, avgDays, buckets, step, funnel,
       conv: pct(received.filter((l) => l.status === 'Settled').length, received.length),
-      byStatus: [...FLOW, 'Lost'].map((s) => ({ key: s, label: s, n: received.filter((l) => l.status === s).length })),
+      byStatus: [...FLOW, 'Not reachable', 'Lost'].map((s) => ({ key: s, label: s, n: received.filter((l) => l.status === s).length })),
       bySource: group((l) => l.source || 'Website', (k) => k),
       byCity: group((l) => l.city || '', (k) => CITY[k] || k || 'Not given'),
       byStaff: group((l) => l.agentId || '', (k) => (k ? staffName[k] || 'Removed staff' : 'Unassigned')),

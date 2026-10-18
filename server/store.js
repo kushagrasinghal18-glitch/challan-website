@@ -10,9 +10,9 @@ import { nameMatch } from './names.js';
 // Share of the approved challan total the customer pays. 50% is the advertised default.
 export const FEE_RATES = [50, 40, 30];
 
-export const STATUSES = ['New', 'Contacted', 'Payment received', 'Documents received', 'Documents verified', 'Scheduled', 'Settled', 'Lost'];
+export const STATUSES = ['New', 'Contacted', 'Not reachable', 'Payment received', 'Documents received', 'Documents verified', 'Scheduled', 'Settled', 'Lost'];
 // Stages a lead can be in and still be moved on to "Documents received" by itself once every document is in.
-const BEFORE_DOCS = ['New', 'Contacted', 'Payment received'];
+const BEFORE_DOCS = ['New', 'Contacted', 'Not reachable', 'Payment received'];
 
 // Document types the team collects, set in Settings. These are used until the admin saves their own list.
 export const DEFAULT_DOC_TYPES = [
@@ -293,7 +293,7 @@ export function updateLead(ref, patch, by, onlyFor) {
       const finalAmount = Math.round((total * finalRate) / 100);
       out.payment = { amount: patch.paymentReceived.amount, finalRate, finalAmount, pending: Math.max(0, finalAmount - patch.paymentReceived.amount),
         date: patch.paymentReceived.date || new Date(Date.now() + 5.5 * 36e5).toISOString().slice(0, 10), ...(patch.paymentReceived.mode ? { mode: patch.paymentReceived.mode } : {}), at: new Date().toISOString(), by };
-      if (['New', 'Contacted'].includes(out.status || lead.status)) out.status = 'Payment received';
+      if (['New', 'Contacted', 'Not reachable'].includes(out.status || lead.status)) out.status = 'Payment received';
     }
     if (patch.paymentRemoved && lead.payment) {
       out.payment = null;
