@@ -999,6 +999,35 @@ app.post('/api/admin/whatsapp-web', requireUser, limit(120, 60_000), async (req,
 
 // Send from the admin panel through the API. Free text only inside the 24-hour window that opens
 // when the customer last wrote; outside it, only the approved approval template can be sent.
+// Approval given on a call, or an "I APPROVE" that never reached us: the team marks it, and the payment
+// details (with the QR) go out on WhatsApp straight away when the chat allows it.
+app.post('/api/admin/leads/:ref/approve', requireUser, limit(30, 60_000), async (req, res) => {
+  const b = req.body || {};
+  try {
+    const lead = (await listLeads()).find((l) => l.ref === req.params.ref);
+    if (!lead) return res.status(404).json({ error: 'not_found' });
+    if (!canSee(lead, req.user)) return res.status(403).json({ error: 'not_your_lead' });
+    if (!(lead.challans || []).some((c) => c.approved)) return res.status(400).json({ error: 'nothing_approved' });
+    const how = b.how === 'other' ? 'other' : 'call';
+    let out = await updateLead(lead.ref, { waApproval: 'manual', manualHow: how,
+      note: `Marked approved by ${req.user.name} (${how === 'call' ? 'approval given on a call' : 'approval received another way'}).` }, req.user.name);
+    let payment = { sent: false, reason: 'not_asked' };
+    if (b.send !== false) {
+      const msg91 = autopilot?.provider === 'msg91';
+      const lastIn = (await listLeads()).filter((l) => l.phone === lead.phone).map((l) => l.waLastIn || '').sort().pop();
+      const open = !msg91 || (lastIn && Date.now() - new Date(lastIn) < WINDOW_MS);
+      if (!autopilot?.isLive() || autopilot.receiveOnly) payment = { sent: false, reason: 'whatsapp_not_set_up' };
+      else if (!open) payment = { sent: false, reason: 'window_closed' };
+      else {
+        const sent = await enqueueWa(() => autopilot.sendPayment(lead.phone, [out])).catch((err) => { console.error('[approve] payment send failed', err.message); return null; });
+        payment = sent ? { sent: true } : { sent: false, reason: sent === null ? 'send_failed' : 'payment_not_set' };
+      }
+      out = (await listLeads()).find((l) => l.ref === lead.ref) || out;
+    }
+    res.json({ lead: out, payment });
+  } catch (err) { console.error('[approve] failed', err.message); res.status(500).json({ error: 'storage_unavailable' }); }
+});
+
 app.post('/api/admin/leads/:ref/whatsapp', requireUser, limit(60, 60_000), async (req, res) => {
   const msg91 = autopilot?.provider === 'msg91' && autopilot.isLive();
   const viaLive = !msg91 && !!autopilot?.isLive() && !autopilot.receiveOnly; // receive only: the panel uses "Open in WhatsApp" instead

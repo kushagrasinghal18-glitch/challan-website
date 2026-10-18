@@ -252,6 +252,12 @@ export function updateLead(ref, patch, by, onlyFor) {
       const ok = (lead.challans || []).filter((c) => c.approved);
       out.waApproval = { state: 'sent', sentAt: new Date().toISOString(), sentBy: by, challanNos: ok.map((c) => c.challanNo || ''),
         total: ok.reduce((n, c) => n + (c.amount || 0), 0), feeRate: FEE_RATES.includes(lead.feeRate) ? lead.feeRate : 50 };
+    } else if (patch.waApproval === 'manual') {
+      // Approval given on a call (or a tap that never reached us), marked by the team: snapshot what was approved.
+      const ok = (lead.challans || []).filter((c) => c.approved), now = new Date().toISOString();
+      out.waApproval = { state: 'received', manual: patch.manualHow === 'other' ? 'other' : 'call', sentAt: lead.waApproval?.sentAt || now, sentBy: lead.waApproval?.sentBy || by,
+        challanNos: ok.map((c) => c.challanNo || ''), total: ok.reduce((n, c) => n + (c.amount || 0), 0), feeRate: FEE_RATES.includes(lead.feeRate) ? lead.feeRate : 50,
+        receivedAt: now, receivedBy: by };
     } else if (patch.waApproval === 'received' && lead.waApproval) {
       out.waApproval = { ...lead.waApproval, state: 'received', receivedAt: new Date().toISOString(), receivedBy: by };
     } else if (patch.waApproval === 'clear') {

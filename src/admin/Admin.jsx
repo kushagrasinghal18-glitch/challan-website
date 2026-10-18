@@ -776,8 +776,9 @@ function PaymentDialog({ lead, others = [], onCancel, onSave }) {
   );
 }
 
-function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans, onAddVehicles, myId, onAskPayment, onBot, onOpenProof, onDelhiCheck }) {
+function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onSaveChallans, onDelete, askApproval, onAsked, listState, lokDates, siblings = [], onOpen, waApi, onWaSend, getPayment, isAdminUser, docTypes = [], onUploadDoc, onOpenDoc, onRemoveDoc, onDocLink, onUploadToken, onOpenToken, onRemoveToken, onTokenChallans, onAddVehicles, myId, onAskPayment, onBot, onOpenProof, onDelhiCheck, onApprove }) {
   const [draft, setDraft] = useState('');
+  const [apprMsg, setApprMsg] = useState(null);
   const [chSt, setChSt] = useState(listState || '');
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -808,7 +809,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
       setQrCopied(true); setTimeout(() => setQrCopied(false), 2500);
     } catch { /* clipboard blocked: staff can use Download */ }
   };
-  useEffect(() => { setDraft(''); setEditing(false); setChSt(listState || ''); setWaDraft(''); setWaErr(''); setPlateIn(''); setShowHelp(false); setChatBig(false); }, [lead.ref, listState]);
+  useEffect(() => { setDraft(''); setEditing(false); setChSt(listState || ''); setWaDraft(''); setWaErr(''); setPlateIn(''); setShowHelp(false); setChatBig(false); setApprMsg(null); }, [lead.ref, listState]);
   // Opening a lead clears its "new WhatsApp reply" badge.
   useEffect(() => { if (lead.waUnread) onPatch(lead.ref, { waRead: true }); }, [lead.ref, lead.waUnread]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (lead.docsNew) onPatch(lead.ref, { docsSeen: true }); }, [lead.ref, lead.docsNew]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1018,7 +1019,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                     <div className={'wa-appr' + (w?.state === 'received' && !stale ? ' done' : '')}>
                       <div className="sec-k">Written approval on WhatsApp</div>
                       {!w ? <div className="small">Send the customer the approved challans and amount, and ask them to reply "I APPROVE".</div>
-                        : w.state === 'received' ? <div className="ok-line">✓ Customer approved in writing{stale ? ' (the earlier list)' : ''} · marked by {w.receivedBy} · {fullDate(w.receivedAt)}</div>
+                        : w.state === 'received' ? <div className="ok-line">✓ Customer approved {w.manual === 'call' ? 'on a call' : w.manual ? '(marked by the team)' : 'in writing'}{stale ? ' (the earlier list)' : ''} · marked by {w.receivedBy} · {fullDate(w.receivedAt)}</div>
                         : <div className="small">Sent by {w.sentBy} · {fullDate(w.sentAt)}. Waiting for the customer to reply "I APPROVE".</div>}
                       {waErr && !lead.waChat?.length && <div className="stale">{waErr}</div>}
                       {waApi && w?.state === 'sent' && !stale && <div className="small">When the customer replies "I APPROVE" on WhatsApp, this is marked automatically.</div>}
@@ -1033,10 +1034,15 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                           onClick={(e) => { if (busy) { e.preventDefault(); return; } send(); }}>
                           {waApi ? 'Open in WhatsApp' : !w ? 'Send on WhatsApp' : 'Send again on WhatsApp'}
                         </a>
-                        {w?.state === 'sent' && !stale && (
-                          <button className="btn primary" disabled={busy} onClick={() => patch({ waApproval: 'received', note: 'Customer gave written approval on WhatsApp.' })}>Customer replied "I APPROVE"</button>
+                        {(w?.state !== 'received' || stale) && (
+                          <button className="btn primary" disabled={busy} onClick={async () => {
+                            if (!window.confirm(`Mark ${lead.name} as approved for ${approvedOf(lead).length} challan${approvedOf(lead).length === 1 ? '' : 's'}, ${inr(payable(lead))} to pay?\n\nUse this when the customer agreed on a call, or tapped I APPROVE but it didn't reach us.${waApi ? ' The payment details and QR are then sent on WhatsApp.' : ''}`)) return;
+                            setBusy(true); setApprMsg(null);
+                            try { setApprMsg(await onApprove(lead.ref)); } finally { setBusy(false); }
+                          }}>✓ Mark approved (on call)</button>
                         )}
                       </div>
+                      {apprMsg && <div className={apprMsg.ok ? 'ok-msg small' : 'stale'}>{apprMsg.text}</div>}
                       <details className="guide"><summary>See the message</summary><pre className="wa-msg">{msg}</pre></details>
                     </div>
                   );
@@ -1200,6 +1206,12 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
   );
 }
 
+const APPROVE_WHY = {
+  window_closed: 'the customer has not written in the last 24 hours, so WhatsApp does not allow it. Use "Send payment details" below (opens WhatsApp).',
+  whatsapp_not_set_up: 'automatic WhatsApp is not connected. Use "Send payment details" below.',
+  payment_not_set: 'the UPI ID is missing in Settings → Payment details.',
+  send_failed: 'WhatsApp refused it. Use "Send payment details" below.',
+};
 const RECEIPT_WHY = {
   window_closed: 'the customer has not written in the last 24 hours and no receipt template is chosen (Settings → WhatsApp templates).',
   whatsapp_not_set_up: 'WhatsApp is not connected.',
@@ -2021,6 +2033,14 @@ export default function Admin() {
         siblings={selLead.groupRef ? all.filter((x) => x.groupRef === selLead.groupRef && x.ref !== selLead.ref) : []} onOpen={(r) => { setSel(r); setAsk(null); }} waApi={waApi} onWaSend={onWaSend} getPayment={getPayment} isAdminUser={isAdmin}
         docTypes={docTypes} onUploadDoc={onUploadDoc} onOpenDoc={onOpenDoc} onRemoveDoc={onRemoveDoc} onDocLink={onDocLink}
         onUploadToken={onUploadToken} onOpenToken={onOpenToken} onRemoveToken={onRemoveToken} onTokenChallans={onTokenChallans} onAddVehicles={onAddVehicles} myId={me.uid} onAskPayment={setPayFor} onBot={onBot} onOpenProof={(ref) => openFile(`/api/admin/leads/${encodeURIComponent(ref)}/proof`)}
+        onApprove={async (ref) => {
+          try {
+            const { lead, payment } = await call(`/api/admin/leads/${encodeURIComponent(ref)}/approve`, auth, { method: 'POST', body: JSON.stringify({ how: 'call' }) });
+            setLeads((ls) => ls.map((l) => (l.ref === ref ? lead : l)));
+            return payment.sent ? { ok: true, text: '✓ Marked approved. Payment details and QR sent on WhatsApp.' }
+              : { ok: false, text: `Marked approved, but the payment details were not sent: ${APPROVE_WHY[payment.reason] || 'WhatsApp did not send them.'}` };
+          } catch (e) { if (e.status === 401) signOut(); return { ok: false, text: e.message === 'nothing_approved' ? 'Tick the challans the customer approved first.' : 'Not saved. Try again.' }; }
+        }}
         onDelhiCheck={(plate) => call(`/api/admin/delhi-check?plate=${encodeURIComponent(plate)}`, auth).catch((e) => ({ error: e.status === 429 ? 'too many checks, wait a few minutes' : e.message }))}
         askApproval={ask === selLead.ref} onAsked={(on) => setAsk(on ? selLead.ref : null)} />}
       {payFor && all.find((l) => l.ref === payFor) && (
