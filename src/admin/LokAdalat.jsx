@@ -28,7 +28,7 @@ export default function LokAdalat({ leads, dates, inr }) {
         const g = groups.get(key) || { key, lok: p.lok, state: p.state, label: STATE[p.state] || p.label, leads: new Map(), challans: 0, approved: 0, amount: 0 };
         const token = (l.tokens || []).find((t) => (t.challans || []).includes(c.challanNo));
         const row = g.leads.get(l.ref) || { lead: l, challans: [] };
-        row.challans.push({ ...c, approved: !!c.approved, token: token?.number || '', st: challanStateCode(c) });
+        row.challans.push({ ...c, approved: !!c.approved, token: token?.number || (!token && l.noToken?.date === p.lok.date ? 'Not available' : ''), st: challanStateCode(c) });
         g.leads.set(l.ref, row);
         g.challans++;
         if (c.approved) g.approved++;
@@ -99,7 +99,7 @@ export default function LokAdalat({ leads, dates, inr }) {
                   <td>{g.label}</td>
                   <td className="chal">
                     {challans.map((c, i) => (
-                      <div key={i}>{c.challanNo || '–'}{!c.approved && <span className="small"> (not approved yet)</span>}{c.token && <span className="small"> · token {c.token}</span>}</div>
+                      <div key={i}>{c.challanNo || '–'}{!c.approved && <span className="small"> (not approved yet)</span>}{c.token && (c.token === 'Not available' ? <span className="small warn-text"> · ⛔ token not available</span> : <span className="small"> · token {c.token}</span>)}</div>
                     ))}
                   </td>
                   <td className="num">{inr(challans.reduce((n, c) => n + (c.amount || 0), 0))}</td>

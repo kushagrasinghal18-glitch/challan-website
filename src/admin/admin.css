@@ -435,6 +435,15 @@ tbody tr.fresh .name::after { content: "NEW"; margin-left: 8px; font-size: 10px;
 .token-add .btn { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .token-add .btn.disabled { opacity: .6; pointer-events: none; }
 .tokens .hint { margin: 0; }
+.no-token-btn { justify-self: start; font-size: 13px; }
+.no-token { display: grid; gap: 8px; background: #fff; border: 1px solid #DCE4F3; border-radius: 10px; padding: 8px 10px; }
+.no-token .k { font-size: 12px; font-weight: 700; }
+.no-token > label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted, #5E6472); }
+.no-token input, .no-token select { width: 100%; min-width: 0; font: inherit; font-size: 14px; padding: 8px 10px; border: 1px solid #CFCABD; border-radius: 8px; background: #fff; }
+.no-token .row { display: flex; gap: 8px; }
+.no-token .btn { padding: 6px 12px; font-size: 13px; }
+.no-token.on { display: flex; align-items: center; gap: 8px; background: #FDECEC; border-color: #F3C4C0; color: #7A1A12; font-size: 14px; }
+.no-token.on > div { flex: 1; }
 
 /* Token calendar */
 .cal-wrap { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
@@ -609,3 +618,4 @@ td.plates .plate { display: inline-block; margin: 2px 4px 2px 0; }
 .wa-tick.sent, .wa-tick.delivered { color: #667085; }
 .wa-tick.read { color: #1D9BF0; }
 .wa-tick.failed { color: #B42318; }
+.warn-text { color: #B42318; }
