@@ -597,7 +597,48 @@ function ChallanPicks({ lead, picked, onChange, tokenId }) {
   );
 }
 
-function Tokens({ lead, onUpload, onOpen, onRemove, onSetChallans }) {
+// "Token not available": no court token could be booked for this lead's Lok Adalat. The date offered is the
+// lead's next Lok Adalat (from its approved challans, else all of them); any other date can be typed.
+function NoToken({ lead, lokDates, onPatch }) {
+  const ok = (lead.challans || []).filter((c) => c.approved);
+  const days = [...new Set(lokPlan(lead, ok.length ? ok : lead.challans || [], lokDates || []).map((p) => p.lok.date))].sort();
+  const [open, setOpen] = useState(false);
+  const [date, setDate] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setOpen(false); setDate(''); setNote(''); }, [lead.ref]);
+  const save = async (v) => { setBusy(true); try { await onPatch(lead.ref, { noToken: v }); setOpen(false); setNote(''); } finally { setBusy(false); } };
+  const n = lead.noToken;
+  if (n) return (
+    <div className="no-token on" role="status">
+      <div><b>⛔ Token not available</b> for the Lok Adalat on {tokenDay(n.date)}{n.note && <> · {n.note}</>}
+        <div className="small">{n.by} · {ago(n.at)}</div></div>
+      <button className="linkish" disabled={busy} onClick={() => save(null)}>Undo</button>
+    </div>
+  );
+  if (!open) return <button className="linkish no-token-btn" onClick={() => { setDate(days[0] || ''); setOpen(true); }}>Token not available?</button>;
+  return (
+    <div className="no-token">
+      <div className="k">Mark token not available</div>
+      <label>Lok Adalat date
+        {days.length ? (
+          <select value={days.includes(date) ? date : ''} onChange={(e) => setDate(e.target.value)}>
+            {days.map((d) => <option key={d} value={d}>{tokenDay(d)}</option>)}
+            <option value="">Other date…</option>
+          </select>
+        ) : null}
+        {(!days.length || !days.includes(date)) && <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />}
+      </label>
+      <label>Reason<input value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="Optional, e.g. slots full" /></label>
+      <div className="row">
+        <button className="btn primary" disabled={busy || !date} onClick={() => save({ date, note: note.trim() })}>Mark not available</button>
+        <button className="btn" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function Tokens({ lead, lokDates, onPatch, onUpload, onOpen, onRemove, onSetChallans }) {
   const [date, setDate] = useState('');
   const [number, setNumber] = useState('');
   const [busy, setBusy] = useState(false);
@@ -631,6 +672,7 @@ function Tokens({ lead, onUpload, onOpen, onRemove, onSetChallans }) {
   const closed = ['Settled', 'Lost'].includes(lead.status);
   return (
     <div className="tokens">
+      {!closed && <NoToken lead={lead} lokDates={lokDates} onPatch={onPatch} />}
       {tokens.length > 0 && (
         <ul className="token-list">
           {tokens.map((t) => (
@@ -940,7 +982,7 @@ function Drawer({ lead, statuses, isAdmin, isSuper, staff, onClose, onPatch, onS
                   <a className="btn primary" href={DELHI_COURT_URL} target="_blank" rel="noopener noreferrer" onClick={copyPlate} data-niptao-plate={lead.plate} data-niptao-ref={lead.ref}>Delhi court token ↗</a>
                 </div>
                 <p className="hint">The vehicle number is filled in by the add-on (or copied, so you can paste it). Type the captcha and OTP yourself.</p>
-                <Tokens lead={lead} onUpload={onUploadToken} onOpen={onOpenToken} onRemove={onRemoveToken} onSetChallans={onTokenChallans} />
+                <Tokens lead={lead} lokDates={lokDates} onPatch={onPatch} onUpload={onUploadToken} onOpen={onOpenToken} onRemove={onRemoveToken} onSetChallans={onTokenChallans} />
               </div>
             </div>
 
@@ -2004,7 +2046,7 @@ export default function Admin() {
                 {shown.map(({ lead: l, cars }) => { const paid = cars.find((c) => c.payment && c.status !== 'Lost'); const many = cars.length > 1; const chs = cars.flatMap((c) => c.challans || []); const total = cars.reduce((n, c) => n + challanTotal(c), 0); const due = cars.reduce((n, c) => n + payable(c), 0); return (
                   <tr key={l.ref} className={'' + (fresh.includes(l.ref) ? ' fresh' : '') + (paid ? ' paid' : '') + (cars.some((c) => c.ref === sel) ? ' sel' : '')}
                     title={paid ? `Payment received: ${inr(cars.reduce((n, c) => n + (c.payment && c.status !== 'Lost' ? c.payment.amount : 0), 0))}` : undefined} onClick={() => { setSel(l.ref); setFresh((f) => f.filter((x) => x !== l.ref)); }}>
-                    <td><div className="name">{l.name}{many && <span className="multi" title="This customer sent several vehicles together">{cars.length} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{cars.some((c) => c.waUnread > 0) && <span className="multi unread">💬 {cars.reduce((n, c) => n + (c.waUnread || 0), 0)} new</span>}{cars.some((c) => c.docsNew > 0) && <span className="multi unread docs-new" title="The customer uploaded documents">📄 {cars.reduce((n, c) => n + (c.docsNew || 0), 0)} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}{cars.some((c) => c.paymentClaim && !c.payment) && <span className="multi unread" title="The customer says they paid. Check and mark Payment received.">💰 says paid</span>}{cars.some((c) => c.botPaused?.reason === 'handoff') && <span className="multi warn" title="The WhatsApp AI handed this chat to the team">🙋 needs you</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{many ? (cars.some((c) => c.challans) ? (chs.length ? ` · ${chs.length} challan${chs.length === 1 ? '' : 's'} ₹${total.toLocaleString('en-IN')}` : ' · no challans') : '') : l.challans ? (l.challans.length ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ' · no challans') : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{many ? (due ? ` · payable ${inr(due)}` : '') : approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}{l.docs?.length ? ` · docs ${docsHave(l, docTypes)}` : ''}</div></td>
+                    <td><div className="name">{l.name}{many && <span className="multi" title="This customer sent several vehicles together">{cars.length} vehicles</span>}{l.source === 'WhatsApp' && <span className="multi wa">WhatsApp</span>}{cars.some((c) => c.waUnread > 0) && <span className="multi unread">💬 {cars.reduce((n, c) => n + (c.waUnread || 0), 0)} new</span>}{cars.some((c) => c.docsNew > 0) && <span className="multi unread docs-new" title="The customer uploaded documents">📄 {cars.reduce((n, c) => n + (c.docsNew || 0), 0)} new</span>}{l.rcOwner?.match === 'mismatch' && <span className="multi warn" title={`RC owner on Parivahan: ${l.rcOwner.name}`}>⚠ name</span>}{cars.some((c) => c.paymentClaim && !c.payment) && <span className="multi unread" title="The customer says they paid. Check and mark Payment received.">💰 says paid</span>}{cars.some((c) => c.noToken) && <span className="multi warn" title={`Token not available for the Lok Adalat on ${cars.find((c) => c.noToken).noToken.date}`}>⛔ no token</span>}{cars.some((c) => c.botPaused?.reason === 'handoff') && <span className="multi warn" title="The WhatsApp AI handed this chat to the team">🙋 needs you</span>}</div><div className="small">{l.ref} · {fmtPhone(l.phone)}{many ? (cars.some((c) => c.challans) ? (chs.length ? ` · ${chs.length} challan${chs.length === 1 ? '' : 's'} ₹${total.toLocaleString('en-IN')}` : ' · no challans') : '') : l.challans ? (l.challans.length ? ` · ${l.challans.length} challan${l.challans.length === 1 ? '' : 's'} ₹${challanTotal(l).toLocaleString('en-IN')}` : ' · no challans') : ''}{st && l.challans?.length && leadStates(l).length > 1 ? ` (${l.challans.filter((c) => challanState(c) === st).length} in ${STATES[st]})` : ''}{many ? (due ? ` · payable ${inr(due)}` : '') : approvedOf(l).length ? ` · payable ${inr(payable(l))} (${feeRate(l)}%)` : ''}{l.waApproval ? (l.waApproval.state === 'received' && !waStale(l) ? ' · ✓ approved on WhatsApp' : ' · WhatsApp sent') : ''}{l.paymentSent ? ' · payment details sent' : ''}{l.docs?.length ? ` · docs ${docsHave(l, docTypes)}` : ''}</div></td>
                     <td className="plates">{cars.filter((c) => c.plate).map((c) => <span key={c.ref} className="plate">{fmtPlate(c.plate)}</span>)}{!cars.some((c) => c.plate) && <span className="small">Not given yet</span>}</td>
                     <td>{CITY[l.city] || l.city}</td>
                     <td className={l.agent ? '' : 'unassigned'}>{l.agent || 'Unassigned'}</td>

@@ -760,6 +760,15 @@ app.patch('/api/admin/leads/:ref', requireUser, async (req, res) => {
   } else if (b.status === 'Payment received') return res.status(400).json({ error: 'payment_amount_required' });
   // Undo a payment entered by mistake (for example the same money recorded on two cars).
   if (b.paymentRemoved === true && b.paymentReceived === undefined) patch.paymentRemoved = true;
+  // Token not available for a Lok Adalat: { date: YYYY-MM-DD, note } or null to undo.
+  if (b.noToken !== undefined) {
+    if (b.noToken === null) patch.noToken = null;
+    else {
+      const date = String(b.noToken?.date || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date))) return res.status(400).json({ error: 'invalid_date' });
+      patch.noToken = { date, note: String(b.noToken?.note || '').trim().slice(0, 200) };
+    }
+  }
   if (b.plate !== undefined) {
     const p = normalizePlate(b.plate);
     if (!PLATE_RE.test(p)) return res.status(400).json({ error: 'invalid_plate' });

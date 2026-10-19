@@ -202,6 +202,18 @@ test('tokens: uploading one moves an open lead to Scheduled', async () => {
   assert.deepEqual(l.tokens.map((t) => t.id), ['tok1bbbbbbbb', 'tok1cccccccc']);
 });
 
+test('tokens: mark token not available for a Lok Adalat, cleared by a token upload', async () => {
+  await addLead({ ref: 'NOTOK-1', createdAt: '2026-10-09T00:00:00Z', name: 'Asha', plate: 'DL3CAB9999', phone: '9876500012', status: 'Documents verified', notes: [] });
+  let l = await updateLead('NOTOK-1', { noToken: { date: '2026-11-08', note: 'slots full' } }, 'Priya');
+  assert.deepEqual([l.noToken.date, l.noToken.note, l.noToken.by, l.status], ['2026-11-08', 'slots full', 'Priya', 'Documents verified']);
+  assert.match(l.notes[0].text, /Token not available for the Lok Adalat on 2026-11-08 \(slots full\)/);
+  l = await updateLead('NOTOK-1', { noToken: null }, 'Priya');
+  assert.equal(l.noToken, null);
+  l = await updateLead('NOTOK-1', { noToken: { date: '2026-11-08', note: '' } }, 'Priya');
+  l = await updateLead('NOTOK-1', { addToken: { id: 'notok1aaaaaa', date: '2026-12-13', name: 't.pdf', mime: 'application/pdf', size: 5 } }, 'Priya');
+  assert.equal(l.noToken, null);
+});
+
 test('payment received: records the amount and moves an early lead on', async () => {
   await addLead({ ref: 'PAY-1', createdAt: '2026-10-10T00:00:00Z', name: 'Kiran', plate: 'UP16AB3333', phone: '9876500003', status: 'Contacted', notes: [] });
   await updateLead('PAY-1', { challans: [{ challanNo: 'A1', amount: 2000 }, { challanNo: 'A2', amount: 1000 }] }, 'Priya');

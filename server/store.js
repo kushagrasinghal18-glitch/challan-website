@@ -347,6 +347,12 @@ export function updateLead(ref, patch, by, onlyFor) {
     if (patch.tokenChallans && (lead.tokens || []).some((t) => t.id === patch.tokenChallans.id)) {
       out.tokens = claim(lead.tokens, patch.tokenChallans.id, patch.tokenChallans.challans || []);
     }
+    // No court token could be booked for a Lok Adalat date (slots full, portal closed): { date, note } or null to undo.
+    // Uploading a token later clears it.
+    if (patch.noToken !== undefined) {
+      out.noToken = patch.noToken ? { ...patch.noToken, at: new Date().toISOString(), by } : null;
+      autoNotes.push(patch.noToken ? `Token not available for the Lok Adalat on ${patch.noToken.date}${patch.noToken.note ? ` (${patch.noToken.note})` : ''}.` : 'Token not available mark removed.');
+    } else if (patch.addToken && lead.noToken) out.noToken = null;
     if (patch.removeToken) out.tokens = (lead.tokens || []).filter((t) => t.id !== patch.removeToken);
     if (patch.paymentRemoved && lead.payment) autoNotes.push(`Payment of ₹${lead.payment.amount.toLocaleString('en-IN')} removed (by ${by}).`);
     if (patch.paymentReceived) autoNotes.push(`Payment received: ₹${patch.paymentReceived.amount.toLocaleString('en-IN')} of ₹${out.payment.finalAmount.toLocaleString('en-IN')} (final ${out.payment.finalRate}%), balance ₹${out.payment.pending.toLocaleString('en-IN')}${out.payment.mode ? `, ${out.payment.mode}` : ''} (confirmed by ${by}).`);
