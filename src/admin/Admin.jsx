@@ -1656,18 +1656,26 @@ function toCsv(leads) {
   return [cols.map((c) => esc(c[0])).join(','), ...leads.map((l) => cols.map(([, f]) => esc(typeof f === 'function' ? f(l) : l[f])).join(','))].join('\n');
 }
 
-// Scheduled leads' court tokens: one row per token (a lead with no token gets one row with the token columns blank).
+// Scheduled leads' court tokens: one row per challan on each token. Challans not on any token (approved ones, else all)
+// get a row with the token columns blank, or "Not available" when the lead is marked that way. Lead totals repeat on each row.
 function toTokenCsv(leads) {
-  const head = ['Token date', 'Token number', 'Challans on token', 'Token challan amount (₹)', 'Name', 'Vehicle', 'Mobile', 'Reference', 'Assigned to',
-    'Challans', 'Challan amount (₹)', 'Approved challans', 'Approved amount (₹)', 'Amount payable (₹)', 'Amount received (₹)', 'Pending (₹)', 'Status'];
-  const amt = (l, nos) => (l.challans || []).filter((c) => nos.includes(c.challanNo)).reduce((n, c) => n + (c.amount || 0), 0);
+  const head = ['Token date', 'Token number', 'Challan number', 'Challan date', 'Offence', 'Challan amount (₹)', 'Approved', 'Approved amount (₹)',
+    'Name', 'Vehicle', 'Mobile', 'Reference', 'Assigned to', 'Lead challan total (₹)', 'Lead approved total (₹)', 'Lead amount payable (₹)', 'Lead amount received (₹)', 'Lead pending (₹)', 'Status'];
   const lines = leads.flatMap((l) => {
-    const base = [l.name, fmtPlate(l.plate), l.phone, l.ref, l.agent || '', (l.challans || []).length, challanTotal(l), approvedOf(l).length, approvedTotal(l),
+    const lead = [l.name, fmtPlate(l.plate), l.phone, l.ref, l.agent || '', challanTotal(l), approvedTotal(l),
       l.payment?.finalAmount ?? (approvedOf(l).length ? payable(l) : ''), l.payment?.amount ?? '', l.payment ? l.payment.pending : '', l.status];
+    const byNo = new Map((l.challans || []).filter((c) => c.challanNo).map((c) => [c.challanNo, c]));
+    const ch = (no, c = byNo.get(no)) => [no || '', c?.date || '', c?.offence || '', c?.amount ?? '', c ? (c.approved ? 'Yes' : 'No') : '', c ? (c.approved ? c.amount || 0 : 0) : ''];
     const toks = [...(l.tokens || [])].sort((a, b) => a.date.localeCompare(b.date));
-    if (!toks.length) return [[l.noToken ? l.noToken.date : '', l.noToken ? 'Not available' : '', '', '', ...base]];
-    return toks.map((t) => [t.date, t.number || '', (t.challans || []).join(' '), (t.challans || []).length ? amt(l, t.challans) : '', ...base]);
-  }).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    const out = toks.flatMap((t) => ((t.challans || []).length ? t.challans : ['']).map((no) => [t.date, t.number || '', ...ch(no), ...lead]));
+    const onToken = new Set(toks.flatMap((t) => t.challans || []));
+    const ok = approvedOf(l).length ? approvedOf(l) : l.challans || [];
+    const rest = ok.filter((c) => !onToken.has(c.challanNo));
+    const tk = l.noToken ? [l.noToken.date, 'Not available'] : ['', ''];
+    out.push(...rest.map((c) => [...tk, ...ch(c.challanNo, c), ...lead]));
+    if (!out.length) out.push([...tk, ...ch(''), ...lead]);
+    return out;
+  }).sort((a, b) => (a[0] || '9999').localeCompare(b[0] || '9999')); // no token date last
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   return [head, ...lines].map((r) => r.map(esc).join(',')).join('\n');
 }
