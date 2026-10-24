@@ -1656,6 +1656,22 @@ function toCsv(leads) {
   return [cols.map((c) => esc(c[0])).join(','), ...leads.map((l) => cols.map(([, f]) => esc(typeof f === 'function' ? f(l) : l[f])).join(','))].join('\n');
 }
 
+// Scheduled leads' court tokens: one row per token (a lead with no token gets one row with the token columns blank).
+function toTokenCsv(leads) {
+  const head = ['Token date', 'Token number', 'Challans on token', 'Token challan amount (₹)', 'Name', 'Vehicle', 'Mobile', 'Reference', 'Assigned to',
+    'Challans', 'Challan amount (₹)', 'Approved challans', 'Approved amount (₹)', 'Amount payable (₹)', 'Amount received (₹)', 'Pending (₹)', 'Status'];
+  const amt = (l, nos) => (l.challans || []).filter((c) => nos.includes(c.challanNo)).reduce((n, c) => n + (c.amount || 0), 0);
+  const lines = leads.flatMap((l) => {
+    const base = [l.name, fmtPlate(l.plate), l.phone, l.ref, l.agent || '', (l.challans || []).length, challanTotal(l), approvedOf(l).length, approvedTotal(l),
+      l.payment?.finalAmount ?? (approvedOf(l).length ? payable(l) : ''), l.payment?.amount ?? '', l.payment ? l.payment.pending : '', l.status];
+    const toks = [...(l.tokens || [])].sort((a, b) => a.date.localeCompare(b.date));
+    if (!toks.length) return [[l.noToken ? l.noToken.date : '', l.noToken ? 'Not available' : '', '', '', ...base]];
+    return toks.map((t) => [t.date, t.number || '', (t.challans || []).join(' '), (t.challans || []).length ? amt(l, t.challans) : '', ...base]);
+  }).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  return [head, ...lines].map((r) => r.map(esc).join(',')).join('\n');
+}
+
 export default function Admin() {
   const [auth, setAuth] = useState(readSaved);
   const [leads, setLeads] = useState(null);
@@ -1933,9 +1949,9 @@ export default function Admin() {
   const nextLine = next
     ? <>Next Lok Adalat: <strong>{new Date(`${next.date}T${next.time}:00+05:30`).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</strong> · {CITY_COURT[next.city]}</>
     : isAdmin ? <>No upcoming Lok Adalat date. <a href="#settings" onClick={(e) => { e.preventDefault(); setView('settings'); }}>Add one in Settings</a></> : <>No upcoming Lok Adalat date yet.</>;
-  const exportCsv = () => {
-    const blob = new Blob(['﻿' + toCsv(rows)], { type: 'text/csv;charset=utf-8' });
-    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `niptao-leads-${new Date().toISOString().slice(0, 10)}.csv` });
+  const exportCsv = (tokens) => {
+    const blob = new Blob(['﻿' + (tokens ? toTokenCsv(rows) : toCsv(rows))], { type: 'text/csv;charset=utf-8' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `niptao-${tokens ? 'tokens' : 'leads'}-${new Date().toISOString().slice(0, 10)}.csv` });
     a.click(); URL.revokeObjectURL(a.href);
   };
 
@@ -2037,7 +2053,8 @@ export default function Admin() {
               {stateOpts.map(([x, n]) => <option key={x} value={x}>{STATES[x]} ({n})</option>)}
             </select>
             <button className="btn" onClick={load}>Refresh</button>
-            <button className="btn" onClick={exportCsv} disabled={!rows.length}>Download CSV</button>
+            <button className="btn" onClick={() => exportCsv(false)} disabled={!rows.length}>Download CSV</button>
+            {tab === 'Scheduled' && <button className="btn primary" onClick={() => exportCsv(true)} disabled={!rows.length}>Download token CSV</button>}
           </div>
           <div className="table-wrap">
             <table>
